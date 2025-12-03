@@ -1,6 +1,10 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
 import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
+import * as dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const PORT = 8080;
 const SONIC_PATH = '/sonic';
@@ -8,13 +12,10 @@ const SONIC_PATH = '/sonic';
 /**
  * WebSocket Server for Real-Time Voice-to-Voice Assistant
  * 
- * Current implementation:
+ * Integrates with Amazon Nova 2 Sonic for bidirectional speech streaming:
  * - Accepts binary audio frames from browser
- * - Echoes them back for testing end-to-end flow
- * 
- * Future implementation:
- * - Route audio to SonicClient
- * - Stream Sonic responses back to browser
+ * - Routes audio to Nova 2 Sonic via AWS Bedrock
+ * - Streams Sonic responses back to browser
  */
 
 interface ClientSession {
@@ -44,7 +45,7 @@ const wss = new WebSocketServer({
 
 console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);
 
-wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
+wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     const clientIp = req.socket.remoteAddress;
     const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -60,6 +61,70 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
         sessionId
     });
 
+    // Initialize Nova Sonic session with event callback
+    try {
+        await sonicClient.startSession((event: SonicEvent) => {
+            // Handle events from Nova Sonic and forward to WebSocket client
+            switch (event.type) {
+                case 'audio':
+                    // Forward audio data as binary WebSocket message
+                    if (event.data.audio) {
+                        const audioBuffer = Buffer.isBuffer(event.data.audio)
+                            ? event.data.audio
+                            : Buffer.from(event.data.audio);
+
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(audioBuffer);
+                            console.log(`[Server] Sent audio to client: ${audioBuffer.length} bytes`);
+                        }
+                    }
+                    break;
+
+                case 'transcript':
+                    // Forward transcript as JSON message
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'transcript',
+                            role: event.data.role || 'assistant',
+                            text: event.data.transcript
+                        }));
+                        console.log(`[Server] Sent transcript: "${event.data.transcript}"`);
+                    }
+                    break;
+
+                case 'error':
+                    // Log error and notify client
+                    console.error('[Server] Nova Sonic error:', event.data);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'Nova Sonic streaming error'
+                        }));
+                    }
+                    break;
+            }
+        });
+
+        console.log(`[Server] Nova Sonic session started for ${sessionId}`);
+
+        // Send connection acknowledgment
+        ws.send(JSON.stringify({
+            type: 'connected',
+            sessionId,
+            message: 'Connected to Nova 2 Sonic'
+        }));
+
+    } catch (error) {
+        console.error('[Server] Failed to initialize Nova Sonic session:', error);
+        ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Failed to initialize Nova Sonic session. Check AWS credentials.'
+        }));
+        ws.close();
+        activeSessions.delete(ws);
+        return;
+    }
+
     // Handle incoming binary audio frames
     ws.on('message', async (data: Buffer) => {
         try {
@@ -71,16 +136,12 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
 
             console.log(`[Server] Received audio chunk: ${data.length} bytes from ${sessionId}`);
 
-            // MVP: Echo audio back to client for testing
-            // This validates end-to-end binary audio flow
-            ws.send(data);
-
-            // TODO: Future implementation - Route to Sonic
-            // const chunk: AudioChunk = {
-            //   buffer: data,
-            //   timestamp: Date.now()
-            // };
-            // await sonicClient.sendAudioChunk(chunk);
+            // Route audio to Nova Sonic
+            const chunk: AudioChunk = {
+                buffer: data,
+                timestamp: Date.now()
+            };
+            await sonicClient.sendAudioChunk(chunk);
 
         } catch (error) {
             console.error('[Server] Error processing audio:', error);
@@ -109,13 +170,6 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     ws.on('error', (error: Error) => {
         console.error(`[Server] WebSocket error for ${sessionId}:`, error);
     });
-
-    // Send connection acknowledgment
-    ws.send(JSON.stringify({
-        type: 'connected',
-        sessionId,
-        message: 'Connected to WebSocket server'
-    }));
 });
 
 // Handle server errors
@@ -128,6 +182,7 @@ server.listen(PORT, () => {
     console.log(`[Server] HTTP server listening on port ${PORT}`);
     console.log(`[Server] WebSocket endpoint: ws://localhost:${PORT}${SONIC_PATH}`);
     console.log(`[Server] Health check: http://localhost:${PORT}/health`);
+    console.log(`[Server] Using Nova 2 Sonic model: ${process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0'}`);
 });
 
 // Graceful shutdown

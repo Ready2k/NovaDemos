@@ -19,6 +19,7 @@ class VoiceAssistant {
         // UI elements
         this.statusEl = document.getElementById('status');
         this.logEl = document.getElementById('log');
+        this.transcriptEl = document.getElementById('transcript');
         this.connectBtn = document.getElementById('connectBtn');
         this.startBtn = document.getElementById('startBtn');
         this.stopBtn = document.getElementById('stopBtn');
@@ -161,7 +162,8 @@ class VoiceAssistant {
                     break;
 
                 case 'transcript':
-                    this.log(`Transcript: ${message.text}`);
+                    this.displayTranscript(message.role || 'assistant', message.text);
+                    this.log(`Transcript [${message.role}]: ${message.text}`);
                     break;
 
                 case 'error':
@@ -199,6 +201,34 @@ class VoiceAssistant {
 
         this.startBtn.disabled = newState !== 'connected';
         this.stopBtn.disabled = newState !== 'recording';
+    }
+
+    /**
+     * Display transcript in UI
+     */
+    displayTranscript(role, text) {
+        // Remove empty state on first transcript
+        const emptyState = this.transcriptEl.querySelector('.transcript-empty');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        const entry = document.createElement('div');
+        entry.className = `transcript-entry ${role}`;
+        entry.innerHTML = `
+      <span class="role">${role === 'assistant' ? '🤖 Assistant' : '👤 User'}:</span>
+      <span>${text}</span>
+    `;
+
+        this.transcriptEl.appendChild(entry);
+
+        // Auto-scroll to bottom
+        this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+
+        // Limit transcript entries
+        while (this.transcriptEl.children.length > 20) {
+            this.transcriptEl.removeChild(this.transcriptEl.firstChild);
+        }
     }
 
     /**

@@ -8,10 +8,17 @@
     "start": "node dist/server.js",
     "dev": "tsc && node dist/server.js"
   },
-  "keywords": ["websocket", "audio", "nova-sonic", "real-time"],
+  "keywords": [
+    "websocket",
+    "audio",
+    "nova-sonic",
+    "real-time"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.943.0",
+    "dotenv": "^17.2.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
