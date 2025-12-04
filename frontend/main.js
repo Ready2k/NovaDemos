@@ -46,6 +46,7 @@ class VoiceAssistant {
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
         this.newSessionBtn = document.getElementById('newSessionBtn');
         this.modeSelect = document.getElementById('interaction-mode');
+        this.brainModeSelect = document.getElementById('brain-mode'); // Correctly bind to the Assistant dropdown
         this.presetSelect = document.getElementById('persona-preset');
 
         // Handle preset selection
