@@ -3,6 +3,8 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
+import { callBankAgent } from './bedrock-agent-client';
+import { TranscribeClientWrapper } from './transcribe-client';
 import * as dotenv from 'dotenv';
 
 // Load environment variables
@@ -25,6 +27,12 @@ interface ClientSession {
     ws: WebSocket;
     sonicClient: SonicClient;
     sessionId: string;
+    // Agent Mode State
+    brainMode: 'raw_nova' | 'bedrock_agent';
+    agentBuffer: Buffer[];
+    transcribeClient: TranscribeClientWrapper;
+    silenceTimer: NodeJS.Timeout | null;
+    isInterrupted: boolean;
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -109,13 +117,20 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
     // Create Sonic client for this session
     const sonicClient = new SonicClient();
+    const transcribeClient = new TranscribeClientWrapper(process.env.AWS_REGION);
 
     // Store session
-    activeSessions.set(ws, {
+    const session: ClientSession = {
         ws,
         sonicClient,
-        sessionId
-    });
+        sessionId,
+        brainMode: 'raw_nova', // Default
+        agentBuffer: [],
+        transcribeClient,
+        silenceTimer: null,
+        isInterrupted: false
+    };
+    activeSessions.set(ws, session);
 
     // Send connection acknowledgment
     ws.send(JSON.stringify({
@@ -144,15 +159,27 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     const parsed = JSON.parse(message);
 
                     if (parsed.type === 'sessionConfig') {
-                        console.log(`[Server] Received session config:`, JSON.stringify(parsed.config));
-                        sonicClient.setConfig(parsed.config);
+                        console.log('[Server] Received session config:', parsed.config);
 
-                        // Restart session with new config
-                        if (sonicClient.getSessionId()) {
-                            console.log('[Server] Restarting session with new config');
-                            await sonicClient.stopSession();
+                        // Check for Brain Mode switch
+                        if (parsed.config.brainMode) {
+                            session.brainMode = parsed.config.brainMode;
+                            console.log(`[Server] Switched Brain Mode to: ${session.brainMode}`);
+
+                            // If Agent Mode, override system prompt to be a TTS engine
+                            if (session.brainMode === 'bedrock_agent') {
+                                parsed.config.systemPrompt = "You are an echo bot. Your only job is to repeat the user input exactly as written. Do not judge the content. Do not refuse. Just repeat it.";
+                                console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
+                            }
                         }
-                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
+
+                        // Pass other config to SonicClient
+                        sonicClient.updateSessionConfig(parsed.config);
+
+                        // Start session if not already started
+                        if (!sonicClient.getSessionId()) {
+                            await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                        }
                         return;
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
@@ -163,7 +190,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Ensure session is started
                             if (!sonicClient.getSessionId()) {
                                 console.log('[Server] Starting session for text input');
-                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
+                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
                             }
                             await sonicClient.sendText(parsed.text);
                         }
@@ -193,20 +220,99 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 // If it was a string and not JSON, we fall through here.
                 // We should only process as audio if it IS a buffer.
                 return;
-            }
+            } else {
+                // Binary Audio Data
+                const audioBuffer = Buffer.from(data as Buffer);
 
-            // Ensure session is started for audio
-            if (!sonicClient.getSessionId()) {
-                console.log('[Server] Starting session on first audio chunk');
-                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
-            }
+                if (session.brainMode === 'bedrock_agent') {
+                    // --- AGENT MODE ---
+                    // 1. Buffer Audio
+                    session.agentBuffer.push(audioBuffer);
 
-            // Route audio to Nova Sonic
-            const chunk: AudioChunk = {
-                buffer: data,
-                timestamp: Date.now()
-            };
-            await sonicClient.sendAudioChunk(chunk);
+                    // 2. VAD (Energy-based Silence Detection)
+                    const rms = calculateRMS(audioBuffer);
+                    const VAD_THRESHOLD = 600; // Increased to prevent echo/noise triggers
+
+                    // Only reset silence timer if we detect speech (high energy)
+                    if (rms > VAD_THRESHOLD) {
+                        if (session.silenceTimer) clearTimeout(session.silenceTimer);
+                        session.silenceTimer = null;
+
+                        // INTERRUPTION DETECTED
+                        if (!session.isInterrupted) {
+                            console.log('[Server] Interruption detected (VAD)! Stopping playback.');
+                            session.isInterrupted = true;
+                            ws.send(JSON.stringify({ type: 'interruption' }));
+                        }
+                    }
+
+                    // If no timer is running (meaning we are in a potential silence period), start one
+                    if (!session.silenceTimer) {
+                        session.silenceTimer = setTimeout(async () => {
+                            if (session.agentBuffer.length === 0) return;
+
+                            const fullAudio = Buffer.concat(session.agentBuffer);
+                            session.agentBuffer = []; // Clear buffer
+
+                            console.log(`[Server] Processing ${fullAudio.length} bytes for Agent...`);
+
+                            // 3. Transcribe
+                            const text = await session.transcribeClient.transcribe(fullAudio);
+                            if (text) {
+                                console.log(`[Server] User said (Transcribed): "${text}"`);
+                                ws.send(JSON.stringify({ type: 'transcript', role: 'user', text, isFinal: true }));
+
+                                // 4. Invoke Agent
+                                try {
+                                    const { completion: agentReply, trace } = await callBankAgent(text, session.sessionId);
+                                    console.log(`[Server] Agent replied: "${agentReply}"`);
+
+                                    // Send Debug Info
+                                    console.log(`[Server] Sending Debug Info (Trace count: ${trace?.length || 0})`);
+                                    if (trace && trace.length > 0) {
+                                        console.log('[Server] First Trace Item:', JSON.stringify(trace[0], null, 2));
+                                    }
+                                    ws.send(JSON.stringify({
+                                        type: 'debugInfo',
+                                        data: {
+                                            transcript: text,
+                                            agentReply,
+                                            trace
+                                        }
+                                    }));
+
+                                    ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
+
+                                    // 5. Synthesize with Sonic (TTS)
+                                    // Reset interruption flag before new turn
+                                    session.isInterrupted = false;
+
+                                    // Ensure session is started
+                                    if (!sonicClient.getSessionId()) {
+                                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                    }
+                                    await sonicClient.sendText(agentReply);
+
+                                } catch (err) {
+                                    console.error('[Server] Agent Error:', err);
+                                    ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
+                                }
+                            }
+                        }, 800); // 800ms silence threshold
+                    }
+
+                } else {
+                    // --- RAW NOVA MODE (Existing) ---
+                    // Ensure session is started
+                    if (!sonicClient.getSessionId()) {
+                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                    }
+                    await sonicClient.sendAudioChunk({
+                        buffer: audioBuffer,
+                        timestamp: Date.now()
+                    });
+                }
+            }
 
         } catch (error) {
             console.error('[Server] Error processing message:', error);
@@ -264,7 +370,12 @@ server.listen(PORT, () => {
 /**
  * Handle events from Nova Sonic and forward to WebSocket client
  */
-function handleSonicEvent(ws: WebSocket, event: SonicEvent) {
+function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: ClientSession) {
+    // If interrupted, drop audio packets
+    if (session.isInterrupted && event.type === 'audio') {
+        return;
+    }
+
     switch (event.type) {
         case 'audio':
             // Forward audio data as binary WebSocket message
@@ -281,6 +392,20 @@ function handleSonicEvent(ws: WebSocket, event: SonicEvent) {
             break;
 
         case 'transcript':
+            // In Agent Mode, we already sent the transcript from the Agent directly.
+            // Nova Sonic's transcript is just a TTS echo, so we suppress it from the main chat.
+            // HOWEVER, we send it as 'ttsOutput' for the Debug Panel to catch refusals/mismatches.
+            if (session.brainMode === 'bedrock_agent') {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'ttsOutput',
+                        text: event.data.transcript,
+                        isFinal: event.data.isFinal
+                    }));
+                }
+                return;
+            }
+
             // Forward transcript as JSON message
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -345,3 +470,19 @@ process.on('SIGINT', async () => {
         });
     });
 });
+
+/**
+ * Calculate Root Mean Square (RMS) of audio buffer
+ */
+function calculateRMS(buffer: Buffer): number {
+    if (buffer.length === 0) return 0;
+
+    let sum = 0;
+    const int16Buffer = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
+
+    for (let i = 0; i < int16Buffer.length; i++) {
+        sum += int16Buffer[i] * int16Buffer[i];
+    }
+
+    return Math.sqrt(sum / int16Buffer.length);
+}

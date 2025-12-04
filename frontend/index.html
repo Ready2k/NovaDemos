@@ -12,46 +12,82 @@
   <div class="app-container">
     <div class="sidebar">
       <h2>Persona Settings</h2>
-      <div class="input-group">
-        <label for="interaction-mode">Interaction Mode</label>
-        <select id="interaction-mode">
-          <option value="chat_voice" selected>✨ Chat + Voice</option>
-          <option value="voice_only">🎤 Voice Only</option>
-          <option value="chat_only">💬 Chat Only</option>
-        </select>
+
+      <!-- Tab Navigation -->
+      <div class="tabs-nav">
+        <button class="tab-btn active" data-tab="general">General</button>
+        <button class="tab-btn" data-tab="prompts">Prompts</button>
+        <button class="tab-btn" data-tab="system">System</button>
       </div>
 
-      <div class="input-group">
-        <label for="persona-preset">Persona Preset</label>
-        <select id="persona-preset">
-          <option value="">Custom / Select Preset...</option>
-        </select>
+      <!-- Tab Content: General -->
+      <div id="tab-general" class="tab-content active">
+        <div class="input-group">
+          <label for="interaction-mode">Interaction Mode</label>
+          <select id="interaction-mode">
+            <option value="chat_voice" selected>✨ Chat + Voice</option>
+            <option value="voice_only">🎤 Voice Only</option>
+            <option value="chat_only">💬 Chat Only</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="persona-preset">Persona Preset</label>
+          <select id="persona-preset">
+            <option value="">Custom / Select Preset...</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="brain-mode">Assistant</label>
+          <select id="brain-mode">
+            <option value="raw_nova">✨ Nova Sonic (Direct)</option>
+            <option value="bedrock_agent">🏦 Banking Bot (Agent)</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="voice-preset">Voice</label>
+          <select id="voice-preset">
+            <!-- Populated by JS -->
+          </select>
+        </div>
       </div>
 
-      <div class="input-group">
-        <label for="voice-preset">Voice</label>
-        <select id="voice-preset">
-          <!-- Populated by JS -->
-        </select>
+      <!-- Tab Content: Prompts -->
+      <div id="tab-prompts" class="tab-content">
+        <div class="input-group">
+          <label for="system-prompt">System Prompt</label>
+          <textarea id="systemPrompt"
+            rows="10">You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.</textarea>
+        </div>
+        <div class="form-group">
+          <label for="speechPrompt">Speech Prompt (Optional)</label>
+          <textarea id="speechPrompt" rows="4"
+            placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
+        </div>
       </div>
 
-      <div class="input-group">
-        <label for="system-prompt">System Prompt</label>
-        <textarea id="systemPrompt"
-          rows="6">You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.</textarea>
-      </div>
-      <div class="form-group">
-        <label for="speechPrompt">Speech Prompt (Optional)</label>
-        <textarea id="speechPrompt" rows="4" placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
+      <!-- Tab Content: System -->
+      <div id="tab-system" class="tab-content">
+        <div class="input-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+          <input type="checkbox" id="debug-mode" style="width: auto;">
+          <label for="debug-mode" style="margin: 0; cursor: pointer;">Show Debug Panel</label>
+        </div>
+
+        <button id="awsConfigBtn" class="secondary-btn"
+          style="width: 100%; justify-content: center; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4);">
+          🔐 Configure AWS
+        </button>
       </div>
 
-      <button id="awsConfigBtn" class="secondary-btn"
-        style="margin-bottom: 10px; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4);">
-        🔐 Configure AWS
-      </button>
-
-      <button id="saveSettingsBtn" class="secondary-btn">Save Settings</button>
-      <button id="newSessionBtn" class="danger-btn" style="margin-top: 10px;">New Session</button>
+      <!-- Global Actions (Always Visible) -->
+      <div class="sidebar-actions"
+        style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <button id="saveSettingsBtn" class="secondary-btn" style="width: 100%; margin-bottom: 10px;">Save
+          Settings</button>
+        <button id="newSessionBtn" class="danger-btn" style="width: 100%;">New Session</button>
+      </div>
     </div>
 
     <div class="main-content">
@@ -77,7 +113,16 @@
       </div>
 
       <div class="transcript-container" id="transcript">
-        <div class="transcript-empty">Transcript will appear here...</div>
+        <div id="chat-container">
+          <!-- Messages will appear here -->
+        </div>
+      </div>
+
+      <!-- Debug Panel -->
+      <div id="debug-panel"
+        style="display: none; margin-top: 20px; padding: 15px; background: #1e1e1e; border-radius: 8px; font-family: monospace; font-size: 12px; color: #00ff00;">
+        <h3 style="margin-top: 0; color: #fff;">🛠️ Debug Panel</h3>
+        <div id="debug-content">Waiting for interaction...</div>
       </div>
 
       <div class="chat-input-container">

@@ -534,6 +534,14 @@ export class SonicClient {
     }
 
     /**
+     * Update Session Configuration
+     */
+    updateSessionConfig(config: any) {
+        this.sessionConfig = { ...this.sessionConfig, ...config };
+        console.log('[SonicClient] Updated session config:', this.sessionConfig);
+    }
+
+    /**
      * Send audio chunk to Nova 2 Sonic
      */
     async sendAudioChunk(chunk: AudioChunk): Promise<void> {

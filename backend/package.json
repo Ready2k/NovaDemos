@@ -18,7 +18,9 @@
   "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.944.0",
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.943.0",
     "@aws-sdk/client-bedrock-runtime": "^3.943.0",
+    "@aws-sdk/client-transcribe-streaming": "^3.943.0",
     "dotenv": "^17.2.3",
     "ws": "^8.18.0"
   },

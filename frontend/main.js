@@ -41,16 +41,19 @@ class VoiceAssistant {
         this.disconnectBtn = document.getElementById('disconnectButton');
         this.startBtn = document.getElementById('startBtn');
         this.stopBtn = document.getElementById('stopBtn');
-        // Persona Settings
+        // Settings elements
+        this.personaSelect = document.getElementById('persona-preset'); // Renamed from presetSelect for clarity in diff
         this.systemPromptInput = document.getElementById('systemPrompt');
         this.speechPromptInput = document.getElementById('speechPrompt');
+        this.voiceSelect = document.getElementById('voice-preset');
+        this.brainModeSelect = document.getElementById('brain-mode');
+        this.debugModeCheckbox = document.getElementById('debug-mode');
+        this.debugPanel = document.getElementById('debug-panel');
+        this.debugContent = document.getElementById('debug-content');
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
         this.newSessionBtn = document.getElementById('newSessionBtn');
         this.modeSelect = document.getElementById('interaction-mode');
-        this.presetSelect = document.getElementById('persona-preset');
-        this.presetSelect = document.getElementById('persona-preset');
-        this.voiceSelect = document.getElementById('voice-preset');
-
+        this.presetSelect = document.getElementById('persona-preset'); // Kept for existing logic, but personaSelect is also present
         // Chat Input
         this.textInput = document.getElementById('textInput');
         this.sendBtn = document.getElementById('sendBtn');
@@ -83,6 +86,7 @@ class VoiceAssistant {
         // Initialize UI options first
         this.initializePresets();
         this.initializeVoices();
+        this.initializeTabs();
 
         // Then load saved settings
         this.loadSettings();
@@ -96,9 +100,34 @@ class VoiceAssistant {
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
-        this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+        // Settings listeners
         this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
         this.newSessionBtn.addEventListener('click', () => this.startNewSession());
+
+        if (this.brainModeSelect) {
+            this.brainModeSelect.addEventListener('change', () => this.saveSettings());
+        }
+
+        if (this.debugModeCheckbox) {
+            this.debugModeCheckbox.addEventListener('change', () => {
+                this.debugPanel.style.display = this.debugModeCheckbox.checked ? 'block' : 'none';
+            });
+        }
+
+        if (this.personaSelect) {
+            this.personaSelect.addEventListener('change', () => {
+                const selectedPrompt = this.personaSelect.value;
+                if (selectedPrompt) {
+                    this.systemPromptInput.value = selectedPrompt;
+                }
+            });
+        }
+        if (this.voiceSelect) {
+            this.voiceSelect.addEventListener('change', () => this.saveSettings());
+        }
+        if (this.modeSelect) {
+            this.modeSelect.addEventListener('change', () => this.updateUIMode());
+        }
 
         // AWS Config Events
         this.awsConfigBtn.addEventListener('click', () => {
@@ -155,6 +184,29 @@ class VoiceAssistant {
         });
     }
 
+    initializeTabs() {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Remove active class from all
+                tabBtns.forEach(b => b.classList.remove('active'));
+                tabContents.forEach(c => c.classList.remove('active'));
+
+                // Add active class to clicked button
+                btn.classList.add('active');
+
+                // Show corresponding content
+                const tabId = btn.getAttribute('data-tab');
+                const content = document.getElementById(`tab-${tabId}`);
+                if (content) {
+                    content.classList.add('active');
+                }
+            });
+        });
+    }
+
     startNewSession() {
         if (confirm('Start a new session? This will clear the transcript and reset settings.')) {
             // Clear transcript
@@ -164,12 +216,12 @@ class VoiceAssistant {
             localStorage.removeItem('nova_system_prompt');
             localStorage.removeItem('nova_speech_prompt');
             localStorage.removeItem('nova_voice_id');
+            localStorage.removeItem('nova_brain_mode'); // New: Clear brain mode
 
             this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
             this.speechPromptInput.value = "";
-            this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
-            this.speechPromptInput.value = "";
             if (this.voiceSelect) this.voiceSelect.value = "matthew"; // Default
+            if (this.brainModeSelect) this.brainModeSelect.value = "raw_nova"; // Default
 
             // Reset stats
             this.resetStats();
@@ -189,6 +241,7 @@ class VoiceAssistant {
         const savedSystemPrompt = localStorage.getItem('nova_system_prompt');
         const savedSpeechPrompt = localStorage.getItem('nova_speech_prompt');
         const savedVoiceId = localStorage.getItem('nova_voice_id');
+        const savedBrainMode = localStorage.getItem('nova_brain_mode'); // New: Load brain mode
 
         if (savedSystemPrompt) {
             this.systemPromptInput.value = savedSystemPrompt;
@@ -199,6 +252,9 @@ class VoiceAssistant {
         if (savedVoiceId && this.voiceSelect) {
             this.voiceSelect.value = savedVoiceId;
         }
+        if (savedBrainMode && this.brainModeSelect) { // New: Apply brain mode
+            this.brainModeSelect.value = savedBrainMode;
+        }
     }
 
     saveSettings() {
@@ -206,6 +262,9 @@ class VoiceAssistant {
         localStorage.setItem('nova_speech_prompt', this.speechPromptInput.value);
         if (this.voiceSelect) {
             localStorage.setItem('nova_voice_id', this.voiceSelect.value);
+        }
+        if (this.brainModeSelect) { // New: Save brain mode
+            localStorage.setItem('nova_brain_mode', this.brainModeSelect.value);
         }
 
         // Send update to server if connected
@@ -215,11 +274,12 @@ class VoiceAssistant {
                 config: {
                     systemPrompt: this.systemPromptInput.value,
                     speechPrompt: this.speechPromptInput.value,
-                    voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
+                    voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
+                    brainMode: this.brainModeSelect ? this.brainModeSelect.value : 'raw_nova'
                 }
             };
             this.ws.send(new TextEncoder().encode(JSON.stringify(config)));
-            this.log('Updated session configuration');
+            this.log(`Updated session configuration (Mode: ${config.config.brainMode})`);
         }
 
         // Visual feedback
@@ -274,7 +334,8 @@ class VoiceAssistant {
                         config: {
                             systemPrompt: this.systemPromptInput.value,
                             speechPrompt: this.speechPromptInput.value,
-                            voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
+                            voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
+                            brainMode: this.brainModeSelect ? this.brainModeSelect.value : 'raw_nova'
                         }
                     };
                     this.ws.send(JSON.stringify(config));
@@ -325,12 +386,18 @@ class VoiceAssistant {
                                 break;
 
                             case 'interruption':
-                                this.log('⚡ Barge-in detected! Stopping playback.', 'warning');
-                                this.audioProcessor.clearQueue();
+                                this.handleInterruption();
+                                break;
+
+                            case 'ttsOutput':
+                                this.renderTTSOutput(message);
+                                break;
+
+                            case 'debugInfo':
+                                this.renderDebugInfo(message.data);
                                 break;
 
                             case 'error':
-                                this.log(`Error: ${message.message}`, 'error');
                                 this.showToast(message.message, 'error');
                                 break;
 
@@ -781,6 +848,65 @@ class VoiceAssistant {
         this.log('Sent AWS credentials to server');
         this.showToast('AWS Credentials Updated', 'success');
     }
+
+    handleInterruption() {
+        this.log('⚡ Barge-in detected! Stopping playback.', 'warning');
+        this.audioProcessor.clearQueue();
+    }
+
+    renderDebugInfo(data) {
+        if (!this.debugModeCheckbox.checked) return;
+
+        const { transcript, agentReply, trace } = data;
+        let html = `<div><strong>🗣️ Transcript:</strong> "${transcript}"</div>`;
+
+        if (trace && trace.length > 0) {
+            html += `<div style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"><strong>🧠 Agent Thought:</strong></div>`;
+            trace.forEach(t => {
+                // Check for Orchestration Trace (Tools/KB)
+                // Note: Trace structure is { trace: { orchestrationTrace: ... } }
+                const ot = t.trace?.orchestrationTrace || t.orchestrationTrace;
+
+                if (ot) {
+                    // Tool Usage
+                    if (ot.invocationInput?.actionGroupInvocationInput) {
+                        const tool = ot.invocationInput.actionGroupInvocationInput;
+                        html += `<div style="color: #00ffff; margin-left: 10px;">🔧 Tool Call: ${tool.function} (${JSON.stringify(tool.parameters)})</div>`;
+                    }
+
+                    // KB Search
+                    if (ot.observation?.knowledgeBaseLookupOutput?.retrievedReferences) {
+                        const refs = ot.observation.knowledgeBaseLookupOutput.retrievedReferences;
+                        html += `<div style="color: #ff00ff; margin-left: 10px;">📚 KB Hits: ${refs.length} references found</div>`;
+                    }
+
+                    // Rationale (Reasoning)
+                    if (ot.rationale) {
+                        html += `<div style="color: #ffff00; margin-left: 10px;">🤔 Reasoning: ${ot.rationale.text}</div>`;
+                    }
+                }
+            });
+        }
+
+        html += `<div style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"><strong>🤖 Agent Reply:</strong> "${agentReply}"</div>`;
+        html += `<div style="color: #aaa; font-size: 10px;">🔊 Voice: ${this.voiceSelect.value}</div>`;
+        html += `<div id="tts-output-container" style="margin-top: 5px; color: #888; font-style: italic;"></div>`;
+
+        this.debugContent.innerHTML = html;
+        this.debugPanel.scrollTop = this.debugPanel.scrollHeight;
+    }
+
+    renderTTSOutput(data) {
+        if (!this.debugModeCheckbox.checked) return;
+
+        const container = document.getElementById('tts-output-container');
+        if (container) {
+            // If it's a new turn (or we just cleared it), set it. Otherwise append/update?
+            // Actually, Nova sends partials. We just want the latest text.
+            container.innerHTML = `<strong>🔊 TTS Output:</strong> "${data.text}"`;
+        }
+    }
+
 }
 
 // Initialize application when DOM is ready
