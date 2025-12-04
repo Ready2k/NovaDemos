@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+# Define paths
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+
+echo "=========================================="
+echo "Restarting Voice S2S Service"
+echo "=========================================="
+
+# 1. Kill existing process on port 8080
+echo "[1/3] Cleaning up port 8080..."
+PID=$(lsof -t -i :8080 || true)
+if [ -n "$PID" ]; then
+  echo "Killing process $PID"
+  kill -9 $PID
+else
+  echo "No process found on port 8080."
+fi
+
+# 2. Build Backend
+echo "[2/3] Building backend..."
+cd "$BACKEND_DIR"
+# Check if node_modules exists, if not install
+if [ ! -d "node_modules" ]; then
+    echo "Installing dependencies..."
+    npm install
+fi
+npm run build
+
+# 3. Start Server
+echo "[3/3] Starting server..."
+npm start

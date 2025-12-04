@@ -21,15 +21,52 @@ class VoiceAssistant {
         this.logEl = document.getElementById('log');
         this.transcriptEl = document.getElementById('transcript');
         this.connectBtn = document.getElementById('connectBtn');
+        this.disconnectBtn = document.getElementById('disconnectButton');
         this.startBtn = document.getElementById('startBtn');
         this.stopBtn = document.getElementById('stopBtn');
+        // Persona Settings
+        this.systemPromptInput = document.getElementById('systemPrompt');
+        this.speechPromptInput = document.getElementById('speechPrompt');
+        this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+        // Load saved settings
+        this.loadSettings();
 
         // Bind event handlers
         this.connectBtn.addEventListener('click', () => this.connect());
+        this.disconnectBtn.addEventListener('click', () => this.disconnect());
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
+        this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
 
         this.log('Application ready');
+    }
+
+    loadSettings() {
+        const savedSystemPrompt = localStorage.getItem('nova_system_prompt');
+        const savedSpeechPrompt = localStorage.getItem('nova_speech_prompt');
+
+        if (savedSystemPrompt) {
+            this.systemPromptInput.value = savedSystemPrompt;
+        }
+        if (savedSpeechPrompt) {
+            this.speechPromptInput.value = savedSpeechPrompt;
+        }
+    }
+
+    saveSettings() {
+        localStorage.setItem('nova_system_prompt', this.systemPromptInput.value);
+        localStorage.setItem('nova_speech_prompt', this.speechPromptInput.value);
+
+        // Visual feedback
+        const originalText = this.saveSettingsBtn.textContent;
+        this.saveSettingsBtn.textContent = 'Saved!';
+        this.saveSettingsBtn.style.background = '#d4edda';
+
+        setTimeout(() => {
+            this.saveSettingsBtn.textContent = originalText;
+            this.saveSettingsBtn.style.background = '';
+        }, 2000);
     }
 
     /**
@@ -52,6 +89,19 @@ class VoiceAssistant {
             this.ws.onopen = () => {
                 this.log('Connected to server', 'success');
                 this.updateState('connected');
+
+                // Send session configuration
+                const systemPrompt = document.getElementById('systemPrompt').value;
+                const speechPrompt = document.getElementById('speechPrompt').value;
+
+                this.ws.send(JSON.stringify({
+                    type: 'sessionConfig',
+                    config: {
+                        systemPrompt,
+                        speechPrompt
+                    }
+                }));
+                this.log('Sent persona configuration');
             };
 
             this.ws.onmessage = (event) => {
@@ -138,6 +188,14 @@ class VoiceAssistant {
     sendAudioData(audioData) {
         if (this.ws?.readyState === WebSocket.OPEN) {
             this.ws.send(audioData);
+
+            // Debug logging
+            this.chunkCount = (this.chunkCount || 0) + 1;
+            if (this.chunkCount % 50 === 0) {
+                console.log(`[Frontend] Sent ${this.chunkCount} audio chunks (${audioData.byteLength} bytes each)`);
+            }
+        } else {
+            console.warn('[Frontend] WebSocket not open, cannot send audio');
         }
     }
 
@@ -162,8 +220,13 @@ class VoiceAssistant {
                     break;
 
                 case 'transcript':
-                    this.displayTranscript(message.role || 'assistant', message.text);
+                    this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
                     this.log(`Transcript [${message.role}]: ${message.text}`);
+                    break;
+
+                case 'interruption':
+                    this.log('⚡ Barge-in detected! Stopping playback.', 'error');
+                    this.audioProcessor.clearQueue();
                     break;
 
                 case 'error':
@@ -198,6 +261,7 @@ class VoiceAssistant {
         // Update button states
         this.connectBtn.disabled = newState !== 'disconnected';
         this.connectBtn.textContent = newState === 'disconnected' ? 'Connect' : 'Connected';
+        this.disconnectBtn.disabled = newState === 'disconnected';
 
         this.startBtn.disabled = newState !== 'connected';
         this.stopBtn.disabled = newState !== 'recording';
@@ -206,21 +270,27 @@ class VoiceAssistant {
     /**
      * Display transcript in UI
      */
-    displayTranscript(role, text) {
-        // Remove empty state on first transcript
-        const emptyState = this.transcriptEl.querySelector('.transcript-empty');
-        if (emptyState) {
-            emptyState.remove();
+    displayTranscript(role, text, isFinal = true) {
+        const lastMessage = this.transcriptEl.lastElementChild;
+        const isTemporary = lastMessage && lastMessage.classList.contains('temporary');
+        const isSameRole = lastMessage && lastMessage.classList.contains(role);
+
+        if (isTemporary && isSameRole) {
+            // Update existing temporary message
+            lastMessage.querySelector('.text').textContent = text;
+            if (isFinal) {
+                lastMessage.classList.remove('temporary');
+            }
+        } else {
+            // Create new message
+            const entry = document.createElement('div');
+            entry.className = `transcript-entry ${role} ${isFinal ? '' : 'temporary'}`;
+            entry.innerHTML = `
+                <span class="role">${role === 'assistant' ? '🤖 Assistant' : '👤 User'}:</span>
+                <span class="text">${text}</span>
+            `;
+            this.transcriptEl.appendChild(entry);
         }
-
-        const entry = document.createElement('div');
-        entry.className = `transcript-entry ${role}`;
-        entry.innerHTML = `
-      <span class="role">${role === 'assistant' ? '🤖 Assistant' : '👤 User'}:</span>
-      <span>${text}</span>
-    `;
-
-        this.transcriptEl.appendChild(entry);
 
         // Auto-scroll to bottom
         this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;

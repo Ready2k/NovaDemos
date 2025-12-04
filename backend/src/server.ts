@@ -92,6 +92,16 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     }
                     break;
 
+                case 'interruption':
+                    // Forward interruption signal
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'interruption'
+                        }));
+                        console.log('[Server] Sent interruption signal to client');
+                    }
+                    break;
+
                 case 'error':
                     // Log error and notify client
                     console.error('[Server] Nova Sonic error:', event.data);
@@ -125,16 +135,34 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         return;
     }
 
-    // Handle incoming binary audio frames
-    ws.on('message', async (data: Buffer) => {
+    // Handle incoming messages (JSON config or binary audio)
+    ws.on('message', async (data: any) => {
         try {
-            // Validate binary data
+            // Check if it's a JSON message (configuration)
+            if (!Buffer.isBuffer(data) || (data.length > 0 && data[0] === 123)) { // 123 is '{'
+                try {
+                    const message = JSON.parse(data.toString());
+                    if (message.type === 'sessionConfig') {
+                        console.log(`[Server] Received session config for ${sessionId}`);
+                        const session = activeSessions.get(ws);
+                        if (session) {
+                            // Update client config
+                            session.sonicClient.setConfig(message.config);
+                        }
+                    }
+                    return;
+                } catch (e) {
+                    // Not JSON, treat as audio if buffer
+                }
+            }
+
+            // Validate binary data for audio
             if (!Buffer.isBuffer(data)) {
                 console.error('[Server] Received non-buffer data');
                 return;
             }
 
-            console.log(`[Server] Received audio chunk: ${data.length} bytes from ${sessionId}`);
+            // console.log(`[Server] Received audio chunk: ${data.length} bytes from ${sessionId}`);
 
             // Route audio to Nova Sonic
             const chunk: AudioChunk = {
@@ -144,10 +172,10 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
             await sonicClient.sendAudioChunk(chunk);
 
         } catch (error) {
-            console.error('[Server] Error processing audio:', error);
+            console.error('[Server] Error processing message:', error);
             ws.send(JSON.stringify({
                 type: 'error',
-                message: 'Failed to process audio'
+                message: 'Failed to process message'
             }));
         }
     });
@@ -175,6 +203,17 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 // Handle server errors
 wss.on('error', (error: Error) => {
     console.error('[Server] WebSocket server error:', error);
+});
+
+// Prevent crash on stream errors (common with AWS SDK bidirectional streams)
+process.on('uncaughtException', (error: Error) => {
+    if (error.message === 'Premature close' || (error as any).code === 'ERR_STREAM_PREMATURE_CLOSE') {
+        console.warn('[Server] Caught stream premature close (ignoring):', error.message);
+    } else {
+        console.error('[Server] Uncaught exception:', error);
+        // For other critical errors, we might want to exit, but for dev we'll keep running
+        // process.exit(1); 
+    }
 });
 
 // Start HTTP server

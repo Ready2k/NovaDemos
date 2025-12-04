@@ -17,6 +17,7 @@ class AudioProcessor {
         this.playbackNodes = [];
         this.isRecording = false;
         this.onAudioData = null; // Callback for audio data
+        this.nextStartTime = 0; // Track when the next audio chunk should play
 
         // Audio configuration
         this.SAMPLE_RATE = 16000;
@@ -29,10 +30,9 @@ class AudioProcessor {
      */
     async initialize() {
         try {
-            // Create audio context with specific sample rate
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                sampleRate: this.SAMPLE_RATE
-            });
+            // Create audio context (let browser choose sample rate)
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log(`[AudioProcessor] AudioContext created with sample rate: ${this.audioContext.sampleRate}Hz`);
 
             // Request microphone access
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -67,8 +67,13 @@ class AudioProcessor {
             await this.initialize();
         }
 
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+        }
+
         this.onAudioData = onAudioData;
         this.isRecording = true;
+        this.nextStartTime = this.audioContext.currentTime; // Reset playback time
 
         // Create source node from microphone stream
         this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
@@ -83,14 +88,23 @@ class AudioProcessor {
         );
 
         // Process audio data
+        let processCount = 0;
         this.processorNode.onaudioprocess = (event) => {
             if (!this.isRecording) return;
+
+            processCount++;
+            if (processCount % 50 === 0) {
+                console.log('[AudioProcessor] Processing audio chunk', processCount);
+            }
 
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0); // Get mono channel
 
+            // Downsample to 16kHz
+            const downsampledData = this.downsample(inputData, this.audioContext.sampleRate, this.SAMPLE_RATE);
+
             // Convert Float32Array to PCM16 (Int16Array)
-            const pcm16Data = this.convertToPCM16(inputData);
+            const pcm16Data = this.convertToPCM16(downsampledData);
 
             // Send to callback (WebSocket)
             if (this.onAudioData) {
@@ -159,8 +173,13 @@ class AudioProcessor {
             // Connect to destination (speakers)
             sourceNode.connect(this.audioContext.destination);
 
-            // Play audio
-            sourceNode.start();
+            // Schedule playback
+            // Ensure we don't schedule in the past
+            const startTime = Math.max(this.audioContext.currentTime, this.nextStartTime);
+            sourceNode.start(startTime);
+
+            // Update next start time
+            this.nextStartTime = startTime + audioBuffer.duration;
 
             // Clean up after playback
             sourceNode.onended = () => {
@@ -171,6 +190,34 @@ class AudioProcessor {
         } catch (error) {
             console.error('Failed to play audio:', error);
         }
+    }
+
+    /**
+     * Downsample audio to target sample rate
+     */
+    downsample(buffer, inputRate, outputRate) {
+        if (inputRate === outputRate) {
+            return buffer;
+        }
+
+        const compression = inputRate / outputRate;
+        const length = Math.floor(buffer.length / compression);
+        const result = new Float32Array(length);
+
+        for (let i = 0; i < length; i++) {
+            // Simple linear interpolation
+            const pos = i * compression;
+            const index = Math.floor(pos);
+            const decimal = pos - index;
+
+            if (index + 1 < buffer.length) {
+                result[i] = buffer[index] * (1 - decimal) + buffer[index + 1] * decimal;
+            } else {
+                result[i] = buffer[index];
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -205,21 +252,36 @@ class AudioProcessor {
     }
 
     /**
+     * Clear audio queue and stop current playback
+     */
+    clearQueue() {
+        // Stop all currently playing nodes
+        this.playbackNodes.forEach(node => {
+            try {
+                node.stop();
+                node.disconnect();
+            } catch (e) {
+                // Ignore errors if already stopped
+            }
+        });
+        this.playbackNodes = [];
+
+        // Reset playback time to now
+        if (this.audioContext) {
+            this.nextStartTime = this.audioContext.currentTime;
+        }
+
+        console.log('[AudioProcessor] Audio queue cleared');
+    }
+
+    /**
      * Clean up resources
      */
     cleanup() {
         this.stopRecording();
 
         // Stop all playback
-        this.playbackNodes.forEach(node => {
-            try {
-                node.stop();
-                node.disconnect();
-            } catch (e) {
-                // Ignore errors
-            }
-        });
-        this.playbackNodes = [];
+        this.clearQueue();
 
         // Stop media stream
         if (this.mediaStream) {

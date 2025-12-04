@@ -239,42 +239,137 @@
       font-style: italic;
       text-align: center;
     }
+
+    .app-wrapper {
+      display: flex;
+      gap: 20px;
+      max-width: 1000px;
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    .sidebar {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 30px;
+      width: 350px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      height: fit-content;
+    }
+
+    .sidebar h2 {
+      font-size: 20px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .form-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      background: #f5f5f7;
+      transition: all 0.3s ease;
+    }
+
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .secondary-btn {
+      background: #f0f0f0;
+      color: #333;
+      border: 1px solid #ddd;
+      padding: 10px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      width: 100%;
+      transition: all 0.3s ease;
+    }
+
+    .secondary-btn:hover {
+      background: #e0e0e0;
+      transform: translateY(-1px);
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 40px;
+      flex: 1;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <h1>🎙️ Voice Assistant</h1>
-    <p class="subtitle">Real-time speech-to-speech with Amazon Nova Sonic</p>
-
-    <div id="status" class="status disconnected">
-      Disconnected
+  <div class="app-wrapper">
+    <div class="sidebar">
+      <h2>Persona Settings</h2>
+      <div class="form-group">
+        <label for="systemPrompt">System Prompt</label>
+        <textarea id="systemPrompt"
+          rows="10">You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.</textarea>
+      </div>
+      <div class="form-group">
+        <label for="speechPrompt">Speech Prompt (Optional)</label>
+        <textarea id="speechPrompt" rows="4" placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
+      </div>
+      <button id="saveSettingsBtn" class="secondary-btn">Save Settings</button>
     </div>
 
-    <div class="visualizer">
-      <canvas id="visualizer"></canvas>
-    </div>
+    <div class="container">
+      <h1>🎙️ Voice Assistant</h1>
+      <p class="subtitle">Real-time speech-to-speech with Amazon Nova Sonic</p>
 
-    <div class="controls">
-      <button id="connectBtn">Connect</button>
-      <button id="startBtn" disabled>Start Recording</button>
-      <button id="stopBtn" disabled>Stop Recording</button>
-    </div>
+      <div id="status" class="status disconnected">
+        Disconnected
+      </div>
 
-    <div class="transcript" id="transcript">
-      <div class="transcript-empty">Transcript will appear here...</div>
-    </div>
+      <div class="visualizer">
+        <canvas id="visualizer"></canvas>
+      </div>
 
-    <div class="log" id="log">
-      <div class="log-entry">
-        <span class="timestamp">--:--:--</span>
-        <span>Ready to connect...</span>
+      <div class="controls">
+        <button id="connectBtn">Connect</button>
+        <button id="startBtn" disabled>Start Recording</button>
+        <button id="stopBtn" disabled>Stop Recording</button>
+        <button id="disconnectButton" disabled style="background-color: #ef4444; margin-left: 10px;">Disconnect</button>
+      </div>
+
+      <div class="transcript" id="transcript">
+        <div class="transcript-empty">Transcript will appear here...</div>
+      </div>
+
+      <div class="log" id="log">
+        <div class="log-entry">
+          <span class="timestamp">--:--:--</span>
+          <span>Ready to connect...</span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <script src="audio.js"></script>
-  <script src="main.js"></script>
+    <script src="audio.js"></script>
+    <script src="main.js"></script>
 </body>
 
 </html>

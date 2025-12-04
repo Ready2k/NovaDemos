@@ -18,6 +18,8 @@ export interface SonicConfig {
     modelId?: string;
     accessKeyId?: string;
     secretAccessKey?: string;
+    sessionToken?: string;
+    bearerToken?: string;
 }
 
 /**
@@ -32,7 +34,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption';
     data: any;
 }
 
@@ -41,14 +43,20 @@ export interface SonicEvent {
  */
 export class SonicClient {
     private client: BedrockRuntimeClient;
-    private config: Required<SonicConfig>;
+    private config: Required<SonicConfig> & { bearerToken?: string; sessionToken?: string };
     private sessionId: string | null = null;
-    private eventCallback: ((event: SonicEvent) => void) | null = null;
+    private eventCallback?: (event: SonicEvent) => void;
+    private currentPromptName?: string;
+    private currentContentName?: string;
+    private currentRole: string = 'assistant';
+    private recentOutputs: string[] = [];
+    private contentStages: Map<string, string> = new Map();
     private inputStream: AsyncGenerator<any> | null = null;
     private outputStream: AsyncIterable<any> | null = null;
     private isProcessing: boolean = false;
     private inputQueue: Buffer[] = [];
     private streamController: any = null;
+    private sessionConfig: { systemPrompt?: string; speechPrompt?: string } = {};
 
     constructor(config: SonicConfig = {}) {
         // Load configuration from environment variables with fallbacks
@@ -57,18 +65,37 @@ export class SonicClient {
             modelId: config.modelId || process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0',
             accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID || '',
             secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY || '',
+            sessionToken: config.sessionToken || process.env.AWS_SESSION_TOKEN || '',
+            bearerToken: config.bearerToken || process.env.AWS_BEARER_TOKEN_BEDROCK || '',
         };
 
         // Initialize AWS Bedrock Runtime client
-        this.client = new BedrockRuntimeClient({
+        const clientConfig: any = {
             region: this.config.region,
-            credentials: this.config.accessKeyId && this.config.secretAccessKey ? {
+        };
+
+        if (this.config.bearerToken) {
+            console.log('[SonicClient] Using Bearer Token authentication');
+            // The SDK expects a TokenIdentityProvider (function returning Promise<Token>)
+            // or a static Token object. We'll provide a static identity object.
+            clientConfig.token = { token: this.config.bearerToken };
+        } else if (this.config.accessKeyId && this.config.secretAccessKey) {
+            console.log('[SonicClient] Using IAM Credentials authentication');
+            clientConfig.credentials = {
                 accessKeyId: this.config.accessKeyId,
                 secretAccessKey: this.config.secretAccessKey,
-            } : undefined,
-        });
+                sessionToken: this.config.sessionToken || undefined,
+            };
+        }
+
+        this.client = new BedrockRuntimeClient(clientConfig);
 
         console.log(`[SonicClient] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
+    }
+
+    setConfig(config: { systemPrompt?: string; speechPrompt?: string }) {
+        this.sessionConfig = config;
+        console.log('[SonicClient] Configuration updated:', this.sessionConfig);
     }
 
     /**
@@ -100,13 +127,24 @@ export class SonicClient {
             this.outputStream = response.body || null;
 
             // Start processing output events
-            this.processOutputEvents();
+            if (this.outputStream) {
+                this.processOutputEvents(this.outputStream);
+            }
 
             console.log(`[SonicClient] Session started successfully: ${this.sessionId}`);
-        } catch (error) {
+        } catch (error: any) {
             console.error('[SonicClient] Failed to start session:', error);
+
+            // Handle specific AWS errors
+            if (error.name === 'AccessDeniedException') {
+                console.error('[SonicClient] Access Denied: Check AWS credentials and model access permissions.');
+            } else if (error.name === 'ValidationException') {
+                console.error('[SonicClient] Validation Error: Check model ID and region.');
+            }
+
             this.sessionId = null;
             this.isProcessing = false;
+            // Re-throw to let the caller handle the cleanup/notification
             throw error;
         }
     }
@@ -117,21 +155,220 @@ export class SonicClient {
     private async *createInputStream(): AsyncGenerator<any> {
         console.log('[SonicClient] Input stream generator started');
 
+        const promptName = `prompt-${Date.now()}`;
+        const contentName = `audio-${Date.now()}`;
+        this.currentPromptName = promptName;
+        this.currentContentName = contentName;
+
+        // 1. Session Start
+        const sessionStartEvent = {
+            event: {
+                sessionStart: {
+                    inferenceConfiguration: {
+                        maxTokens: 2048,
+                        topP: 0.9,
+                        temperature: 0.7
+                    }
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(sessionStartEvent)) } };
+
+        // 2. Prompt Start
+        const promptStartEvent = {
+            event: {
+                promptStart: {
+                    promptName: promptName,
+                    textOutputConfiguration: {
+                        mediaType: "text/plain"
+                    },
+                    audioOutputConfiguration: {
+                        mediaType: "audio/lpcm",
+                        sampleRateHertz: 16000,
+                        sampleSizeBits: 16,
+                        channelCount: 1,
+                        voiceId: "matthew",
+                        encoding: "base64",
+                        audioType: "SPEECH"
+                    }
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(promptStartEvent)) } };
+
+        // 3. System Prompt Content Start
+        const systemContentName = `system-${Date.now()}`;
+        const systemContentStartEvent = {
+            event: {
+                contentStart: {
+                    promptName: promptName,
+                    contentName: systemContentName,
+                    type: "TEXT",
+                    interactive: false,
+                    role: "SYSTEM",
+                    textInputConfiguration: {
+                        mediaType: "text/plain"
+                    }
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStartEvent)) } };
+
+        // 4. System Prompt Text Input
+        const systemPromptText = this.sessionConfig.systemPrompt || "You are a warm, professional, and helpful AI assistant.";
+        const systemTextInputEvent = {
+            event: {
+                textInput: {
+                    promptName: promptName,
+                    contentName: systemContentName,
+                    content: systemPromptText
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(systemTextInputEvent)) } };
+
+        // 5. System Prompt Content End
+        const systemContentEndEvent = {
+            event: {
+                contentEnd: {
+                    promptName: promptName,
+                    contentName: systemContentName
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentEndEvent)) } };
+
+        // Optional: Speech Prompt (for Hindi code-switching etc)
+        if (this.sessionConfig.speechPrompt) {
+            const speechPromptName = `speech-prompt-${Date.now()}`;
+            const speechContentStartEvent = {
+                event: {
+                    contentStart: {
+                        promptName: promptName,
+                        contentName: speechPromptName,
+                        type: "TEXT",
+                        interactive: false,
+                        role: "USER", // Speech prompts are sent as user input but act as instructions
+                        textInputConfiguration: {
+                            mediaType: "text/plain"
+                        }
+                    }
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(speechContentStartEvent)) } };
+
+            const speechTextInputEvent = {
+                event: {
+                    textInput: {
+                        promptName: promptName,
+                        contentName: speechPromptName,
+                        content: this.sessionConfig.speechPrompt
+                    }
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(speechTextInputEvent)) } };
+
+            const speechContentEndEvent = {
+                event: {
+                    contentEnd: {
+                        promptName: promptName,
+                        contentName: speechPromptName
+                    }
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(speechContentEndEvent)) } };
+        }
+
+        // 6. User Audio Content Start
+        const contentStartEvent = {
+            event: {
+                contentStart: {
+                    promptName: promptName,
+                    contentName: contentName,
+                    type: "AUDIO",
+                    interactive: true,
+                    role: "USER",
+                    audioInputConfiguration: {
+                        mediaType: "audio/lpcm",
+                        sampleRateHertz: 16000,
+                        sampleSizeBits: 16,
+                        channelCount: 1,
+                        audioType: "SPEECH",
+                        encoding: "base64"
+                    }
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(contentStartEvent)) } };
+
         while (this.isProcessing) {
             // Wait for audio chunks from the queue
             if (this.inputQueue.length > 0) {
                 const audioBuffer = this.inputQueue.shift()!;
 
-                // Yield audio event in Nova Sonic format
-                yield {
-                    audioEvent: {
-                        audioChunk: audioBuffer,
-                    },
+                // 7. Audio Input
+                const audioInputEvent = {
+                    event: {
+                        audioInput: {
+                            promptName: promptName,
+                            contentName: contentName,
+                            content: audioBuffer.toString('base64')
+                        }
+                    }
                 };
+
+                yield {
+                    chunk: {
+                        bytes: Buffer.from(JSON.stringify(audioInputEvent))
+                    }
+                };
+                // console.log('[SonicClient] Sent audio chunk');
             } else {
+                // Check if we need to stop
+                if (!this.isProcessing) break;
+
                 // Wait briefly before checking queue again
                 await new Promise(resolve => setTimeout(resolve, 10));
             }
+        }
+
+        // We can't easily yield the end events here if the loop breaks due to isProcessing = false
+        // because the generator might be closed. 
+        // However, the AWS SDK stream might need us to yield them before finishing.
+        // Let's try to yield them if we are closing gracefully.
+
+        if (this.currentPromptName && this.currentContentName) {
+            // 8. User Audio Content End
+            const contentEndEvent = {
+                event: {
+                    contentEnd: {
+                        promptName: this.currentPromptName,
+                        contentName: this.currentContentName
+                    }
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(contentEndEvent)) } };
+            console.log('[SonicClient] Sent UserAudioContentEndEvent');
+
+            // 9. Prompt End
+            const promptEndEvent = {
+                event: {
+                    promptEnd: {
+                        promptName: this.currentPromptName
+                    }
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(promptEndEvent)) } };
+            console.log('[SonicClient] Sent PromptEndEvent');
+
+            // 10. Session End
+            const sessionEndEvent = {
+                event: {
+                    sessionEnd: {}
+                }
+            };
+            yield { chunk: { bytes: Buffer.from(JSON.stringify(sessionEndEvent)) } };
+            console.log('[SonicClient] Sent SessionEndEvent');
         }
 
         console.log('[SonicClient] Input stream generator ended');
@@ -149,92 +386,132 @@ export class SonicClient {
             throw new Error('Session is not active.');
         }
 
+        // Check for silence (debugging)
+        const buffer = chunk.buffer;
+        let isSilent = true;
+        for (let i = 0; i < buffer.length; i++) {
+            if (buffer[i] !== 0) {
+                isSilent = false;
+                break;
+            }
+        }
+        if (isSilent) {
+            console.warn('[SonicClient] Warning: Received silent audio chunk');
+        }
+
         // Add to input queue for the async generator
         this.inputQueue.push(chunk.buffer);
 
-        console.log(`[SonicClient] Queued audio chunk: ${chunk.buffer.length} bytes (queue size: ${this.inputQueue.length})`);
+        // Log every 50 chunks to avoid spam
+        if (this.inputQueue.length % 50 === 0) {
+            console.log(`[SonicClient] Queue size: ${this.inputQueue.length}`);
+        }
     }
 
     /**
-     * Process output events from Nova 2 Sonic
+     * Handle output events from Nova Sonic
      */
-    private async processOutputEvents(): Promise<void> {
-        if (!this.outputStream) {
-            console.error('[SonicClient] No output stream available');
-            return;
-        }
-
+    private async processOutputEvents(outputStream: AsyncIterable<any>) {
         console.log('[SonicClient] Starting output event processing');
-
         try {
-            for await (const event of this.outputStream) {
-                if (!this.isProcessing) {
-                    console.log('[SonicClient] Stopping event processing (session ended)');
-                    break;
-                }
+            for await (const event of outputStream) {
+                // console.log('[SonicClient] Received raw event:', JSON.stringify(event));
 
-                // Parse different event types from Nova Sonic
-                if (event.chunk?.bytes) {
-                    // Decode the event payload
-                    const decoder = new TextDecoder();
-                    const payload = decoder.decode(event.chunk.bytes);
+                if (event.chunk && event.chunk.bytes) {
+                    const rawEvent = JSON.parse(Buffer.from(event.chunk.bytes).toString());
+                    console.log('[SonicClient] Received event type:', Object.keys(rawEvent.event || rawEvent)[0]);
 
-                    try {
-                        const parsedEvent = JSON.parse(payload);
+                    // Handle different event types
+                    const eventData = rawEvent.event || rawEvent;
 
-                        // Handle audio events
-                        if (parsedEvent.audioEvent) {
-                            const audioData = parsedEvent.audioEvent.audioChunk;
-                            console.log(`[SonicClient] Received audio event: ${audioData?.length || 0} bytes`);
 
-                            this.eventCallback?.({
-                                type: 'audio',
-                                data: { audio: audioData },
-                            });
+
+                    if (eventData.contentStart) {
+                        const contentId = eventData.contentStart.contentId;
+                        let stage = 'UNKNOWN';
+                        if (eventData.contentStart.additionalModelFields) {
+                            try {
+                                const fields = JSON.parse(eventData.contentStart.additionalModelFields);
+                                stage = fields.generationStage || 'UNKNOWN';
+                            } catch (e) {
+                                // Ignore parse error
+                            }
                         }
+                        this.contentStages.set(contentId, stage);
 
-                        // Handle transcript events
-                        if (parsedEvent.transcriptEvent) {
-                            const transcript = parsedEvent.transcriptEvent.transcript;
-                            console.log(`[SonicClient] Received transcript: "${transcript}"`);
+                        console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
+                        this.currentRole = eventData.contentStart.role;
+                    }
 
-                            this.eventCallback?.({
-                                type: 'transcript',
-                                data: { transcript, role: parsedEvent.transcriptEvent.role || 'assistant' },
-                            });
-                        }
-
-                        // Handle metadata events
-                        if (parsedEvent.metadata) {
-                            console.log('[SonicClient] Received metadata event');
-
-                            this.eventCallback?.({
-                                type: 'metadata',
-                                data: parsedEvent.metadata,
-                            });
-                        }
-
-                    } catch (parseError) {
-                        // If not JSON, might be raw audio
-                        console.log(`[SonicClient] Received raw audio chunk: ${event.chunk.bytes.length} bytes`);
-
+                    if (eventData.audioOutput) {
+                        const content = eventData.audioOutput.content;
+                        // console.log(`[SonicClient] Received audio chunk: ${content.length} bytes`);
                         this.eventCallback?.({
                             type: 'audio',
-                            data: { audio: Buffer.from(event.chunk.bytes) },
+                            data: { audio: Buffer.from(content, 'base64') }
                         });
                     }
+
+                    if (eventData.textOutput) {
+                        const content = eventData.textOutput.content;
+                        const contentId = eventData.textOutput.contentId;
+                        const stage = this.contentStages.get(contentId) || 'UNKNOWN';
+
+                        if (content && content.trim().length > 0) {
+                            // Deduplication check (history based)
+                            if (this.recentOutputs.includes(content)) {
+                                console.log(`[SonicClient] Ignoring duplicate text (ID: ${contentId}, Stage: ${stage}): "${content.substring(0, 20)}..."`);
+                            } else {
+                                console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" (${this.currentRole})`);
+
+                                // Add to history
+                                this.recentOutputs.push(content);
+                                if (this.recentOutputs.length > 5) {
+                                    this.recentOutputs.shift();
+                                }
+
+                                this.eventCallback?.({
+                                    type: 'transcript',
+                                    data: {
+                                        transcript: content,
+                                        role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                        isFinal: stage === 'FINAL'
+                                    },
+                                });
+                            }
+                        }
+                    }
+
+                    if (eventData.contentEnd) {
+                        console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
+                        if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
+                            console.log('[SonicClient] Interruption detected!');
+                            this.eventCallback?.({
+                                type: 'interruption',
+                                data: {}
+                            });
+                        }
+                    }
+
+                    if (eventData.serviceMetrics) {
+                        console.log('[SonicClient] Received metrics:', eventData.serviceMetrics);
+                    }
+
+                    if (eventData.usageEvent) {
+                        console.log('[SonicClient] Usage:', JSON.stringify(eventData.usageEvent));
+                    }
+                } else {
+                    console.log('[SonicClient] Received unknown event structure:', event);
                 }
             }
-
-            console.log('[SonicClient] Output event processing completed');
         } catch (error) {
             console.error('[SonicClient] Error processing output events:', error);
-
             this.eventCallback?.({
                 type: 'error',
                 data: { message: 'Stream processing error', error },
             });
         }
+        console.log('[SonicClient] Output event processing ended');
     }
 
     /**
@@ -257,8 +534,9 @@ export class SonicClient {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         // Reset state
+        this.isProcessing = false;
         this.sessionId = null;
-        this.eventCallback = null;
+        this.eventCallback = undefined;
         this.inputStream = null;
         this.outputStream = null;
 
