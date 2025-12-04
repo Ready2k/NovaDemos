@@ -13,6 +13,30 @@ dotenv.config();
 const PORT = 8080;
 const SONIC_PATH = '/sonic';
 const FRONTEND_DIR = path.join(__dirname, '../../frontend');
+const PROMPTS_DIR = path.join(__dirname, '../prompts');
+
+function loadPrompt(filename: string): string {
+    try {
+        return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+    } catch (err) {
+        console.error(`[Server] Failed to load prompt ${filename}:`, err);
+        return '';
+    }
+}
+
+function listPrompts(): { id: string, name: string, content: string }[] {
+    try {
+        const files = fs.readdirSync(PROMPTS_DIR);
+        return files.filter(f => f.endsWith('.txt')).map(f => ({
+            id: f,
+            name: f.replace('.txt', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            content: loadPrompt(f)
+        }));
+    } catch (err) {
+        console.error('[Server] Failed to list prompts:', err);
+        return [];
+    }
+}
 
 /**
  * WebSocket Server for Real-Time Voice-to-Voice Assistant
@@ -46,6 +70,13 @@ const server = http.createServer((req, res) => {
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
+        return;
+    }
+
+    if (req.url === '/api/prompts') {
+        const prompts = listPrompts();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(prompts));
         return;
     }
 
@@ -160,6 +191,12 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     const message = data.toString();
                     const parsed = JSON.parse(message);
 
+                    if (parsed.type === 'getPrompts') {
+                        const prompts = listPrompts();
+                        ws.send(JSON.stringify({ type: 'promptsList', prompts }));
+                        return;
+                    }
+
                     if (parsed.type === 'sessionConfig') {
                         console.log('[Server] Received session config:', parsed.config);
                         console.log('[Server] Full Config Object:', JSON.stringify(parsed.config, null, 2));
@@ -182,7 +219,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
-                                parsed.config.systemPrompt = "You are a verbatim text-to-speech engine. You must speak the user's input EXACTLY as provided, word for word. Do not paraphrase, summarize, or add any conversational filler. Just read the text.";
+                                parsed.config.systemPrompt = loadPrompt('agent_echo.txt');
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
                                 console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
                             }

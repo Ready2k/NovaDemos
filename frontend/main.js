@@ -7,14 +7,7 @@
  * - Integration between audio processing and WebSocket
  */
 
-const PERSONA_PRESETS = {
-    "Helpful Assistant": "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.",
-    "Sci-Fi Bot": "You are a strict compliance bot that can only talk about Science fiction. Lets make sure you greet the contact with \"Hi, I'm Barbot how can I help\". keep to the facts only",
-    "Pirate": "You are a salty old pirate captain. You speak in pirate slang (Yarr, Ahoy, Matey). You are adventurous but a bit grumpy. Keep your answers short and punchy.",
-    "French Tutor": "You are a patient and encouraging French language tutor. You speak mostly in English but introduce French vocabulary and phrases where appropriate. Correct the user's pronunciation and grammar gently.",
-    "Concise Coder": "You are an expert software engineer. You provide code solutions that are efficient, modern, and well-commented. You explain concepts briefly and focus on the implementation. Avoid fluff.",
-    "Banking Bot": "You are a professional banking assistant. You are polite, formal, and security-conscious. You can help with general banking inquiries but always remind users not to share sensitive info like PINs or passwords."
-};
+
 
 const VOICE_PRESETS = [
     { id: "matthew", name: "Matthew (US Male)" },
@@ -46,14 +39,24 @@ class VoiceAssistant {
         this.systemPromptInput = document.getElementById('systemPrompt');
         this.speechPromptInput = document.getElementById('speechPrompt');
         this.voiceSelect = document.getElementById('voice-preset');
-        this.brainModeSelect = document.getElementById('brain-mode');
+        this.promptPresetSelect = document.getElementById('prompt-preset');
         this.debugModeCheckbox = document.getElementById('debug-mode');
         this.debugPanel = document.getElementById('debug-panel');
         this.debugContent = document.getElementById('debug-content');
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
         this.newSessionBtn = document.getElementById('newSessionBtn');
         this.modeSelect = document.getElementById('interaction-mode');
-        this.presetSelect = document.getElementById('persona-preset'); // Kept for existing logic, but personaSelect is also present
+        this.presetSelect = document.getElementById('persona-preset');
+
+        // Handle preset selection
+        if (this.presetSelect) {
+            this.presetSelect.addEventListener('change', () => {
+                const selectedPrompt = this.presetSelect.value;
+                if (selectedPrompt) {
+                    this.systemPromptInput.value = selectedPrompt;
+                }
+            });
+        }
         this.modeIndicator = document.getElementById('mode-indicator'); // New: Mode Indicator
         // Chat Input
         this.textInput = document.getElementById('textInput');
@@ -67,6 +70,22 @@ class VoiceAssistant {
         this.awsRegion = document.getElementById('awsRegion');
         this.saveAwsBtn = document.getElementById('saveAwsBtn');
         this.cancelAwsBtn = document.getElementById('cancelAwsBtn');
+
+        // Prompt Preset Change
+        if (this.promptPresetSelect) {
+            this.promptPresetSelect.addEventListener('change', () => {
+                const selectedOption = this.promptPresetSelect.options[this.promptPresetSelect.selectedIndex];
+                if (selectedOption.value) {
+                    // Store the content in a data attribute or look it up
+                    // For simplicity, we'll assume the value IS the content or we look it up from a map
+                    // But since we populate it dynamically, let's store content in a map
+                    const content = selectedOption.getAttribute('data-content');
+                    if (content) {
+                        this.systemPromptInput.value = content;
+                    }
+                }
+            });
+        }
 
         // Agent Config Elements
         this.agentConfigBtn = document.getElementById('agentConfigBtn');
@@ -97,7 +116,7 @@ class VoiceAssistant {
         this.visualizerAnimationId = null;
 
         // Initialize UI options first
-        this.initializePresets();
+        // this.initializePresets(); // Moved to loadPrompts
         this.initializeVoices();
         this.initializeTabs();
         this.loadAgents(); // Load custom agents
@@ -128,14 +147,7 @@ class VoiceAssistant {
             });
         }
 
-        if (this.personaSelect) {
-            this.personaSelect.addEventListener('change', () => {
-                const selectedPrompt = this.personaSelect.value;
-                if (selectedPrompt) {
-                    this.systemPromptInput.value = selectedPrompt;
-                }
-            });
-        }
+
         if (this.voiceSelect) {
             this.voiceSelect.addEventListener('change', () => this.saveSettings());
         }
@@ -174,28 +186,27 @@ class VoiceAssistant {
         this.log('Application ready');
     }
 
-    initializePresets() {
+    initializePresets(prompts) {
         if (!this.presetSelect) return;
 
-        for (const [name, prompt] of Object.entries(PERSONA_PRESETS)) {
+        // Clear existing options except default
+        this.presetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
+
+        prompts.forEach(prompt => {
+            // Filter out system-internal prompts like Agent Echo from the Persona list
+            if (prompt.id === 'agent_echo.txt') return;
+
             const option = document.createElement('option');
-            option.value = prompt;
-            option.textContent = name;
+            option.value = prompt.content;
+            option.textContent = prompt.name;
             this.presetSelect.appendChild(option);
-        }
-
-        // Handle mode selection
-        this.modeSelect.addEventListener('change', () => this.updateUIMode());
-
-        // Handle preset selection
-        this.presetSelect.addEventListener('change', () => {
-            const selectedPrompt = this.presetSelect.value;
-            if (selectedPrompt) {
-                this.systemPromptInput.value = selectedPrompt;
-                // We don't auto-save, allowing the user to edit first
-            }
         });
-    }
+
+        // Re-attach event listener since we might have cleared it or it wasn't attached
+        // Actually, better to attach it once in constructor, but since we are here...
+        // Let's just ensure it's attached in constructor and NOT here to avoid duplicates if called multiple times
+    }     // Handle mode selection
+
 
     initializeVoices() {
         if (!this.voiceSelect) return;
@@ -387,6 +398,9 @@ class VoiceAssistant {
                 // Start session timer
                 this.startSessionTimer();
                 this.startVisualizer();
+
+                // Request prompts
+                this.loadPrompts();
 
                 // Send ping to verify connection
                 this.ws.send(JSON.stringify({ type: 'ping' }));
@@ -1066,11 +1080,43 @@ class VoiceAssistant {
         }
     }
 
+    async loadPrompts() {
+        try {
+            console.log('[Frontend] Fetching prompts from API...');
+            const response = await fetch('/api/prompts');
+            if (response.ok) {
+                const prompts = await response.json();
+                this.updatePromptDropdown(prompts);
+                this.initializePresets(prompts); // Also update the General tab dropdown
+            } else {
+                console.error('[Frontend] Failed to fetch prompts:', response.status);
+            }
+        } catch (err) {
+            console.error('[Frontend] Error fetching prompts:', err);
+        }
+    }
+
+    updatePromptDropdown(prompts) {
+        console.log('[Frontend] Received prompts:', prompts);
+        if (!this.promptPresetSelect) return;
+
+        // Keep the first "Custom" option
+        this.promptPresetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
+
+        prompts.forEach(prompt => {
+            const option = document.createElement('option');
+            option.value = prompt.id;
+            option.textContent = prompt.name;
+            option.setAttribute('data-content', prompt.content);
+            this.promptPresetSelect.appendChild(option);
+        });
+    }
 }
 
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new VoiceAssistant();
+    const app = new VoiceAssistant();
+    app.loadPrompts(); // Load prompts immediately
 });
 
 // Clean up on page unload
