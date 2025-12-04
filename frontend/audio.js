@@ -27,6 +27,8 @@ class AudioProcessor {
         // Visualizer
         this.analyser = null;
         this.dataArray = null;
+
+        this.isMuted = false;
     }
 
     /**
@@ -161,6 +163,8 @@ class AudioProcessor {
      * Play received audio data
      */
     async playAudio(audioData) {
+        if (this.isMuted) return;
+
         if (!this.audioContext) {
             await this.initialize();
         }
@@ -339,6 +343,13 @@ class AudioProcessor {
         }
         this.analyser.getByteFrequencyData(this.dataArray);
         return this.dataArray;
+    }
+
+    setMuted(muted) {
+        this.isMuted = muted;
+        if (muted) {
+            this.clearQueue();
+        }
     }
 }
 

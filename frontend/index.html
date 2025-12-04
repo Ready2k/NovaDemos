@@ -13,6 +13,15 @@
     <div class="sidebar">
       <h2>Persona Settings</h2>
       <div class="input-group">
+        <label for="interaction-mode">Interaction Mode</label>
+        <select id="interaction-mode">
+          <option value="chat_voice" selected>✨ Chat + Voice</option>
+          <option value="voice_only">🎤 Voice Only</option>
+          <option value="chat_only">💬 Chat Only</option>
+        </select>
+      </div>
+
+      <div class="input-group">
         <label for="persona-preset">Persona Preset</label>
         <select id="persona-preset">
           <option value="">Custom / Select Preset...</option>
@@ -63,6 +72,15 @@
 
       <div class="transcript-container" id="transcript">
         <div class="transcript-empty">Transcript will appear here...</div>
+      </div>
+
+      <div class="chat-input-container">
+        <input type="text" id="textInput" placeholder="Type a message..." disabled>
+        <button id="sendBtn" class="icon-btn" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+          </svg>
+        </button>
       </div>
 
       <div class="controls">

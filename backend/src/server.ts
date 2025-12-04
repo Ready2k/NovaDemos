@@ -101,8 +101,20 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
                         return;
+                    } else if (parsed.type === 'textInput') {
+                        console.log('[Server] Received text input:', parsed.text);
+                        if (parsed.text) {
+                            // Ensure session is started
+                            if (!sonicClient.getSessionId()) {
+                                console.log('[Server] Starting session for text input');
+                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
+                            }
+                            await sonicClient.sendText(parsed.text);
+                        }
+                        return;
                     }
                 } catch (e) {
+                    console.log('[Server] JSON parse failed:', e);
                     // Not JSON, ignore
                 }
             }

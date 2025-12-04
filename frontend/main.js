@@ -46,9 +46,14 @@ class VoiceAssistant {
         this.speechPromptInput = document.getElementById('speechPrompt');
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
         this.newSessionBtn = document.getElementById('newSessionBtn');
+        this.modeSelect = document.getElementById('interaction-mode');
         this.presetSelect = document.getElementById('persona-preset');
         this.presetSelect = document.getElementById('persona-preset');
         this.voiceSelect = document.getElementById('voice-preset');
+
+        // Chat Input
+        this.textInput = document.getElementById('textInput');
+        this.sendBtn = document.getElementById('sendBtn');
 
         // Stats elements
         this.statDuration = document.getElementById('statDuration');
@@ -83,7 +88,17 @@ class VoiceAssistant {
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
         this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+        this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
         this.newSessionBtn.addEventListener('click', () => this.startNewSession());
+
+        // Chat events
+        this.sendBtn.addEventListener('click', () => this.sendTextMessage());
+        this.textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendTextMessage();
+            }
+        });
 
         this.log('Application ready');
     }
@@ -97,6 +112,9 @@ class VoiceAssistant {
             option.textContent = name;
             this.presetSelect.appendChild(option);
         }
+
+        // Handle mode selection
+        this.modeSelect.addEventListener('change', () => this.updateUIMode());
 
         // Handle preset selection
         this.presetSelect.addEventListener('change', () => {
@@ -451,7 +469,56 @@ class VoiceAssistant {
         this.disconnectBtn.disabled = newState === 'disconnected';
 
         this.startBtn.disabled = newState !== 'connected';
+        this.startBtn.disabled = newState !== 'connected';
         this.stopBtn.disabled = newState !== 'recording';
+
+        // Enable text input when connected (even if not recording audio)
+        const canChat = newState === 'connected' || newState === 'recording';
+        this.textInput.disabled = !canChat;
+        this.sendBtn.disabled = !canChat;
+
+        // Apply mode-specific constraints
+        this.updateUIMode();
+    }
+
+    /**
+     * Update UI based on selected interaction mode
+     */
+    updateUIMode() {
+        const mode = this.modeSelect.value;
+        const isConnected = this.state !== 'disconnected';
+
+        // 1. Text Input Visibility
+        const showChat = mode === 'chat_voice' || mode === 'chat_only';
+        this.textInput.parentElement.style.display = showChat ? 'flex' : 'none';
+
+        // 2. Audio Controls Visibility
+        const showAudio = mode === 'chat_voice' || mode === 'voice_only';
+        this.startBtn.style.display = showAudio ? 'inline-block' : 'none';
+        this.stopBtn.style.display = showAudio ? 'inline-block' : 'none';
+
+        // 3. Audio Playback Muting (Chat Only = Mute)
+        if (mode === 'chat_only') {
+            // If we were recording, stop it
+            if (this.state === 'recording') {
+                this.stopRecording();
+            }
+            this.audioProcessor.setMuted(true);
+        } else {
+            this.audioProcessor.setMuted(false);
+        }
+
+        // 4. Re-evaluate disabled states based on connection
+        if (isConnected) {
+            if (showChat) {
+                this.textInput.disabled = false;
+                this.sendBtn.disabled = false;
+            }
+            if (showAudio) {
+                this.startBtn.disabled = this.state === 'recording'; // If recording, start is disabled
+                this.stopBtn.disabled = this.state !== 'recording';
+            }
+        }
     }
 
     /**
@@ -630,6 +697,26 @@ class VoiceAssistant {
         if (this.canvasCtx) {
             this.canvasCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         }
+    }
+
+    /**
+     * Send text message to server
+     */
+    sendTextMessage() {
+        const text = this.textInput.value.trim();
+        if (!text || this.state === 'disconnected') return;
+
+        // Optimistically show user message
+        this.displayTranscript('user', text);
+
+        // Send to server
+        this.ws.send(JSON.stringify({
+            type: 'textInput',
+            text: text
+        }));
+
+        // Clear input
+        this.textInput.value = '';
     }
 }
 

@@ -57,8 +57,12 @@ export class SonicClient {
     private outputStream: AsyncIterable<any> | null = null;
     private isProcessing: boolean = false;
     private inputQueue: Buffer[] = [];
+    private textQueue: string[] = [];
     private streamController: any = null;
     private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string } = {};
+
+    // 100ms of silence (16kHz * 0.1s * 2 bytes/sample = 3200 bytes)
+    private readonly SILENCE_FRAME = Buffer.alloc(3200, 0);
 
     constructor(config: SonicConfig = {}) {
         // Load configuration from environment variables with fallbacks
@@ -166,9 +170,8 @@ export class SonicClient {
         console.log('[SonicClient] Current Session Config:', JSON.stringify(this.sessionConfig, null, 2));
 
         const promptName = `prompt-${Date.now()}`;
-        const contentName = `audio-${Date.now()}`;
         this.currentPromptName = promptName;
-        this.currentContentName = contentName;
+        this.currentContentName = undefined; // Lazily initialized
 
         const voiceId = this.sessionConfig.voiceId || "matthew";
         console.log(`[SonicClient] Using Voice ID: ${voiceId}`);
@@ -293,39 +296,159 @@ export class SonicClient {
             yield { chunk: { bytes: Buffer.from(JSON.stringify(speechContentEndEvent)) } };
         }
 
-        // 6. User Audio Content Start
-        const contentStartEvent = {
-            event: {
-                contentStart: {
-                    promptName: promptName,
-                    contentName: contentName,
-                    type: "AUDIO",
-                    interactive: true,
-                    role: "USER",
-                    audioInputConfiguration: {
-                        mediaType: "audio/lpcm",
-                        sampleRateHertz: 16000,
-                        sampleSizeBits: 16,
-                        channelCount: 1,
-                        audioType: "SPEECH",
-                        encoding: "base64"
-                    }
-                }
-            }
-        };
-        yield { chunk: { bytes: Buffer.from(JSON.stringify(contentStartEvent)) } };
+        // 6. User Audio Content Start - REMOVED (Lazy initialization)
+        // We will start the audio content stream only when we actually have audio to send.
 
         while (this.isProcessing) {
+            // Check for text input first (priority)
+            if (this.textQueue.length > 0) {
+                const text = this.textQueue.shift()!;
+                console.log('[SonicClient] Processing text input:', text);
+
+                // 1. End current Audio Content (if open)
+                if (this.currentContentName) {
+                    const audioEndEvent = {
+                        event: {
+                            contentEnd: {
+                                promptName: promptName,
+                                contentName: this.currentContentName
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(audioEndEvent)) } };
+                    this.currentContentName = undefined;
+                }
+
+                // 2. Send Text Content
+                const textContentName = `text-${Date.now()}`;
+                const textStartEvent = {
+                    event: {
+                        contentStart: {
+                            promptName: promptName,
+                            contentName: textContentName,
+                            type: "TEXT",
+                            interactive: true,
+                            role: "USER",
+                            textInputConfiguration: {
+                                mediaType: "text/plain"
+                            }
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
+
+                const textInputEvent = {
+                    event: {
+                        textInput: {
+                            promptName: promptName,
+                            contentName: textContentName,
+                            content: text
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textInputEvent)) } };
+
+                const textEndEvent = {
+                    event: {
+                        contentEnd: {
+                            promptName: promptName,
+                            contentName: textContentName
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textEndEvent)) } };
+
+                // 3. Send Silent Audio (Required by Nova Sonic if no other audio is present)
+                // The API requires at least one audio content per prompt.
+                if (!this.currentContentName) {
+                    const silenceContentName = `audio-silence-${Date.now()}`;
+
+                    // Start Silence Audio
+                    const silenceStartEvent = {
+                        event: {
+                            contentStart: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                type: "AUDIO",
+                                interactive: true, // Must be true for cross-modal
+                                role: "USER",
+                                audioInputConfiguration: {
+                                    mediaType: "audio/lpcm",
+                                    sampleRateHertz: 16000,
+                                    sampleSizeBits: 16,
+                                    channelCount: 1,
+                                    audioType: "SPEECH",
+                                    encoding: "base64"
+                                }
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
+
+                    // Send Silence Data
+                    const silenceInputEvent = {
+                        event: {
+                            audioInput: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                content: this.SILENCE_FRAME.toString('base64')
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
+
+                    // End Silence Audio
+                    const silenceEndEvent = {
+                        event: {
+                            contentEnd: {
+                                promptName: promptName,
+                                contentName: silenceContentName
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceEndEvent)) } };
+                    console.log('[SonicClient] Sent silent audio frame to satisfy protocol');
+                }
+            }
+
             // Wait for audio chunks from the queue
             if (this.inputQueue.length > 0) {
                 const audioBuffer = this.inputQueue.shift()!;
+
+                // Start Audio Content if not open
+                if (!this.currentContentName) {
+                    const newContentName = `audio-${Date.now()}`;
+                    this.currentContentName = newContentName;
+
+                    const audioStartEvent = {
+                        event: {
+                            contentStart: {
+                                promptName: promptName,
+                                contentName: newContentName,
+                                type: "AUDIO",
+                                interactive: true,
+                                role: "USER",
+                                audioInputConfiguration: {
+                                    mediaType: "audio/lpcm",
+                                    sampleRateHertz: 16000,
+                                    sampleSizeBits: 16,
+                                    channelCount: 1,
+                                    audioType: "SPEECH",
+                                    encoding: "base64"
+                                }
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(audioStartEvent)) } };
+                    console.log('[SonicClient] Started audio content:', newContentName);
+                }
 
                 // 7. Audio Input
                 const audioInputEvent = {
                     event: {
                         audioInput: {
                             promptName: promptName,
-                            contentName: contentName,
+                            contentName: this.currentContentName,
                             content: audioBuffer.toString('base64')
                         }
                     }
@@ -351,18 +474,20 @@ export class SonicClient {
         // However, the AWS SDK stream might need us to yield them before finishing.
         // Let's try to yield them if we are closing gracefully.
 
-        if (this.currentPromptName && this.currentContentName) {
-            // 8. User Audio Content End
-            const contentEndEvent = {
-                event: {
-                    contentEnd: {
-                        promptName: this.currentPromptName,
-                        contentName: this.currentContentName
+        if (this.currentPromptName) {
+            // 8. User Audio Content End (if open)
+            if (this.currentContentName) {
+                const contentEndEvent = {
+                    event: {
+                        contentEnd: {
+                            promptName: this.currentPromptName,
+                            contentName: this.currentContentName
+                        }
                     }
-                }
-            };
-            yield { chunk: { bytes: Buffer.from(JSON.stringify(contentEndEvent)) } };
-            console.log('[SonicClient] Sent UserAudioContentEndEvent');
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(contentEndEvent)) } };
+                console.log('[SonicClient] Sent UserAudioContentEndEvent');
+            }
 
             // 9. Prompt End
             const promptEndEvent = {
@@ -420,6 +545,16 @@ export class SonicClient {
         if (this.inputQueue.length % 50 === 0) {
             console.log(`[SonicClient] Queue size: ${this.inputQueue.length}`);
         }
+    }
+
+    /**
+     * Send text input to Nova 2 Sonic
+     */
+    async sendText(text: string): Promise<void> {
+        if (!this.sessionId || !this.isProcessing) {
+            throw new Error('Session not active.');
+        }
+        this.textQueue.push(text);
     }
 
     /**

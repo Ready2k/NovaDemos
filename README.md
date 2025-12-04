@@ -17,11 +17,13 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ### Key Features
 
-- **Real-time Waveform Visualizer**: Dynamic audio visualization reacting to both user and AI speech
-- **Persona Presets**: Switch between different AI personalities (Pirate, French Tutor, Coding Assistant, etc.)
-- **Voice Selection**: Choose from multiple Nova Sonic voices (Matthew, Tiffany, Amy, Florian, Ambre)
-- **Session Stats**: Real-time tracking of session duration, token usage, and latency
-- **Configuration Persistence**: Settings are automatically saved between sessions
+-*   **Real-time Audio Visualizer**: Dynamic, reactive waveform visualization of both user input and AI output.
+*   **Text Interface**: Full chat functionality allowing users to type questions and receive voice/text responses.
+*   **Interaction Modes**: Switch between "Chat + Voice", "Voice Only", and "Chat Only" to suit your environment.
+*   **Persona Presets**: Switch between different system prompts (e.g., Coding Assistant, Pirate, French Tutor).
+*   **Voice Selection**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.).
+*   **Session Stats**: Real-time tracking of latency, token usage, and session duration.
+*   **Configuration Persistence**: Settings are automatically saved to `localStorage`.en sessions
 
 ### Integration Details
 
@@ -102,13 +104,17 @@ Simply open `frontend/index.html` in a modern browser (Chrome or Firefox recomme
 
 1. **Connect**: Click the "Connect" button to establish WebSocket connection
 2. **Allow Microphone**: Grant microphone permissions when prompted
-3. **Start Recording**: Click "Start Recording" and speak into your microphone
-4. **Interact with Nova Sonic**: 
-   - Your voice is sent to Amazon Nova 2 Sonic
-   - Nova Sonic responds with natural speech
-   - Transcripts appear in the UI
-   - The visualizer reacts to the conversation
-5. **Customize**: Use the sidebar to change the AI's persona or voice. Settings are saved automatically.
+3.  **Interact**:
+    *   **Voice**: Speak into your microphone. The visualizer will react to your voice.
+    *   **Text**: Type in the chat bar at the bottom and press Enter.
+    *   **Modes**: Use the "Interaction Mode" dropdown to switch between:
+        *   `✨ Chat + Voice`: Full functionality.
+        *   `🎤 Voice Only`: Text input hidden.
+        *   `💬 Chat Only`: Audio muted, mic disabled.
+4.  **Customize**:
+    *   Select a **Persona** to change the AI's personality.
+    *   Select a **Voice** to change the output voice.
+    *   Settings are saved automatically.
 6. **Stop Recording**: Click "Stop Recording" when done
 
 **Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
