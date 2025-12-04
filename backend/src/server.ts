@@ -228,7 +228,14 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         // Pass other config to SonicClient
                         sonicClient.updateSessionConfig(parsed.config);
 
-                        // Start session if not already started
+                        // CRITICAL: If session is already active, we MUST stop it to apply the new System Prompt.
+                        // The System Prompt is only sent at the beginning of the session (in createInputStream).
+                        if (sonicClient.getSessionId()) {
+                            console.log('[Server] Configuration updated while session active. Restarting session to apply new System Prompt...');
+                            await sonicClient.stopSession();
+                        }
+
+                        // Start session if not already started (or if we just stopped it)
                         if (!sonicClient.getSessionId()) {
                             await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
                         }
@@ -283,7 +290,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     // 2. VAD (Energy-based Silence Detection)
                     const rms = calculateRMS(audioBuffer);
-                    // console.log('[Server] VAD RMS:', rms); // Uncomment to debug sensitivity
                     const VAD_THRESHOLD = 1000; // Increased from 600 to reduce false positives
 
                     // Only reset silence timer if we detect speech (high energy)
