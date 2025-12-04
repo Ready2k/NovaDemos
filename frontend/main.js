@@ -54,6 +54,7 @@ class VoiceAssistant {
         this.newSessionBtn = document.getElementById('newSessionBtn');
         this.modeSelect = document.getElementById('interaction-mode');
         this.presetSelect = document.getElementById('persona-preset'); // Kept for existing logic, but personaSelect is also present
+        this.modeIndicator = document.getElementById('mode-indicator'); // New: Mode Indicator
         // Chat Input
         this.textInput = document.getElementById('textInput');
         this.sendBtn = document.getElementById('sendBtn');
@@ -66,6 +67,18 @@ class VoiceAssistant {
         this.awsRegion = document.getElementById('awsRegion');
         this.saveAwsBtn = document.getElementById('saveAwsBtn');
         this.cancelAwsBtn = document.getElementById('cancelAwsBtn');
+
+        // Agent Config Elements
+        this.agentConfigBtn = document.getElementById('agentConfigBtn');
+        this.agentModal = document.getElementById('agentModal');
+        this.agentList = document.getElementById('agentList');
+        this.newAgentName = document.getElementById('newAgentName');
+        this.newAgentId = document.getElementById('newAgentId');
+        this.newAgentAliasId = document.getElementById('newAgentAliasId');
+        this.addAgentBtn = document.getElementById('addAgentBtn');
+        this.closeAgentBtn = document.getElementById('closeAgentBtn');
+
+        this.customAgents = [];
 
         // Stats elements
         this.statDuration = document.getElementById('statDuration');
@@ -87,6 +100,7 @@ class VoiceAssistant {
         this.initializePresets();
         this.initializeVoices();
         this.initializeTabs();
+        this.loadAgents(); // Load custom agents
 
         // Then load saved settings
         this.loadSettings();
@@ -137,6 +151,16 @@ class VoiceAssistant {
             this.awsModal.style.display = 'none';
         });
         this.saveAwsBtn.addEventListener('click', () => this.saveAwsCredentials());
+
+        // Agent Config Events
+        this.agentConfigBtn.addEventListener('click', () => {
+            this.agentModal.style.display = 'flex';
+            this.renderAgentList();
+        });
+        this.closeAgentBtn.addEventListener('click', () => {
+            this.agentModal.style.display = 'none';
+        });
+        this.addAgentBtn.addEventListener('click', () => this.addAgent());
 
         // Chat events
         this.sendBtn.addEventListener('click', () => this.sendTextMessage());
@@ -267,19 +291,23 @@ class VoiceAssistant {
             localStorage.setItem('nova_brain_mode', this.brainModeSelect.value);
         }
 
+        const config = this.getSessionConfig();
+        const brainMode = config.config.brainMode;
+
         // Send update to server if connected
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            const config = {
-                type: 'sessionConfig',
-                config: {
-                    systemPrompt: this.systemPromptInput.value,
-                    speechPrompt: this.speechPromptInput.value,
-                    voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
-                    brainMode: this.brainModeSelect ? this.brainModeSelect.value : 'raw_nova'
-                }
-            };
             this.ws.send(new TextEncoder().encode(JSON.stringify(config)));
-            this.log(`Updated session configuration (Mode: ${config.config.brainMode})`);
+            this.log(`Updated session configuration (Mode: ${brainMode})`);
+        }
+
+        // Update Mode Indicator
+        if (this.modeIndicator && this.brainModeSelect) {
+            const selectedOption = this.brainModeSelect.options[this.brainModeSelect.selectedIndex];
+            let modeText = selectedOption ? selectedOption.text : 'Nova Sonic';
+            this.modeIndicator.textContent = `Mode: ${modeText}`;
+
+            this.modeIndicator.style.color = brainMode === 'raw_nova' ? '#94a3b8' : '#818cf8';
+            this.modeIndicator.style.background = brainMode === 'raw_nova' ? 'rgba(255,255,255,0.1)' : 'rgba(99, 102, 241, 0.2)';
         }
 
         // Visual feedback
@@ -292,6 +320,42 @@ class VoiceAssistant {
             this.saveSettingsBtn.style.background = '';
         }, 2000);
     }
+
+    getSessionConfig() {
+        let brainMode = this.brainModeSelect ? this.brainModeSelect.value.trim() : 'raw_nova';
+        let agentId = undefined;
+        let agentAliasId = undefined;
+
+        const isCustomAgent = String(brainMode).startsWith('agent:');
+
+        if (isCustomAgent) {
+            const parts = brainMode.split(':');
+            const index = parseInt(parts[1]);
+
+            if (this.customAgents[index]) {
+                brainMode = 'bedrock_agent';
+                agentId = this.customAgents[index].id;
+                agentAliasId = this.customAgents[index].aliasId;
+            } else {
+                console.error('[Frontend] Agent not found at index:', index);
+                brainMode = 'raw_nova';
+            }
+        }
+
+        return {
+            type: 'sessionConfig',
+            config: {
+                systemPrompt: this.systemPromptInput.value,
+                speechPrompt: this.speechPromptInput.value,
+                voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
+                brainMode: brainMode,
+                agentId: agentId,
+                agentAliasId: agentAliasId
+            }
+        };
+    }
+
+
 
     /**
      * Connect to WebSocket server
@@ -329,15 +393,7 @@ class VoiceAssistant {
 
                 // Send session configuration immediately
                 try {
-                    const config = {
-                        type: 'sessionConfig',
-                        config: {
-                            systemPrompt: this.systemPromptInput.value,
-                            speechPrompt: this.speechPromptInput.value,
-                            voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
-                            brainMode: this.brainModeSelect ? this.brainModeSelect.value : 'raw_nova'
-                        }
-                    };
+                    const config = this.getSessionConfig();
                     this.ws.send(JSON.stringify(config));
                     this.log('Sent persona configuration');
                     console.log('[Frontend] Sent config:', config);
@@ -817,36 +873,139 @@ class VoiceAssistant {
         if (!accessKeyId || !secretAccessKey || !region) {
             alert('Please fill in all AWS fields.');
             return;
-        }
+            // Hide modal and clear sensitive inputs
+            this.awsModal.style.display = 'none';
+            this.awsAccessKey.value = '';
+            this.awsSecretKey.value = '';
 
-        // Auto-connect if disconnected
-        if (this.state === 'disconnected') {
+            this.log('Sent AWS credentials to server');
+            this.showToast('AWS Credentials Updated', 'success');
+        }
+    }
+
+    // --- Agent Management ---
+
+    loadAgents() {
+        const savedAgents = localStorage.getItem('custom_agents');
+        if (savedAgents) {
             try {
-                this.log('Connecting to update credentials...');
-                await this.connect();
+                this.customAgents = JSON.parse(savedAgents);
             } catch (e) {
-                alert('Failed to connect to server. Cannot update credentials.');
-                return;
+                console.error('Failed to parse saved agents:', e);
+                this.customAgents = [];
             }
         }
+        this.updateAgentDropdown();
+    }
 
-        // Send to server
-        this.ws.send(JSON.stringify({
-            type: 'awsConfig',
-            config: {
-                accessKeyId,
-                secretAccessKey,
-                region
+    saveAgents() {
+        localStorage.setItem('custom_agents', JSON.stringify(this.customAgents));
+        this.updateAgentDropdown();
+        this.renderAgentList();
+    }
+
+    updateAgentDropdown() {
+        if (!this.brainModeSelect) return;
+
+        const currentValue = this.brainModeSelect.value;
+
+        // Clear existing options
+        this.brainModeSelect.innerHTML = '';
+
+        // Add default options
+        const defaultOptions = [
+            { value: 'raw_nova', text: '✨ Nova Sonic (Direct)' },
+            { value: 'bedrock_agent', text: '🏦 Banking Bot (Agent)' }
+        ];
+
+        defaultOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.text;
+            this.brainModeSelect.appendChild(option);
+        });
+
+        // Add custom agents
+        this.customAgents.forEach((agent, index) => {
+            const option = document.createElement('option');
+            option.value = `agent:${index}`; // Use index as ID reference
+            option.textContent = `${agent.name} (Agent)`;
+            this.brainModeSelect.appendChild(option);
+        });
+
+        // Restore selection if possible, otherwise default
+        if (currentValue) {
+            // Check if value still exists
+            const exists = Array.from(this.brainModeSelect.options).some(o => o.value === currentValue);
+            if (exists) {
+                this.brainModeSelect.value = currentValue;
+            } else {
+                this.brainModeSelect.value = 'raw_nova';
             }
-        }));
+        }
+    }
 
-        // Hide modal and clear sensitive inputs
-        this.awsModal.style.display = 'none';
-        this.awsAccessKey.value = '';
-        this.awsSecretKey.value = '';
+    renderAgentList() {
+        if (!this.agentList) return;
 
-        this.log('Sent AWS credentials to server');
-        this.showToast('AWS Credentials Updated', 'success');
+        this.agentList.innerHTML = '';
+
+        if (this.customAgents.length === 0) {
+            this.agentList.innerHTML = '<div style="color: #64748b; font-style: italic; text-align: center;">No custom agents configured.</div>';
+            return;
+        }
+
+        this.customAgents.forEach((agent, index) => {
+            const item = document.createElement('div');
+            item.style.cssText = 'background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.1);';
+
+            item.innerHTML = `
+                <div>
+                    <div style="font-weight: 600; color: #e2e8f0;">${agent.name}</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8;">ID: ${agent.id.substr(0, 8)}...</div>
+                </div>
+                <button class="delete-agent-btn danger-btn" data-index="${index}" style="padding: 6px 12px; font-size: 0.8rem;">Delete</button>
+            `;
+
+            this.agentList.appendChild(item);
+        });
+
+        // Add delete listeners
+        document.querySelectorAll('.delete-agent-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.target.getAttribute('data-index'));
+                this.deleteAgent(index);
+            });
+        });
+    }
+
+    addAgent() {
+        const name = this.newAgentName.value.trim();
+        const id = this.newAgentId.value.trim();
+        const aliasId = this.newAgentAliasId.value.trim();
+
+        if (!name || !id || !aliasId) {
+            alert('Please fill in all fields (Name, Agent ID, Agent Alias ID).');
+            return;
+        }
+
+        this.customAgents.push({ name, id, aliasId });
+        this.saveAgents();
+
+        // Clear inputs
+        this.newAgentName.value = '';
+        this.newAgentId.value = '';
+        this.newAgentAliasId.value = '';
+
+        this.showToast(`Agent "${name}" added!`, 'success');
+    }
+
+    deleteAgent(index) {
+        if (confirm(`Delete agent "${this.customAgents[index].name}"?`)) {
+            this.customAgents.splice(index, 1);
+            this.saveAgents();
+            this.showToast('Agent deleted', 'info');
+        }
     }
 
     handleInterruption() {

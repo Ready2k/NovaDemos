@@ -20,15 +20,20 @@ export interface AgentResponse {
 
 export async function callBankAgent(
     userText: string,
-    sessionId: string
+    sessionId: string,
+    agentIdOverride?: string,
+    agentAliasIdOverride?: string
 ): Promise<AgentResponse> {
-    if (!agentId || !agentAliasId) {
-        throw new Error("AGENT_ID or AGENT_ALIAS_ID not set in environment variables");
+    const targetAgentId = agentIdOverride || agentId;
+    const targetAgentAliasId = agentAliasIdOverride || agentAliasId;
+
+    if (!targetAgentId || !targetAgentAliasId) {
+        throw new Error("AGENT_ID or AGENT_ALIAS_ID not set (and no override provided)");
     }
 
     const command = new InvokeAgentCommand({
-        agentId,
-        agentAliasId,
+        agentId: targetAgentId,
+        agentAliasId: targetAgentAliasId,
         sessionId,
         inputText: userText,
         enableTrace: true

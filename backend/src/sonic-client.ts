@@ -582,6 +582,7 @@ export class SonicClient {
         if (!this.sessionId || !this.isProcessing) {
             throw new Error('Session not active.');
         }
+        console.log('[SonicClient] sendText called with:', text);
         this.textQueue.push(text);
     }
 

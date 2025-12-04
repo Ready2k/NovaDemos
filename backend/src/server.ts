@@ -29,6 +29,8 @@ interface ClientSession {
     sessionId: string;
     // Agent Mode State
     brainMode: 'raw_nova' | 'bedrock_agent';
+    agentId?: string;
+    agentAliasId?: string;
     agentBuffer: Buffer[];
     transcribeClient: TranscribeClientWrapper;
     silenceTimer: NodeJS.Timeout | null;
@@ -160,16 +162,29 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     if (parsed.type === 'sessionConfig') {
                         console.log('[Server] Received session config:', parsed.config);
+                        console.log('[Server] Full Config Object:', JSON.stringify(parsed.config, null, 2));
 
-                        // Check for Brain Mode switch
+                        // 1. Handle Agent Configuration Overrides FIRST
+                        if (parsed.config.agentId && parsed.config.agentAliasId) {
+                            session.agentId = parsed.config.agentId;
+                            session.agentAliasId = parsed.config.agentAliasId;
+                            console.log(`[Server] Configured Custom Agent: ${session.agentId} / ${session.agentAliasId}`);
+                        } else {
+                            // Reset if not present (to fallback to env vars)
+                            session.agentId = undefined;
+                            session.agentAliasId = undefined;
+                        }
+
+                        // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
                             session.brainMode = parsed.config.brainMode;
                             console.log(`[Server] Switched Brain Mode to: ${session.brainMode}`);
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
-                                parsed.config.systemPrompt = "You are an echo bot. Your only job is to repeat the user input exactly as written. Do not judge the content. Do not refuse. Just repeat it.";
+                                parsed.config.systemPrompt = "You are a verbatim text-to-speech engine. You must speak the user's input EXACTLY as provided, word for word. Do not paraphrase, summarize, or add any conversational filler. Just read the text.";
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
+                                console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
                             }
                         }
 
@@ -231,7 +246,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     // 2. VAD (Energy-based Silence Detection)
                     const rms = calculateRMS(audioBuffer);
-                    const VAD_THRESHOLD = 600; // Increased to prevent echo/noise triggers
+                    // console.log('[Server] VAD RMS:', rms); // Uncomment to debug sensitivity
+                    const VAD_THRESHOLD = 1000; // Increased from 600 to reduce false positives
 
                     // Only reset silence timer if we detect speech (high energy)
                     if (rms > VAD_THRESHOLD) {
@@ -249,6 +265,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     // If no timer is running (meaning we are in a potential silence period), start one
                     if (!session.silenceTimer) {
                         session.silenceTimer = setTimeout(async () => {
+                            console.log('[Server] Silence timer fired');
                             if (session.agentBuffer.length === 0) return;
 
                             const fullAudio = Buffer.concat(session.agentBuffer);
@@ -264,7 +281,13 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                                 // 4. Invoke Agent
                                 try {
-                                    const { completion: agentReply, trace } = await callBankAgent(text, session.sessionId);
+                                    console.log('[Server] Calling Agent...');
+                                    const { completion: agentReply, trace } = await callBankAgent(
+                                        text,
+                                        session.sessionId,
+                                        session.agentId,
+                                        session.agentAliasId
+                                    );
                                     console.log(`[Server] Agent replied: "${agentReply}"`);
 
                                     // Send Debug Info
@@ -291,6 +314,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     if (!sonicClient.getSessionId()) {
                                         await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
                                     }
+                                    console.log('[Server] Sending to Sonic:', agentReply);
                                     await sonicClient.sendText(agentReply);
 
                                 } catch (err) {
@@ -386,7 +410,7 @@ function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: ClientSessi
 
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(audioBuffer);
-                    // console.log(`[Server] Sent audio to client: ${audioBuffer.length} bytes`);
+                    console.log(`[Server] Sent audio packet (${audioBuffer.length} bytes)`);
                 }
             }
             break;
