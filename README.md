@@ -97,8 +97,12 @@ npm start
 The server will start on port 8080 with WebSocket endpoint: `ws://localhost:8080/sonic`
 
 ### 5. Open Frontend
-
-Simply open `frontend/index.html` in a modern browser (Chrome or Firefox recommended).
+ 
+Open your browser and navigate to:
+ 
+**http://localhost:8080**
+ 
+(Do not open the `index.html` file directly, as it requires the server to handle CORS and static files)
 
 ## Usage
 
@@ -115,6 +119,11 @@ Simply open `frontend/index.html` in a modern browser (Chrome or Firefox recomme
     *   Select a **Persona** to change the AI's personality.
     *   Select a **Voice** to change the output voice.
     *   Settings are saved automatically.
+    *   Select a **Voice** to change the output voice.
+    *   Settings are saved automatically.
+5.  **AWS Configuration** (Optional):
+    *   Click **🔐 Configure AWS** to use your own AWS credentials for the session.
+    *   These keys are **not saved** to the server and exist only in memory for the current session.
 6. **Stop Recording**: Click "Stop Recording" when done
 
 **Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
