@@ -22,7 +22,11 @@ class AudioProcessor {
         // Audio configuration
         this.SAMPLE_RATE = 16000;
         this.CHANNELS = 1; // Mono
-        this.BUFFER_SIZE = 4096;
+        this.BUFFER_SIZE = 2048; // Lower latency (was 4096)
+
+        // Visualizer
+        this.analyser = null;
+        this.dataArray = null;
     }
 
     /**
@@ -33,6 +37,13 @@ class AudioProcessor {
             // Create audio context (let browser choose sample rate)
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             console.log(`[AudioProcessor] AudioContext created with sample rate: ${this.audioContext.sampleRate}Hz`);
+
+            // Create analyzer
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256; // 128 bins
+            this.analyser.smoothingTimeConstant = 0.5;
+            const bufferLength = this.analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(bufferLength);
 
             // Request microphone access
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -77,6 +88,11 @@ class AudioProcessor {
 
         // Create source node from microphone stream
         this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
+
+        // Connect to analyzer for visualization
+        if (this.analyser) {
+            this.sourceNode.connect(this.analyser);
+        }
 
         // Create script processor for audio processing
         // Note: ScriptProcessorNode is deprecated but widely supported
@@ -172,6 +188,11 @@ class AudioProcessor {
 
             // Connect to destination (speakers)
             sourceNode.connect(this.audioContext.destination);
+
+            // Connect to analyzer for visualization
+            if (this.analyser) {
+                sourceNode.connect(this.analyser);
+            }
 
             // Schedule playback
             // Ensure we don't schedule in the past
@@ -307,6 +328,17 @@ class AudioProcessor {
             contextState: this.audioContext?.state || 'closed',
             sampleRate: this.audioContext?.sampleRate || 0
         };
+    }
+
+    /**
+     * Get frequency data for visualization
+     */
+    getAudioData() {
+        if (!this.analyser || !this.dataArray) {
+            return null;
+        }
+        this.analyser.getByteFrequencyData(this.dataArray);
+        return this.dataArray;
     }
 }
 

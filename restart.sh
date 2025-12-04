@@ -31,4 +31,4 @@ npm run build
 
 # 3. Start Server
 echo "[3/3] Starting server..."
-npm start
+npm start > "$PROJECT_ROOT/server.log" 2>&1

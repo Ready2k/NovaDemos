@@ -61,108 +61,67 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         sessionId
     });
 
-    // Initialize Nova Sonic session with event callback
-    try {
-        await sonicClient.startSession((event: SonicEvent) => {
-            // Handle events from Nova Sonic and forward to WebSocket client
-            switch (event.type) {
-                case 'audio':
-                    // Forward audio data as binary WebSocket message
-                    if (event.data.audio) {
-                        const audioBuffer = Buffer.isBuffer(event.data.audio)
-                            ? event.data.audio
-                            : Buffer.from(event.data.audio);
-
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(audioBuffer);
-                            console.log(`[Server] Sent audio to client: ${audioBuffer.length} bytes`);
-                        }
-                    }
-                    break;
-
-                case 'transcript':
-                    // Forward transcript as JSON message
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'transcript',
-                            role: event.data.role || 'assistant',
-                            text: event.data.transcript
-                        }));
-                        console.log(`[Server] Sent transcript: "${event.data.transcript}"`);
-                    }
-                    break;
-
-                case 'interruption':
-                    // Forward interruption signal
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'interruption'
-                        }));
-                        console.log('[Server] Sent interruption signal to client');
-                    }
-                    break;
-
-                case 'error':
-                    // Log error and notify client
-                    console.error('[Server] Nova Sonic error:', event.data);
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: 'Nova Sonic streaming error'
-                        }));
-                    }
-                    break;
-            }
-        });
-
-        console.log(`[Server] Nova Sonic session started for ${sessionId}`);
-
-        // Send connection acknowledgment
-        ws.send(JSON.stringify({
-            type: 'connected',
-            sessionId,
-            message: 'Connected to Nova 2 Sonic'
-        }));
-
-    } catch (error) {
-        console.error('[Server] Failed to initialize Nova Sonic session:', error);
-        ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Failed to initialize Nova Sonic session. Check AWS credentials.'
-        }));
-        ws.close();
-        activeSessions.delete(ws);
-        return;
-    }
+    // Send connection acknowledgment
+    ws.send(JSON.stringify({
+        type: 'connected',
+        sessionId,
+        message: 'Connected to Nova 2 Sonic'
+    }));
 
     // Handle incoming messages (JSON config or binary audio)
     ws.on('message', async (data: any) => {
+        const isBuffer = Buffer.isBuffer(data);
+        let firstByte = 'N/A';
+        if (isBuffer && data.length > 0) firstByte = data[0].toString();
+
+        console.log(`[Server] Message received. Type: ${typeof data}, IsBuffer: ${isBuffer}, Length: ${data.length}, First byte: ${firstByte}`);
+
+        if (isBuffer && data.length > 0 && data[0] === 123) {
+            console.log(`[Server] Potential JSON message: ${data.toString().substring(0, 100)}...`);
+        }
+
         try {
             // Check if it's a JSON message (configuration)
             if (!Buffer.isBuffer(data) || (data.length > 0 && data[0] === 123)) { // 123 is '{'
                 try {
-                    const message = JSON.parse(data.toString());
-                    if (message.type === 'sessionConfig') {
-                        console.log(`[Server] Received session config for ${sessionId}`);
-                        const session = activeSessions.get(ws);
-                        if (session) {
-                            // Update client config
-                            session.sonicClient.setConfig(message.config);
+                    const message = data.toString();
+                    const parsed = JSON.parse(message);
+
+                    if (parsed.type === 'sessionConfig') {
+                        console.log(`[Server] Received session config:`, JSON.stringify(parsed.config));
+                        sonicClient.setConfig(parsed.config);
+
+                        // Restart session with new config
+                        if (sonicClient.getSessionId()) {
+                            console.log('[Server] Restarting session with new config');
+                            await sonicClient.stopSession();
                         }
+                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
+                        return;
+                    } else if (parsed.type === 'ping') {
+                        ws.send(JSON.stringify({ type: 'pong' }));
+                        return;
                     }
-                    return;
                 } catch (e) {
-                    // Not JSON, treat as audio if buffer
+                    // Not JSON, ignore
                 }
             }
 
             // Validate binary data for audio
             if (!Buffer.isBuffer(data)) {
-                console.error('[Server] Received non-buffer data');
+                // If it was JSON, we already handled it. If it was invalid JSON, we ignore it.
+                // But if it's NOT a buffer and NOT handled as JSON, we should probably return.
+                // However, the check above `!Buffer.isBuffer(data)` covers strings.
+                // If it was a string and not JSON, we fall through here.
+                // We should only process as audio if it IS a buffer.
                 return;
             }
 
-            // console.log(`[Server] Received audio chunk: ${data.length} bytes from ${sessionId}`);
+            // Ensure session is started for audio
+            if (!sonicClient.getSessionId()) {
+                console.log('[Server] Starting session on first audio chunk');
+                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
+            }
 
             // Route audio to Nova Sonic
             const chunk: AudioChunk = {
@@ -223,6 +182,71 @@ server.listen(PORT, () => {
     console.log(`[Server] Health check: http://localhost:${PORT}/health`);
     console.log(`[Server] Using Nova 2 Sonic model: ${process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0'}`);
 });
+
+/**
+ * Handle events from Nova Sonic and forward to WebSocket client
+ */
+function handleSonicEvent(ws: WebSocket, event: SonicEvent) {
+    switch (event.type) {
+        case 'audio':
+            // Forward audio data as binary WebSocket message
+            if (event.data.audio) {
+                const audioBuffer = Buffer.isBuffer(event.data.audio)
+                    ? event.data.audio
+                    : Buffer.from(event.data.audio);
+
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(audioBuffer);
+                    // console.log(`[Server] Sent audio to client: ${audioBuffer.length} bytes`);
+                }
+            }
+            break;
+
+        case 'transcript':
+            // Forward transcript as JSON message
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'transcript',
+                    role: event.data.role || 'assistant',
+                    text: event.data.transcript,
+                    isFinal: event.data.isFinal // Pass isFinal flag
+                }));
+                console.log(`[Server] Sent transcript: "${event.data.transcript}" (Final: ${event.data.isFinal})`);
+            }
+            break;
+
+        case 'interruption':
+            // Forward interruption signal
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'interruption'
+                }));
+                console.log('[Server] Sent interruption signal to client');
+            }
+            break;
+
+        case 'error':
+            // Log error and notify client
+            console.error('[Server] Nova Sonic error:', event.data);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Nova Sonic streaming error'
+                }));
+            }
+            break;
+
+        case 'usageEvent':
+            // Forward usage stats
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'usage',
+                    data: event.data
+                }));
+            }
+            break;
+    }
+}
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

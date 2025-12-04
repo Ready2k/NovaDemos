@@ -10,10 +10,18 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ### Current Implementation
 
-- **Frontend**: Captures microphone audio, converts to PCM16, streams via WebSocket, displays transcripts
+- **Frontend**: Captures microphone audio, converts to PCM16, streams via WebSocket, displays transcripts, and visualizes audio
 - **Backend**: Routes audio to Amazon Nova 2 Sonic via AWS Bedrock, streams responses back
 - **Audio Format**: PCM16, mono, 16kHz sample rate
 - **AI Model**: Amazon Nova 2 Sonic (released December 2025) - bidirectional speech-to-speech with 1M token context
+
+### Key Features
+
+- **Real-time Waveform Visualizer**: Dynamic audio visualization reacting to both user and AI speech
+- **Persona Presets**: Switch between different AI personalities (Pirate, French Tutor, Coding Assistant, etc.)
+- **Voice Selection**: Choose from multiple Nova Sonic voices (Matthew, Tiffany, Amy, Florian, Ambre)
+- **Session Stats**: Real-time tracking of session duration, token usage, and latency
+- **Configuration Persistence**: Settings are automatically saved between sessions
 
 ### Integration Details
 
@@ -99,7 +107,9 @@ Simply open `frontend/index.html` in a modern browser (Chrome or Firefox recomme
    - Your voice is sent to Amazon Nova 2 Sonic
    - Nova Sonic responds with natural speech
    - Transcripts appear in the UI
-5. **Stop Recording**: Click "Stop Recording" when done
+   - The visualizer reacts to the conversation
+5. **Customize**: Use the sidebar to change the AI's persona or voice. Settings are saved automatically.
+6. **Stop Recording**: Click "Stop Recording" when done
 
 **Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
 

@@ -34,7 +34,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent';
     data: any;
 }
 
@@ -50,13 +50,15 @@ export class SonicClient {
     private currentContentName?: string;
     private currentRole: string = 'assistant';
     private recentOutputs: string[] = [];
-    private contentStages: Map<string, string> = new Map();
+    private contentStages: Map<string, string> = new Map(); // Track generation stage
+    private currentTurnTranscript: string = ''; // Accumulate text for the current turn
+    private isTurnComplete: boolean = false; // Track if the previous turn ended
     private inputStream: AsyncGenerator<any> | null = null;
     private outputStream: AsyncIterable<any> | null = null;
     private isProcessing: boolean = false;
     private inputQueue: Buffer[] = [];
     private streamController: any = null;
-    private sessionConfig: { systemPrompt?: string; speechPrompt?: string } = {};
+    private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string } = {};
 
     constructor(config: SonicConfig = {}) {
         // Load configuration from environment variables with fallbacks
@@ -93,9 +95,16 @@ export class SonicClient {
         console.log(`[SonicClient] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
     }
 
-    setConfig(config: { systemPrompt?: string; speechPrompt?: string }) {
-        this.sessionConfig = config;
-        console.log('[SonicClient] Configuration updated:', this.sessionConfig);
+    setConfig(config: { systemPrompt?: string; speechPrompt?: string; voiceId?: string }) {
+        this.sessionConfig = { ...this.sessionConfig, ...config };
+        console.log('[SonicClient] Configuration updated:', JSON.stringify(this.sessionConfig));
+    }
+
+    /**
+     * Get current session ID
+     */
+    public getSessionId(): string | null {
+        return this.sessionId;
     }
 
     /**
@@ -154,11 +163,15 @@ export class SonicClient {
      */
     private async *createInputStream(): AsyncGenerator<any> {
         console.log('[SonicClient] Input stream generator started');
+        console.log('[SonicClient] Current Session Config:', JSON.stringify(this.sessionConfig, null, 2));
 
         const promptName = `prompt-${Date.now()}`;
         const contentName = `audio-${Date.now()}`;
         this.currentPromptName = promptName;
         this.currentContentName = contentName;
+
+        const voiceId = this.sessionConfig.voiceId || "matthew";
+        console.log(`[SonicClient] Using Voice ID: ${voiceId}`);
 
         // 1. Session Start
         const sessionStartEvent = {
@@ -187,7 +200,7 @@ export class SonicClient {
                         sampleRateHertz: 16000,
                         sampleSizeBits: 16,
                         channelCount: 1,
-                        voiceId: "matthew",
+                        voiceId: this.sessionConfig.voiceId || "matthew",
                         encoding: "base64",
                         audioType: "SPEECH"
                     }
@@ -216,6 +229,7 @@ export class SonicClient {
 
         // 4. System Prompt Text Input
         const systemPromptText = this.sessionConfig.systemPrompt || "You are a warm, professional, and helpful AI assistant.";
+        console.log('[SonicClient] Using System Prompt:', systemPromptText);
         const systemTextInputEvent = {
             event: {
                 textInput: {
@@ -413,8 +427,16 @@ export class SonicClient {
      */
     private async processOutputEvents(outputStream: AsyncIterable<any>) {
         console.log('[SonicClient] Starting output event processing');
+        const currentSessionId = this.sessionId; // Capture session ID for race condition check
+
         try {
             for await (const event of outputStream) {
+                // Loop safety check: Stop if session has changed/stopped
+                if (this.sessionId !== currentSessionId) {
+                    console.log('[SonicClient] Session changed, stopping old event loop');
+                    break;
+                }
+
                 // console.log('[SonicClient] Received raw event:', JSON.stringify(event));
 
                 if (event.chunk && event.chunk.bytes) {
@@ -423,8 +445,6 @@ export class SonicClient {
 
                     // Handle different event types
                     const eventData = rawEvent.event || rawEvent;
-
-
 
                     if (eventData.contentStart) {
                         const contentId = eventData.contentStart.contentId;
@@ -438,6 +458,12 @@ export class SonicClient {
                             }
                         }
                         this.contentStages.set(contentId, stage);
+
+                        // Reset transcript if role changes OR previous turn completed
+                        if (eventData.contentStart.role !== this.currentRole || this.isTurnComplete) {
+                            this.currentTurnTranscript = '';
+                            this.isTurnComplete = false;
+                        }
 
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
                         this.currentRole = eventData.contentStart.role;
@@ -457,33 +483,31 @@ export class SonicClient {
                         const contentId = eventData.textOutput.contentId;
                         const stage = this.contentStages.get(contentId) || 'UNKNOWN';
 
-                        if (content && content.trim().length > 0) {
-                            // Deduplication check (history based)
-                            if (this.recentOutputs.includes(content)) {
-                                console.log(`[SonicClient] Ignoring duplicate text (ID: ${contentId}, Stage: ${stage}): "${content.substring(0, 20)}..."`);
-                            } else {
-                                console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" (${this.currentRole})`);
+                        if (content && content.length > 0) {
+                            // Accumulate text for the current turn
+                            this.currentTurnTranscript += content;
 
-                                // Add to history
-                                this.recentOutputs.push(content);
-                                if (this.recentOutputs.length > 5) {
-                                    this.recentOutputs.shift();
-                                }
+                            console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" -> Turn Total: "${this.currentTurnTranscript.substring(0, 50)}..."`);
 
-                                this.eventCallback?.({
-                                    type: 'transcript',
-                                    data: {
-                                        transcript: content,
-                                        role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                        isFinal: stage === 'FINAL'
-                                    },
-                                });
-                            }
+                            this.eventCallback?.({
+                                type: 'transcript',
+                                data: {
+                                    transcript: this.currentTurnTranscript, // Send FULL accumulated turn text
+                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                    isFinal: stage === 'FINAL'
+                                },
+                            });
                         }
                     }
 
                     if (eventData.contentEnd) {
                         console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
+
+                        // Mark turn as complete if END_TURN or INTERRUPTED
+                        if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
+                            this.isTurnComplete = true;
+                        }
+
                         if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             console.log('[SonicClient] Interruption detected!');
                             this.eventCallback?.({
@@ -499,6 +523,10 @@ export class SonicClient {
 
                     if (eventData.usageEvent) {
                         console.log('[SonicClient] Usage:', JSON.stringify(eventData.usageEvent));
+                        this.eventCallback?.({
+                            type: 'usageEvent',
+                            data: eventData.usageEvent
+                        });
                     }
                 } else {
                     console.log('[SonicClient] Received unknown event structure:', event);
@@ -550,10 +578,5 @@ export class SonicClient {
         return this.sessionId !== null && this.isProcessing;
     }
 
-    /**
-     * Get current session ID
-     */
-    getSessionId(): string | null {
-        return this.sessionId;
-    }
+
 }

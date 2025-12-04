@@ -7,6 +7,23 @@
  * - Integration between audio processing and WebSocket
  */
 
+const PERSONA_PRESETS = {
+    "Helpful Assistant": "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.",
+    "Sci-Fi Bot": "You are a strict compliance bot that can only talk about Science fiction. Lets make sure you greet the contact with \"Hi, I'm Barbot how can I help\". keep to the facts only",
+    "Pirate": "You are a salty old pirate captain. You speak in pirate slang (Yarr, Ahoy, Matey). You are adventurous but a bit grumpy. Keep your answers short and punchy.",
+    "French Tutor": "You are a patient and encouraging French language tutor. You speak mostly in English but introduce French vocabulary and phrases where appropriate. Correct the user's pronunciation and grammar gently.",
+    "Concise Coder": "You are an expert software engineer. You provide code solutions that are efficient, modern, and well-commented. You explain concepts briefly and focus on the implementation. Avoid fluff.",
+    "Banking Bot": "You are a professional banking assistant. You are polite, formal, and security-conscious. You can help with general banking inquiries but always remind users not to share sensitive info like PINs or passwords."
+};
+
+const VOICE_PRESETS = [
+    { id: "matthew", name: "Matthew (US Male)" },
+    { id: "tiffany", name: "Tiffany (US Female)" },
+    { id: "amy", name: "Amy (GB Female)" },
+    { id: "florian", name: "Florian (FR Male)" },
+    { id: "ambre", name: "Ambre (FR Female)" }
+];
+
 class VoiceAssistant {
     constructor() {
         this.ws = null;
@@ -28,9 +45,37 @@ class VoiceAssistant {
         this.systemPromptInput = document.getElementById('systemPrompt');
         this.speechPromptInput = document.getElementById('speechPrompt');
         this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
+        this.newSessionBtn = document.getElementById('newSessionBtn');
+        this.presetSelect = document.getElementById('persona-preset');
+        this.presetSelect = document.getElementById('persona-preset');
+        this.voiceSelect = document.getElementById('voice-preset');
 
-        // Load saved settings
+        // Stats elements
+        this.statDuration = document.getElementById('statDuration');
+        this.statInputTokens = document.getElementById('statInputTokens');
+        this.statOutputTokens = document.getElementById('statOutputTokens');
+        this.statLatency = document.getElementById('statLatency');
+
+        this.sessionStartTime = null;
+        this.statsInterval = null;
+        this.totalInputTokens = 0;
+        this.totalOutputTokens = 0;
+
+        // Visualizer
+        this.canvas = document.getElementById('visualizer');
+        this.canvasCtx = this.canvas.getContext('2d');
+        this.visualizerAnimationId = null;
+
+        // Initialize UI options first
+        this.initializePresets();
+        this.initializeVoices();
+
+        // Then load saved settings
         this.loadSettings();
+
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectTimeout = null;
 
         // Bind event handlers
         this.connectBtn.addEventListener('click', () => this.connect());
@@ -38,13 +83,76 @@ class VoiceAssistant {
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
         this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+        this.newSessionBtn.addEventListener('click', () => this.startNewSession());
 
         this.log('Application ready');
+    }
+
+    initializePresets() {
+        if (!this.presetSelect) return;
+
+        for (const [name, prompt] of Object.entries(PERSONA_PRESETS)) {
+            const option = document.createElement('option');
+            option.value = prompt;
+            option.textContent = name;
+            this.presetSelect.appendChild(option);
+        }
+
+        // Handle preset selection
+        this.presetSelect.addEventListener('change', () => {
+            const selectedPrompt = this.presetSelect.value;
+            if (selectedPrompt) {
+                this.systemPromptInput.value = selectedPrompt;
+                // We don't auto-save, allowing the user to edit first
+            }
+        });
+    }
+
+    initializeVoices() {
+        if (!this.voiceSelect) return;
+
+        VOICE_PRESETS.forEach(voice => {
+            const option = document.createElement('option');
+            option.value = voice.id;
+            option.textContent = voice.name;
+            this.voiceSelect.appendChild(option);
+        });
+    }
+
+    startNewSession() {
+        if (confirm('Start a new session? This will clear the transcript and reset settings.')) {
+            // Clear transcript
+            this.transcriptEl.innerHTML = '';
+
+            // Reset settings to defaults
+            localStorage.removeItem('nova_system_prompt');
+            localStorage.removeItem('nova_speech_prompt');
+            localStorage.removeItem('nova_voice_id');
+
+            this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
+            this.speechPromptInput.value = "";
+            this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
+            this.speechPromptInput.value = "";
+            if (this.voiceSelect) this.voiceSelect.value = "matthew"; // Default
+
+            // Reset stats
+            this.resetStats();
+
+            // Save the reset settings (updates backend if connected)
+            this.saveSettings();
+
+            // If connected, reconnect to start fresh session
+            if (this.state !== 'disconnected') {
+                this.disconnect();
+                setTimeout(() => this.connect(), 500);
+            }
+        }
     }
 
     loadSettings() {
         const savedSystemPrompt = localStorage.getItem('nova_system_prompt');
         const savedSpeechPrompt = localStorage.getItem('nova_speech_prompt');
+        const savedVoiceId = localStorage.getItem('nova_voice_id');
 
         if (savedSystemPrompt) {
             this.systemPromptInput.value = savedSystemPrompt;
@@ -52,11 +160,31 @@ class VoiceAssistant {
         if (savedSpeechPrompt) {
             this.speechPromptInput.value = savedSpeechPrompt;
         }
+        if (savedVoiceId && this.voiceSelect) {
+            this.voiceSelect.value = savedVoiceId;
+        }
     }
 
     saveSettings() {
         localStorage.setItem('nova_system_prompt', this.systemPromptInput.value);
         localStorage.setItem('nova_speech_prompt', this.speechPromptInput.value);
+        if (this.voiceSelect) {
+            localStorage.setItem('nova_voice_id', this.voiceSelect.value);
+        }
+
+        // Send update to server if connected
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const config = {
+                type: 'sessionConfig',
+                config: {
+                    systemPrompt: this.systemPromptInput.value,
+                    speechPrompt: this.speechPromptInput.value,
+                    voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
+                }
+            };
+            this.ws.send(new TextEncoder().encode(JSON.stringify(config)));
+            this.log('Updated session configuration');
+        }
 
         // Visual feedback
         const originalText = this.saveSettingsBtn.textContent;
@@ -73,60 +201,111 @@ class VoiceAssistant {
      * Connect to WebSocket server
      */
     async connect() {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.log('Already connected', 'error');
-            return;
+        if (this.ws) {
+            this.ws.close();
         }
 
+        this.updateState('connecting');
         this.log('Connecting to server...');
 
-        try {
-            this.ws = new WebSocket(this.WS_URL);
+        let wsUrl = 'ws://localhost:8080/sonic';
+        if (window.location.protocol !== 'file:') {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsUrl = `${protocol}//${window.location.host}/sonic`;
+        }
 
-            // Set binary type for audio data
-            this.ws.binaryType = 'arraybuffer';
+        this.ws = new WebSocket(wsUrl);
+        this.ws.binaryType = 'arraybuffer';
 
-            this.ws.onopen = () => {
-                this.log('Connected to server', 'success');
-                this.updateState('connected');
+        this.ws.onopen = () => {
+            this.log('Connected to server', 'success');
+            this.updateState('connected');
+            this.reconnectAttempts = 0; // Reset attempts
+            this.reconnectAttempts = 0; // Reset attempts
+            this.showToast('Connected to server', 'success');
 
-                // Send session configuration
-                const systemPrompt = document.getElementById('systemPrompt').value;
-                const speechPrompt = document.getElementById('speechPrompt').value;
+            this.showToast('Connected to server', 'success');
 
-                this.ws.send(JSON.stringify({
+            // Start session timer
+            this.startSessionTimer();
+            this.startVisualizer();
+
+            // Send ping to verify connection
+            this.ws.send(JSON.stringify({ type: 'ping' }));
+
+            // Send session configuration immediately
+            try {
+                const config = {
                     type: 'sessionConfig',
                     config: {
-                        systemPrompt,
-                        speechPrompt
+                        systemPrompt: this.systemPromptInput.value,
+                        speechPrompt: this.speechPromptInput.value,
+                        voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
                     }
-                }));
+                };
+                this.ws.send(JSON.stringify(config));
                 this.log('Sent persona configuration');
-            };
+                console.log('[Frontend] Sent config:', config);
+            } catch (e) {
+                console.error('[Frontend] Failed to send config:', e);
+                this.log('Failed to send configuration', 'error');
+            }
+        };
 
-            this.ws.onmessage = (event) => {
-                this.handleMessage(event.data);
-            };
+        this.ws.onclose = (event) => {
+            this.log(`Disconnected (code: ${event.code})`, 'warning');
+            this.updateState('disconnected');
 
-            this.ws.onerror = (error) => {
-                this.log('WebSocket error', 'error');
-                console.error('WebSocket error:', error);
-            };
+            if (event.code !== 1000 && event.code !== 1005) {
+                // Abnormal closure, attempt reconnect
+                this.attemptReconnect();
+            }
+        };
 
-            this.ws.onclose = (event) => {
-                this.log(`Disconnected (code: ${event.code})`, 'error');
-                this.updateState('disconnected');
+        this.ws.onerror = (error) => {
+            this.log('WebSocket error', 'error');
+            console.error(error);
+            this.showToast('Connection error', 'error');
+        };
 
-                // Clean up audio on disconnect
-                if (this.state === 'recording') {
-                    this.audioProcessor.stopRecording();
+        this.ws.onmessage = async (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                // Audio data
+                this.audioProcessor.playAudio(event.data);
+            } else {
+                // JSON message
+                try {
+                    const message = JSON.parse(event.data);
+
+                    switch (message.type) {
+                        case 'sessionStart':
+                            this.log(`Session: ${message.sessionId}`, 'success');
+                            break;
+
+                        case 'transcript':
+                            this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
+                            this.log(`Transcript [${message.role}]: ${message.text}`);
+                            break;
+
+                        case 'interruption':
+                            this.log('⚡ Barge-in detected! Stopping playback.', 'warning');
+                            this.audioProcessor.clearQueue();
+                            break;
+
+                        case 'error':
+                            this.log(`Error: ${message.message}`, 'error');
+                            this.showToast(message.message, 'error');
+                            break;
+
+                        case 'usage':
+                            this.updateTokenStats(message.data);
+                            break;
+                    }
+                } catch (e) {
+                    console.error('Error parsing message:', e);
                 }
-            };
-
-        } catch (error) {
-            this.log('Failed to connect: ' + error.message, 'error');
-            console.error('Connection error:', error);
-        }
+            }
+        };
     }
 
     /**
@@ -134,13 +313,21 @@ class VoiceAssistant {
      */
     disconnect() {
         if (this.ws) {
-            this.ws.close();
+            this.ws.close(1000, 'User disconnected');
             this.ws = null;
         }
-
-        this.audioProcessor.cleanup();
+        this.stopRecording();
+        this.audioProcessor.clearQueue();
         this.updateState('disconnected');
-        this.log('Disconnected');
+        this.showToast('Disconnected', 'info');
+
+        // Clear any pending reconnect
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+        this.stopSessionTimer();
+        this.stopVisualizer();
     }
 
     /**
@@ -199,46 +386,46 @@ class VoiceAssistant {
         }
     }
 
-    /**
-     * Handle incoming WebSocket messages
-     */
-    handleMessage(data) {
-        // Handle binary audio data
-        if (data instanceof ArrayBuffer) {
-            // Play received audio (echo from server)
-            this.audioProcessor.playAudio(data);
-            return;
+    attemptReconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000); // Exponential backoff max 10s
+
+            this.log(`Attempting reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+            this.showToast(`Reconnecting in ${delay / 1000}s...`, 'warning');
+
+            this.reconnectTimeout = setTimeout(() => {
+                this.connect();
+            }, delay);
+        } else {
+            this.log('Max reconnect attempts reached', 'error');
+            this.showToast('Connection failed. Please refresh.', 'error');
         }
+    }
 
-        // Handle JSON messages
-        try {
-            const message = JSON.parse(data);
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
 
-            switch (message.type) {
-                case 'connected':
-                    this.log(`Session: ${message.sessionId}`, 'success');
-                    break;
+        const container = document.getElementById('toast-container') || this.createToastContainer();
+        container.appendChild(toast);
 
-                case 'transcript':
-                    this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
-                    this.log(`Transcript [${message.role}]: ${message.text}`);
-                    break;
+        // Trigger animation
+        setTimeout(() => toast.classList.add('show'), 10);
 
-                case 'interruption':
-                    this.log('⚡ Barge-in detected! Stopping playback.', 'error');
-                    this.audioProcessor.clearQueue();
-                    break;
+        // Remove after 3s
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
 
-                case 'error':
-                    this.log(`Error: ${message.message}`, 'error');
-                    break;
-
-                default:
-                    console.log('Unknown message type:', message);
-            }
-        } catch (e) {
-            console.error('Failed to parse message:', e);
-        }
+    createToastContainer() {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+        return container;
     }
 
     /**
@@ -271,12 +458,17 @@ class VoiceAssistant {
      * Display transcript in UI
      */
     displayTranscript(role, text, isFinal = true) {
+        // Filter out JSON-like strings or interruption signals that might have leaked into text
+        if (typeof text === 'string' && (text.includes('"interrupted"') || text.trim().startsWith('{'))) {
+            return;
+        }
+
         const lastMessage = this.transcriptEl.lastElementChild;
         const isTemporary = lastMessage && lastMessage.classList.contains('temporary');
         const isSameRole = lastMessage && lastMessage.classList.contains(role);
 
         if (isTemporary && isSameRole) {
-            // Update existing temporary message
+            // Update existing temporary message (backend sends full accumulated text)
             lastMessage.querySelector('.text').textContent = text;
             if (isFinal) {
                 lastMessage.classList.remove('temporary');
@@ -306,21 +498,137 @@ class VoiceAssistant {
      */
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        const entry = document.createElement('div');
-        entry.className = `log-entry ${type}`;
-        entry.innerHTML = `
-      <span class="timestamp">${timestamp}</span>
-      <span>${message}</span>
-    `;
 
-        this.logEl.appendChild(entry);
+        // Log to console
+        console.log(`[${timestamp}] [${type}] ${message}`);
 
-        // Auto-scroll to bottom
-        this.logEl.scrollTop = this.logEl.scrollHeight;
+        // Log to UI if element exists
+        if (this.logEl) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `
+            <span class="timestamp">${timestamp}</span>
+            <span>${message}</span>
+            `;
 
-        // Limit log entries
-        while (this.logEl.children.length > 50) {
-            this.logEl.removeChild(this.logEl.firstChild);
+            this.logEl.appendChild(entry);
+
+            // Auto-scroll to bottom
+            this.logEl.scrollTop = this.logEl.scrollHeight;
+
+            // Limit log entries
+            while (this.logEl.children.length > 50) {
+                this.logEl.removeChild(this.logEl.firstChild);
+            }
+        }
+    }
+
+    startSessionTimer() {
+        this.stopSessionTimer();
+        this.sessionStartTime = Date.now();
+        this.statsInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.sessionStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            if (this.statDuration) this.statDuration.textContent = `${minutes}:${seconds}`;
+        }, 1000);
+    }
+
+    stopSessionTimer() {
+        if (this.statsInterval) {
+            clearInterval(this.statsInterval);
+            this.statsInterval = null;
+        }
+    }
+
+    resetStats() {
+        this.totalInputTokens = 0;
+        this.totalOutputTokens = 0;
+        if (this.statInputTokens) this.statInputTokens.textContent = '0';
+        if (this.statOutputTokens) this.statOutputTokens.textContent = '0';
+        if (this.statDuration) this.statDuration.textContent = '00:00';
+        this.stopSessionTimer();
+    }
+
+    updateTokenStats(usageData) {
+        if (usageData.totalInputTokens) {
+            this.statInputTokens.textContent = usageData.totalInputTokens;
+        }
+        if (usageData.totalOutputTokens) {
+            this.statOutputTokens.textContent = usageData.totalOutputTokens;
+        }
+    }
+
+    startVisualizer() {
+        if (!this.canvas) return;
+
+        // Resize canvas
+        this.canvas.width = this.canvas.offsetWidth;
+        this.canvas.height = this.canvas.offsetHeight;
+
+        const draw = () => {
+            this.visualizerAnimationId = requestAnimationFrame(draw);
+
+            const width = this.canvas.width;
+            const height = this.canvas.height;
+            const ctx = this.canvasCtx;
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Get audio data
+            const dataArray = this.audioProcessor.getAudioData();
+
+            if (dataArray) {
+                const bufferLength = dataArray.length;
+                const barWidth = (width / bufferLength) * 2.5;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * height;
+
+                    // Dynamic color based on height/intensity
+                    const hue = 240 + (barHeight / height) * 60; // Blue to Purple
+                    ctx.fillStyle = `hsla(${hue}, 80%, 60%, 0.8)`;
+
+                    // Draw mirrored bar (center aligned)
+                    const y = (height - barHeight) / 2;
+
+                    // Rounded pill shape
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, barWidth, barHeight, barWidth / 2);
+                    ctx.fill();
+
+                    x += barWidth + 1;
+                }
+            } else {
+                // Idle animation (gentle pulse)
+                const time = Date.now() / 1000;
+                const barCount = 20;
+                const barWidth = width / barCount;
+
+                for (let i = 0; i < barCount; i++) {
+                    const h = 4 + Math.sin(time * 2 + i * 0.5) * 4;
+                    const x = i * barWidth;
+                    const y = (height - h) / 2;
+
+                    ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, barWidth - 2, h, 2);
+                    ctx.fill();
+                }
+            }
+        };
+        draw();
+    }
+
+    stopVisualizer() {
+        if (this.visualizerAnimationId) {
+            cancelAnimationFrame(this.visualizerAnimationId);
+            this.visualizerAnimationId = null;
+        }
+        // Clear canvas
+        if (this.canvasCtx) {
+            this.canvasCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         }
     }
 }
