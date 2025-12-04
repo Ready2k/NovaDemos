@@ -1,5 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
 import * as dotenv from 'dotenv';
 
@@ -8,6 +10,7 @@ dotenv.config();
 
 const PORT = 8080;
 const SONIC_PATH = '/sonic';
+const FRONTEND_DIR = path.join(__dirname, '../../frontend');
 
 /**
  * WebSocket Server for Real-Time Voice-to-Voice Assistant
@@ -28,13 +31,66 @@ const activeSessions = new Map<WebSocket, ClientSession>();
 
 // Create HTTP server
 const server = http.createServer((req, res) => {
+    console.log(`[HTTP] Request: ${req.url}`);
+
     if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
-    } else {
-        res.writeHead(404);
-        res.end('Not Found');
+        return;
     }
+
+    // Serve static files
+    let filePath = req.url === '/' ? '/index.html' : req.url || '/index.html';
+    // Remove query parameters
+    filePath = filePath.split('?')[0];
+
+    const absolutePath = path.join(FRONTEND_DIR, filePath);
+
+    // Prevent directory traversal
+    if (!absolutePath.startsWith(FRONTEND_DIR)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
+    const extname = path.extname(absolutePath);
+    let contentType = 'text/html';
+    switch (extname) {
+        case '.js':
+            contentType = 'text/javascript';
+            break;
+        case '.css':
+            contentType = 'text/css';
+            break;
+        case '.json':
+            contentType = 'application/json';
+            break;
+        case '.png':
+            contentType = 'image/png';
+            break;
+        case '.jpg':
+            contentType = 'image/jpg';
+            break;
+        case '.ico':
+            contentType = 'image/x-icon';
+            break;
+    }
+
+    fs.readFile(absolutePath, (err, content) => {
+        if (err) {
+            if (err.code === 'ENOENT') {
+                console.log(`[HTTP] File not found: ${absolutePath}`);
+                res.writeHead(404);
+                res.end('Not Found');
+            } else {
+                res.writeHead(500);
+                res.end(`Server Error: ${err.code}`);
+            }
+        } else {
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(content, 'utf-8');
+        }
+    });
 });
 
 // Create WebSocket server
@@ -110,6 +166,16 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event));
                             }
                             await sonicClient.sendText(parsed.text);
+                        }
+                        return;
+                    } else if (parsed.type === 'awsConfig') {
+                        console.log('[Server] Received AWS Configuration update');
+                        const { accessKeyId, secretAccessKey, region } = parsed.config;
+                        if (accessKeyId && secretAccessKey && region) {
+                            sonicClient.updateCredentials(accessKeyId, secretAccessKey, region);
+                            ws.send(JSON.stringify({ type: 'status', message: 'AWS Credentials Updated' }));
+                        } else {
+                            ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));
                         }
                         return;
                     }

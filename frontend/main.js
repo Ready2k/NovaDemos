@@ -55,6 +55,15 @@ class VoiceAssistant {
         this.textInput = document.getElementById('textInput');
         this.sendBtn = document.getElementById('sendBtn');
 
+        // AWS Config Elements
+        this.awsConfigBtn = document.getElementById('awsConfigBtn');
+        this.awsModal = document.getElementById('awsModal');
+        this.awsAccessKey = document.getElementById('awsAccessKey');
+        this.awsSecretKey = document.getElementById('awsSecretKey');
+        this.awsRegion = document.getElementById('awsRegion');
+        this.saveAwsBtn = document.getElementById('saveAwsBtn');
+        this.cancelAwsBtn = document.getElementById('cancelAwsBtn');
+
         // Stats elements
         this.statDuration = document.getElementById('statDuration');
         this.statInputTokens = document.getElementById('statInputTokens');
@@ -90,6 +99,15 @@ class VoiceAssistant {
         this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
         this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
         this.newSessionBtn.addEventListener('click', () => this.startNewSession());
+
+        // AWS Config Events
+        this.awsConfigBtn.addEventListener('click', () => {
+            this.awsModal.style.display = 'flex';
+        });
+        this.cancelAwsBtn.addEventListener('click', () => {
+            this.awsModal.style.display = 'none';
+        });
+        this.saveAwsBtn.addEventListener('click', () => this.saveAwsCredentials());
 
         // Chat events
         this.sendBtn.addEventListener('click', () => this.sendTextMessage());
@@ -218,112 +236,114 @@ class VoiceAssistant {
     /**
      * Connect to WebSocket server
      */
-    async connect() {
-        if (this.ws) {
-            this.ws.close();
-        }
-
-        this.updateState('connecting');
-        this.log('Connecting to server...');
-
-        let wsUrl = 'ws://localhost:8080/sonic';
-        if (window.location.protocol !== 'file:') {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            wsUrl = `${protocol}//${window.location.host}/sonic`;
-        }
-
-        this.ws = new WebSocket(wsUrl);
-        this.ws.binaryType = 'arraybuffer';
-
-        this.ws.onopen = () => {
-            this.log('Connected to server', 'success');
-            this.updateState('connected');
-            this.reconnectAttempts = 0; // Reset attempts
-            this.reconnectAttempts = 0; // Reset attempts
-            this.showToast('Connected to server', 'success');
-
-            this.showToast('Connected to server', 'success');
-
-            // Start session timer
-            this.startSessionTimer();
-            this.startVisualizer();
-
-            // Send ping to verify connection
-            this.ws.send(JSON.stringify({ type: 'ping' }));
-
-            // Send session configuration immediately
-            try {
-                const config = {
-                    type: 'sessionConfig',
-                    config: {
-                        systemPrompt: this.systemPromptInput.value,
-                        speechPrompt: this.speechPromptInput.value,
-                        voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
-                    }
-                };
-                this.ws.send(JSON.stringify(config));
-                this.log('Sent persona configuration');
-                console.log('[Frontend] Sent config:', config);
-            } catch (e) {
-                console.error('[Frontend] Failed to send config:', e);
-                this.log('Failed to send configuration', 'error');
+    connect() {
+        return new Promise((resolve, reject) => {
+            if (this.ws) {
+                this.ws.close();
             }
-        };
 
-        this.ws.onclose = (event) => {
-            this.log(`Disconnected (code: ${event.code})`, 'warning');
-            this.updateState('disconnected');
+            this.updateState('connecting');
+            this.log('Connecting to server...');
 
-            if (event.code !== 1000 && event.code !== 1005) {
-                // Abnormal closure, attempt reconnect
-                this.attemptReconnect();
+            let wsUrl = 'ws://localhost:8080/sonic';
+            if (window.location.protocol !== 'file:') {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.host}/sonic`;
             }
-        };
 
-        this.ws.onerror = (error) => {
-            this.log('WebSocket error', 'error');
-            console.error(error);
-            this.showToast('Connection error', 'error');
-        };
+            this.ws = new WebSocket(wsUrl);
+            this.ws.binaryType = 'arraybuffer';
 
-        this.ws.onmessage = async (event) => {
-            if (event.data instanceof ArrayBuffer) {
-                // Audio data
-                this.audioProcessor.playAudio(event.data);
-            } else {
-                // JSON message
+            this.ws.onopen = () => {
+                this.log('Connected to server', 'success');
+                this.updateState('connected');
+                this.reconnectAttempts = 0; // Reset attempts
+                this.showToast('Connected to server', 'success');
+
+                // Start session timer
+                this.startSessionTimer();
+                this.startVisualizer();
+
+                // Send ping to verify connection
+                this.ws.send(JSON.stringify({ type: 'ping' }));
+
+                // Send session configuration immediately
                 try {
-                    const message = JSON.parse(event.data);
-
-                    switch (message.type) {
-                        case 'sessionStart':
-                            this.log(`Session: ${message.sessionId}`, 'success');
-                            break;
-
-                        case 'transcript':
-                            this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
-                            this.log(`Transcript [${message.role}]: ${message.text}`);
-                            break;
-
-                        case 'interruption':
-                            this.log('⚡ Barge-in detected! Stopping playback.', 'warning');
-                            this.audioProcessor.clearQueue();
-                            break;
-
-                        case 'error':
-                            this.log(`Error: ${message.message}`, 'error');
-                            this.showToast(message.message, 'error');
-                            break;
-
-                        case 'usage':
-                            this.updateTokenStats(message.data);
-                            break;
-                    }
+                    const config = {
+                        type: 'sessionConfig',
+                        config: {
+                            systemPrompt: this.systemPromptInput.value,
+                            speechPrompt: this.speechPromptInput.value,
+                            voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew'
+                        }
+                    };
+                    this.ws.send(JSON.stringify(config));
+                    this.log('Sent persona configuration');
+                    console.log('[Frontend] Sent config:', config);
                 } catch (e) {
-                    console.error('Error parsing message:', e);
+                    console.error('[Frontend] Failed to send config:', e);
+                    this.log('Failed to send configuration', 'error');
                 }
-            }
-        };
+
+                resolve();
+            };
+
+            this.ws.onclose = (event) => {
+                this.log(`Disconnected (code: ${event.code})`, 'warning');
+                this.updateState('disconnected');
+
+                if (event.code !== 1000 && event.code !== 1005) {
+                    // Abnormal closure, attempt reconnect
+                    this.attemptReconnect();
+                }
+            };
+
+            this.ws.onerror = (error) => {
+                this.log('Connection error', 'error');
+                console.error('WebSocket error:', error);
+                this.updateState('disconnected');
+                // Don't reject here as onclose will also fire
+            };
+
+            this.ws.onmessage = async (event) => {
+                if (event.data instanceof ArrayBuffer) {
+                    // Audio data
+                    this.audioProcessor.playAudio(event.data);
+                } else {
+                    // JSON message
+                    try {
+                        const message = JSON.parse(event.data);
+
+                        switch (message.type) {
+                            case 'sessionStart':
+                                this.log(`Session: ${message.sessionId}`, 'success');
+                                break;
+
+                            case 'transcript':
+                                this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
+                                this.log(`Transcript [${message.role}]: ${message.text}`);
+                                break;
+
+                            case 'interruption':
+                                this.log('⚡ Barge-in detected! Stopping playback.', 'warning');
+                                this.audioProcessor.clearQueue();
+                                break;
+
+                            case 'error':
+                                this.log(`Error: ${message.message}`, 'error');
+                                this.showToast(message.message, 'error');
+                                break;
+
+                            case 'usage':
+                                this.updateTokenStats(message.data);
+                                break;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e);
+                    }
+                }
+            };
+        });
     }
 
     /**
@@ -717,6 +737,49 @@ class VoiceAssistant {
 
         // Clear input
         this.textInput.value = '';
+    }
+
+    /**
+     * Send AWS Credentials to server
+     */
+    async saveAwsCredentials() {
+        const accessKeyId = this.awsAccessKey.value.trim();
+        const secretAccessKey = this.awsSecretKey.value.trim();
+        const region = this.awsRegion.value.trim();
+
+        if (!accessKeyId || !secretAccessKey || !region) {
+            alert('Please fill in all AWS fields.');
+            return;
+        }
+
+        // Auto-connect if disconnected
+        if (this.state === 'disconnected') {
+            try {
+                this.log('Connecting to update credentials...');
+                await this.connect();
+            } catch (e) {
+                alert('Failed to connect to server. Cannot update credentials.');
+                return;
+            }
+        }
+
+        // Send to server
+        this.ws.send(JSON.stringify({
+            type: 'awsConfig',
+            config: {
+                accessKeyId,
+                secretAccessKey,
+                region
+            }
+        }));
+
+        // Hide modal and clear sensitive inputs
+        this.awsModal.style.display = 'none';
+        this.awsAccessKey.value = '';
+        this.awsSecretKey.value = '';
+
+        this.log('Sent AWS credentials to server');
+        this.showToast('AWS Credentials Updated', 'success');
     }
 }
 

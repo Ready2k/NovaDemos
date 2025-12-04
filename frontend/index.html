@@ -44,6 +44,12 @@
         <label for="speechPrompt">Speech Prompt (Optional)</label>
         <textarea id="speechPrompt" rows="4" placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
       </div>
+
+      <button id="awsConfigBtn" class="secondary-btn"
+        style="margin-bottom: 10px; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4);">
+        🔐 Configure AWS
+      </button>
+
       <button id="saveSettingsBtn" class="secondary-btn">Save Settings</button>
       <button id="newSessionBtn" class="danger-btn" style="margin-top: 10px;">New Session</button>
     </div>
@@ -95,7 +101,41 @@
   </div>
 
   <script src="audio.js"></script>
-  <script src="main.js"></script>
+  <script type="module" src="main.js"></script>
+
+  <!-- AWS Config Modal -->
+  <div id="awsModal" class="modal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="modal-content"
+      style="background: #1e293b; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; border: 1px solid rgba(255,255,255,0.1);">
+      <h3 style="margin-top: 0; margin-bottom: 15px;">AWS Configuration</h3>
+      <p style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 20px;">Enter your AWS credentials. These are used only
+        for this session and are not saved to the server.</p>
+
+      <div class="input-group" style="margin-bottom: 15px;">
+        <label for="awsAccessKey">Access Key ID</label>
+        <input type="password" id="awsAccessKey" placeholder="AKIA..."
+          style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+      </div>
+
+      <div class="input-group" style="margin-bottom: 15px;">
+        <label for="awsSecretKey">Secret Access Key</label>
+        <input type="password" id="awsSecretKey" placeholder="wJalrX..."
+          style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+      </div>
+
+      <div class="input-group" style="margin-bottom: 20px;">
+        <label for="awsRegion">Region</label>
+        <input type="text" id="awsRegion" value="us-east-1" placeholder="us-east-1"
+          style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+      </div>
+
+      <div class="modal-actions" style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="cancelAwsBtn" class="secondary-btn">Cancel</button>
+        <button id="saveAwsBtn" class="primary-btn">Update Credentials</button>
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

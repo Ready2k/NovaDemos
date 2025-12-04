@@ -514,6 +514,26 @@ export class SonicClient {
     }
 
     /**
+     * Update AWS Credentials for this session
+     */
+    updateCredentials(accessKeyId: string, secretAccessKey: string, region: string) {
+        console.log('[SonicClient] Updating AWS credentials for session');
+
+        const clientConfig: any = {
+            region: region,
+            credentials: {
+                accessKeyId: accessKeyId,
+                secretAccessKey: secretAccessKey
+            }
+        };
+
+        this.client = new BedrockRuntimeClient(clientConfig);
+        this.config.region = region;
+
+        console.log(`[SonicClient] Re-initialized client with new credentials in region: ${region}`);
+    }
+
+    /**
      * Send audio chunk to Nova 2 Sonic
      */
     async sendAudioChunk(chunk: AudioChunk): Promise<void> {
