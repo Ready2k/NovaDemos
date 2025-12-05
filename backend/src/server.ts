@@ -353,7 +353,12 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                         text,
                                         session.sessionId,
                                         session.agentId,
-                                        session.agentAliasId
+                                        session.agentAliasId,
+                                        // Filler Word Handler
+                                        (filler) => {
+                                            console.log(`[Server] Emitting filler word: "${filler}"`);
+                                            session.sonicClient.sendText(filler);
+                                        }
                                     );
                                     console.log(`[Server] Agent replied: "${agentReply}"`);
 
@@ -401,8 +406,22 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     console.log('[Server] Sending to Sonic:', agentReply);
                                     await sonicClient.sendText(agentReply);
 
-                                } catch (err) {
-                                    console.error('[Server] Agent Error:', err);
+                                } catch (agentError: any) {
+                                    console.error('[Server] Agent Error:', agentError);
+
+                                    // Forward error to Debug Panel
+                                    ws.send(JSON.stringify({
+                                        type: 'debugInfo',
+                                        data: {
+                                            error: {
+                                                message: 'Agent Execution Failed',
+                                                details: agentError.message || 'Unknown error occurred while calling Bedrock Agent',
+                                                timestamp: new Date().toISOString()
+                                            }
+                                        }
+                                    }));
+
+                                    // Also notify user via voice if possible? Maybe not, could loop.
                                     ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
                                 }
                             }

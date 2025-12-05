@@ -38,18 +38,30 @@ export class TranscribeClientWrapper {
 
         try {
             const response = await this.client.send(command);
+            let lastTranscript = "";
             let fullText = "";
 
             for await (const event of response.TranscriptResultStream || []) {
                 if (event.TranscriptEvent) {
                     const results = event.TranscriptEvent.Transcript?.Results;
                     if (results && results.length > 0) {
+                        const transcript = results[0].Alternatives?.[0]?.Transcript;
+                        if (transcript) {
+                            lastTranscript = transcript;
+                        }
+
                         if (!results[0].IsPartial) {
-                            fullText += results[0].Alternatives?.[0]?.Transcript + " ";
+                            fullText += transcript + " ";
                         }
                     }
                 }
             }
+            // Fallback: If no final segment was received, use the last partial
+            if (!fullText.trim() && lastTranscript) {
+                console.log('[Transcribe] Using partial result as fallback');
+                fullText = lastTranscript;
+            }
+
             return fullText.trim();
         } catch (error) {
             console.error('[Transcribe] Error:', error);

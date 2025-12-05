@@ -586,7 +586,11 @@ export class SonicClient {
         // --- DEBOUNCE: Prevent duplicate text sending (e.g. from UI double clicks or double-triggering logic) ---
         const now = Date.now();
         const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
-        if (lastSent.text === text && (now - lastSent.time) < 2000) {
+
+        // Allow filler words to bypass duplicate check
+        const isFiller = text === "hmmm..." || text === "uh-huh...";
+
+        if (!isFiller && lastSent.text === text && (now - lastSent.time) < 2000) {
             console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
             return;
         }

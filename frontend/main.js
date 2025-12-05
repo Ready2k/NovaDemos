@@ -229,7 +229,7 @@ class VoiceAssistant {
         // Re-attach event listener since we might have cleared it or it wasn't attached
         // Actually, better to attach it once in constructor, but since we are here...
         // Let's just ensure it's attached in constructor and NOT here to avoid duplicates if called multiple times
-    }     // Handle mode selection
+    }
 
 
     initializeVoices() {
@@ -1074,95 +1074,102 @@ class VoiceAssistant {
 
     renderDebugInfo(data) {
         if (!this.debugModeCheckbox.checked) return;
+        if (!this.debugContent) return;
 
-        // Handle Metrics Update
-        if (data.metrics) {
-            let metricsHtml = `<div style="margin-top: 5px; border-top: 1px dashed #444; padding-top: 5px; font-size: 0.8rem; color: #aaa;">`;
-
-            if (data.metrics.firstByteLatency) {
-                metricsHtml += `<strong>📊 Latency:</strong> First Byte: ${data.metrics.firstByteLatency}ms<br>`;
-            }
-
-            if (data.metrics.totalTokens) {
-                metricsHtml += `<strong>🔢 Tokens:</strong> In: ${data.metrics.inputTokens} | Out: ${data.metrics.outputTokens} | Total: ${data.metrics.totalTokens}`;
-            }
-
-            metricsHtml += `</div>`;
-
-            // Append to the last entry if possible, or just append to log
-            const lastEntry = this.debugContent.lastElementChild;
-            if (lastEntry) {
-                lastEntry.insertAdjacentHTML('beforeend', metricsHtml);
-            } else {
-                this.debugContent.insertAdjacentHTML('beforeend', metricsHtml);
-            }
+        // 1. Errors
+        if (data.error) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `margin-top: 12px; padding: 12px; background: rgba(220, 38, 38, 0.1); border-left: 3px solid #ef4444; border-radius: 4px; color: #fca5a5; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;`;
+            errorDiv.innerHTML = `
+                <div style="font-weight: 700; color: #ef4444;">⚠️ ${data.error.message}</div>
+                <div style="opacity: 0.9;">${data.error.details}</div>
+            `;
+            this.debugContent.appendChild(errorDiv);
+            this.debugContent.scrollTop = this.debugContent.scrollHeight;
             return;
         }
 
-        // Handle System Info (Persona Details)
+        // 2. System Info
         if (data.systemInfo) {
-            const sysHtml = `
-                <div style="margin-bottom: 20px; padding: 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px;">
-                    <div style="color: #818cf8; font-weight: bold; margin-bottom: 5px;">🤖 Active Persona</div>
-                    <div style="font-size: 0.9rem; color: #fff;">${data.systemInfo.persona}</div>
-                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 5px;">${data.systemInfo.description}</div>
-                </div>`;
-            this.debugContent.insertAdjacentHTML('beforeend', sysHtml);
+            const infoDiv = document.createElement('div');
+            infoDiv.style.cssText = 'margin-bottom: 16px; padding: 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px;';
+            infoDiv.innerHTML = `
+                <div style="color: #60a5fa; font-weight: 600;">System Active</div>
+                <div style="font-size: 0.85rem; color: #93c5fd;">Mode: ${data.systemInfo.mode}</div>
+                <div style="font-size: 0.85rem; color: #93c5fd;">Persona: ${data.systemInfo.persona}</div>
+            `;
+            this.debugContent.innerHTML = '';
+            this.debugContent.appendChild(infoDiv);
             return;
         }
 
-        const { transcript, agentReply, trace } = data;
-
-        // Create a new entry container for this turn
-        let html = `<div class="debug-turn" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">`;
-
-        if (transcript) {
-            html += `<div><strong>🗣️ Transcript:</strong> "${transcript}"</div>`;
+        // 3. Persistent Metrics
+        if (data.metrics) {
+            const panel = document.getElementById('live-metrics-panel');
+            const latencyEl = document.getElementById('debug-latency');
+            const tokensEl = document.getElementById('debug-tokens');
+            if (panel && latencyEl && tokensEl) {
+                panel.style.display = 'block';
+                const lat = data.metrics.latencyMs || data.metrics.processingTime || data.metrics.latency || '--';
+                latencyEl.textContent = lat !== '--' ? `${lat}ms` : lat;
+                if (data.metrics.usage) {
+                    tokensEl.textContent = data.metrics.usage.totalTokens || '0';
+                    tokensEl.title = `In: ${data.metrics.usage.inputTokens}, Out: ${data.metrics.usage.outputTokens}`;
+                }
+            }
+            return;
         }
 
-        if (trace && trace.length > 0) {
-            html += `<div style="margin-top: 10px; padding-top: 5px;"><strong>🧠 Agent Thought:</strong></div>`;
-            trace.forEach(t => {
-                const ot = t.trace?.orchestrationTrace || t.orchestrationTrace;
+        // 4. Turn Data (Transcript, Trace, Reply)
+        let html = '';
+
+        if (data.transcript) {
+            html += `<div style="margin-top: 12px; color: #94a3b8; font-size: 0.8rem;">User Input</div>
+                     <div style="color: #e2e8f0; margin-bottom: 8px;">"${data.transcript}"</div>`;
+        }
+
+        if (data.agentReply) {
+            html += `<div style="color: #94a3b8; font-size: 0.8rem;">Agent Response</div>
+                     <div style="color: #86efac; margin-bottom: 8px;">"${data.agentReply}"</div>`;
+        }
+
+        // Render Reasoning Trace
+        if (data.trace && data.trace.length > 0) {
+            html += `<div style="color: #94a3b8; font-size: 0.8rem;">Reasoning Trace</div>
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; overflow-x: auto;">`;
+
+            data.trace.forEach(step => {
+                const tr = step.trace || step;
+                const ot = tr.orchestrationTrace || tr.trace?.orchestrationTrace;
                 if (ot) {
+                    const type = Object.keys(ot)[0];
+                    html += `<div style="margin-bottom: 4px;"><span style="color: #c084fc;">[${type}]</span></div>`;
+                    if (ot.rationale) {
+                        html += `<div style="color: #ffff00; margin-left: 10px; font-style: italic;">"${ot.rationale.text}"</div>`;
+                    }
                     if (ot.invocationInput?.actionGroupInvocationInput) {
                         const tool = ot.invocationInput.actionGroupInvocationInput;
-                        html += `<div style="color: #00ffff; margin-left: 10px;">🔧 Tool Call: ${tool.function}</div>`;
-                    }
-                    if (ot.observation?.knowledgeBaseLookupOutput?.retrievedReferences) {
-                        const refs = ot.observation.knowledgeBaseLookupOutput.retrievedReferences;
-                        html += `<div style="color: #ff00ff; margin-left: 10px;">📚 KB Hits: ${refs.length}</div>`;
-                    }
-                    if (ot.rationale) {
-                        html += `<div style="color: #ffff00; margin-left: 10px;">🤔 ${ot.rationale.text}</div>`;
+                        html += `<div style="color: #00ffff; margin-left: 10px;">🔧 ${tool.function}</div>`;
                     }
                 }
             });
+            html += `</div>`;
         }
 
-        if (agentReply && agentReply !== '...') {
-            html += `<div style="margin-top: 10px;"><strong>🤖 Agent Reply:</strong> "${agentReply}"</div>`;
-        } else if (agentReply === '...') {
-            html += `<div style="margin-top: 10px; color: #888;"><em>🤖 Agent thinking...</em></div>`;
+        if (html) {
+            const turnDiv = document.createElement('div');
+            turnDiv.className = 'debug-entry';
+            turnDiv.style.cssText = 'margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.05); paddingTop: 16px;';
+            turnDiv.innerHTML = html;
+            this.debugContent.appendChild(turnDiv);
+            this.debugContent.scrollTop = this.debugContent.scrollHeight;
         }
-
-        html += `</div>`;
-
-        // If we are just updating the last turn (e.g. partial transcript), replace it? 
-        // For simplicity in this "append-only" log style, we'll just append new turns.
-        // But for "Thinking..." updates, we might want to be smarter.
-        // For now, let's just append.
-        this.debugContent.insertAdjacentHTML('beforeend', html);
-        this.debugPanel.scrollTop = this.debugPanel.scrollHeight;
     }
 
     renderTTSOutput(data) {
         if (!this.debugModeCheckbox.checked) return;
-
         const container = document.getElementById('tts-output-container');
         if (container) {
-            // If it's a new turn (or we just cleared it), set it. Otherwise append/update?
-            // Actually, Nova sends partials. We just want the latest text.
             container.innerHTML = `<strong>🔊 TTS Output:</strong> "${data.text}"`;
         }
     }
@@ -1174,7 +1181,7 @@ class VoiceAssistant {
             if (response.ok) {
                 const prompts = await response.json();
                 this.updatePromptDropdown(prompts);
-                this.initializePresets(prompts); // Also update the General tab dropdown
+                this.initializePresets(prompts);
             } else {
                 console.error('[Frontend] Failed to fetch prompts:', response.status);
             }
@@ -1184,12 +1191,8 @@ class VoiceAssistant {
     }
 
     updatePromptDropdown(prompts) {
-        console.log('[Frontend] Received prompts:', prompts);
         if (!this.promptPresetSelect) return;
-
-        // Keep the first "Custom" option
         this.promptPresetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
-
         prompts.forEach(prompt => {
             const option = document.createElement('option');
             option.value = prompt.id;
@@ -1202,8 +1205,8 @@ class VoiceAssistant {
 
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new VoiceAssistant();
-    app.loadPrompts(); // Load prompts immediately
+    window.app = new VoiceAssistant();
+    window.app.loadPrompts(); // Load prompts immediately
 });
 
 // Clean up on page unload
