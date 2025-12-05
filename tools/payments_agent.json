@@ -1,0 +1,34 @@
+{
+    "name": "payments_agent",
+    "description": "Handles bill payments, fund transfers, and balance inquiries. Use when the customer wants to pay a bill, transfer money, or check their account balance.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "customerId": {
+                "type": "string",
+                "description": "Internal customer identifier"
+            },
+            "intent": {
+                "type": "string",
+                "enum": [
+                    "pay_bill",
+                    "transfer",
+                    "check_balance"
+                ],
+                "description": "The specific action the user wants to perform"
+            },
+            "amount": {
+                "type": "number",
+                "description": "Amount of money to pay or transfer (if applicable)"
+            },
+            "payee": {
+                "type": "string",
+                "description": "The recipient of the payment or transfer (if applicable)"
+            }
+        },
+        "required": [
+            "customerId",
+            "intent"
+        ]
+    }
+}

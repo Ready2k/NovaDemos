@@ -1,0 +1,30 @@
+{
+    "name": "fraud_agent",
+    "description": "Handles reports of suspicious activity, lost cards, and fraud alerts. Use when the customer mentions fraud, stolen cards, or suspicious transactions.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "customerId": {
+                "type": "string",
+                "description": "Internal customer identifier"
+            },
+            "issueType": {
+                "type": "string",
+                "enum": [
+                    "lost_card",
+                    "suspicious_transaction",
+                    "identity_theft"
+                ],
+                "description": "The type of fraud issue being reported"
+            },
+            "details": {
+                "type": "string",
+                "description": "Any specific details provided by the customer about the incident"
+            }
+        },
+        "required": [
+            "customerId",
+            "issueType"
+        ]
+    }
+}

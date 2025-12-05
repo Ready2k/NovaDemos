@@ -34,7 +34,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse';
     data: any;
 }
 
@@ -58,8 +58,9 @@ export class SonicClient {
     private isProcessing: boolean = false;
     private inputQueue: Buffer[] = [];
     private textQueue: string[] = [];
+    private toolResultQueue: any[] = [];
     private streamController: any = null;
-    private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string } = {};
+    private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] } = {};
 
     // 100ms of silence (16kHz * 0.1s * 2 bytes/sample = 3200 bytes)
     private readonly SILENCE_FRAME = Buffer.alloc(3200, 0);
@@ -99,7 +100,7 @@ export class SonicClient {
         console.log(`[SonicClient] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
     }
 
-    setConfig(config: { systemPrompt?: string; speechPrompt?: string; voiceId?: string }) {
+    setConfig(config: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] }) {
         this.sessionConfig = { ...this.sessionConfig, ...config };
         console.log('[SonicClient] Configuration updated:', JSON.stringify(this.sessionConfig));
     }
@@ -109,6 +110,20 @@ export class SonicClient {
      */
     public getSessionId(): string | null {
         return this.sessionId;
+    }
+
+    /**
+     * Get current AWS credentials
+     */
+    getCredentials() {
+        if (this.config.accessKeyId && this.config.secretAccessKey) {
+            return {
+                accessKeyId: this.config.accessKeyId,
+                secretAccessKey: this.config.secretAccessKey,
+                sessionToken: this.config.sessionToken
+            };
+        }
+        return undefined; // Let SDK default chain handle it
     }
 
     /**
@@ -188,6 +203,7 @@ export class SonicClient {
                 }
             }
         };
+        console.log('[SonicClient] Session Start Payload:', JSON.stringify(sessionStartEvent, null, 2));
         yield { chunk: { bytes: Buffer.from(JSON.stringify(sessionStartEvent)) } };
 
         // 2. Prompt Start
@@ -206,7 +222,10 @@ export class SonicClient {
                         voiceId: this.sessionConfig.voiceId || "matthew",
                         encoding: "base64",
                         audioType: "SPEECH"
-                    }
+                    },
+                    toolConfig: this.sessionConfig.tools ? {
+                        tools: this.sessionConfig.tools
+                    } : undefined
                 }
             }
         };
@@ -300,6 +319,52 @@ export class SonicClient {
         // We will start the audio content stream only when we actually have audio to send.
 
         while (this.isProcessing) {
+            // Check for tool results first (priority over text/audio)
+            if (this.toolResultQueue.length > 0) {
+                const resultData = this.toolResultQueue.shift()!;
+                console.log('[SonicClient] Processing tool result:', resultData.toolUseId);
+
+                // 1. Tool Result Content Start
+                const contentName = `tool-result-${Date.now()}`;
+                const trStart = {
+                    event: {
+                        contentStart: {
+                            promptName: promptName,
+                            contentName: contentName,
+                            type: "TOOL_RESULT",
+                            interactive: false,
+                            role: "USER"
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(trStart)) } };
+
+                // 2. Tool Result Input
+                const trInput = {
+                    event: {
+                        toolResult: {
+                            promptName: promptName,
+                            contentName: contentName,
+                            toolUseId: resultData.toolUseId,
+                            content: [{ json: resultData.result }],
+                            status: resultData.isError ? "ERROR" : "SUCCESS"
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(trInput)) } };
+
+                // 3. Tool Result Content End
+                const trEnd = {
+                    event: {
+                        contentEnd: {
+                            promptName: promptName,
+                            contentName: contentName
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(trEnd)) } };
+            }
+
             // Check for text input first (priority)
             if (this.textQueue.length > 0) {
                 const text = this.textQueue.shift()!;
@@ -576,6 +641,16 @@ export class SonicClient {
     }
 
     /**
+     * Send tool result to Nova 2 Sonic
+     */
+    async sendToolResult(toolUseId: string, result: any, isError: boolean = false): Promise<void> {
+        if (!this.sessionId || !this.isProcessing) {
+            throw new Error('Session not active.');
+        }
+        this.toolResultQueue.push({ toolUseId, result, isError });
+    }
+
+    /**
      * Send text input to Nova 2 Sonic
      */
     async sendText(text: string): Promise<void> {
@@ -583,11 +658,9 @@ export class SonicClient {
             throw new Error('Session not active.');
         }
 
-        // --- DEBOUNCE: Prevent duplicate text sending (e.g. from UI double clicks or double-triggering logic) ---
+        // --- DEBOUNCE: Prevent duplicate text sending --
         const now = Date.now();
         const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
-
-        // Allow filler words to bypass duplicate check
         const isFiller = text === "hmmm..." || text === "uh-huh...";
 
         if (!isFiller && lastSent.text === text && (now - lastSent.time) < 2000) {
@@ -595,7 +668,7 @@ export class SonicClient {
             return;
         }
         (this as any)._lastSentText = { text, time: now };
-        // -------------------------------------------------------------------------------------------------------
+        // ------------------------------------------------
 
         this.textQueue.push(text);
     }
@@ -615,6 +688,8 @@ export class SonicClient {
                     break;
                 }
 
+
+
                 // console.log('[SonicClient] Received raw event:', JSON.stringify(event));
 
                 if (event.chunk && event.chunk.bytes) {
@@ -623,6 +698,15 @@ export class SonicClient {
 
                     // Handle different event types
                     const eventData = rawEvent.event || rawEvent;
+
+                    if (eventData.toolUse) {
+                        const tu = eventData.toolUse;
+                        console.log(`[SonicClient] Tool Use: ${tu.name} (ID: ${tu.toolUseId})`);
+                        this.eventCallback?.({
+                            type: 'toolUse',
+                            data: tu
+                        });
+                    }
 
                     if (eventData.contentStart) {
                         const contentId = eventData.contentStart.contentId;
