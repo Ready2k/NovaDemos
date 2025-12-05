@@ -100,6 +100,13 @@ class VoiceAssistant {
         this.closeAgentBtn = document.getElementById('closeAgentBtn');
 
         this.customAgents = [];
+        this.pendingDeleteIndex = null;
+
+        // Delete Confirmation Modal Elements
+        this.deleteConfirmModal = document.getElementById('deleteConfirmModal');
+        this.deleteConfirmText = document.getElementById('deleteConfirmText');
+        this.cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        this.confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
 
         // Stats elements
         this.statDuration = document.getElementById('statDuration');
@@ -175,6 +182,21 @@ class VoiceAssistant {
             this.agentModal.style.display = 'none';
         });
         this.addAgentBtn.addEventListener('click', () => this.addAgent());
+
+        // Delete Confirmation Events
+        this.cancelDeleteBtn.addEventListener('click', () => {
+            this.deleteConfirmModal.style.display = 'none';
+            this.pendingDeleteIndex = null;
+        });
+        this.confirmDeleteBtn.addEventListener('click', () => {
+            if (this.pendingDeleteIndex !== null) {
+                this.customAgents.splice(this.pendingDeleteIndex, 1);
+                this.saveAgents();
+                this.showToast('Agent deleted', 'info');
+                this.deleteConfirmModal.style.display = 'none';
+                this.pendingDeleteIndex = null;
+            }
+        });
 
         // Chat events
         this.sendBtn.addEventListener('click', () => this.sendTextMessage());
@@ -1039,11 +1061,10 @@ class VoiceAssistant {
     }
 
     deleteAgent(index) {
-        if (confirm(`Delete agent "${this.customAgents[index].name}"?`)) {
-            this.customAgents.splice(index, 1);
-            this.saveAgents();
-            this.showToast('Agent deleted', 'info');
-        }
+        this.pendingDeleteIndex = index;
+        const agentName = this.customAgents[index].name;
+        this.deleteConfirmText.textContent = `Are you sure you want to delete agent "${agentName}"?`;
+        this.deleteConfirmModal.style.display = 'flex';
     }
 
     handleInterruption() {
@@ -1075,6 +1096,18 @@ class VoiceAssistant {
             } else {
                 this.debugContent.insertAdjacentHTML('beforeend', metricsHtml);
             }
+            return;
+        }
+
+        // Handle System Info (Persona Details)
+        if (data.systemInfo) {
+            const sysHtml = `
+                <div style="margin-bottom: 20px; padding: 10px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 6px;">
+                    <div style="color: #818cf8; font-weight: bold; margin-bottom: 5px;">🤖 Active Persona</div>
+                    <div style="font-size: 0.9rem; color: #fff;">${data.systemInfo.persona}</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 5px;">${data.systemInfo.description}</div>
+                </div>`;
+            this.debugContent.insertAdjacentHTML('beforeend', sysHtml);
             return;
         }
 

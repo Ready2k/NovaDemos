@@ -241,6 +241,22 @@
       </div>
     </div>
   </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteConfirmModal" class="modal"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1100; align-items: center; justify-content: center;">
+    <div class="modal-content"
+      style="background: #1e293b; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; border: 1px solid rgba(255,255,255,0.1); text-align: center;">
+      <h3 style="margin-top: 0; margin-bottom: 15px; color: white;">Confirm Deletion</h3>
+      <p id="deleteConfirmText" style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 25px;">
+        Are you sure you want to delete this agent?
+      </p>
+      <div class="modal-actions" style="display: flex; gap: 10px; justify-content: center;">
+        <button id="cancelDeleteBtn" class="secondary-btn">Cancel</button>
+        <button id="confirmDeleteBtn" class="danger-btn">Delete</button>
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

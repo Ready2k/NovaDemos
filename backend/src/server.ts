@@ -235,6 +235,20 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         // Pass other config to SonicClient
                         sonicClient.updateSessionConfig(parsed.config);
 
+                        // Send System Info to Debug Panel
+                        ws.send(JSON.stringify({
+                            type: 'debugInfo',
+                            data: {
+                                systemInfo: {
+                                    mode: session.brainMode,
+                                    persona: session.brainMode === 'bedrock_agent' ? 'Echo Bot (Relay Mode)' : 'Direct Persona',
+                                    description: session.brainMode === 'bedrock_agent'
+                                        ? 'Backend automatically uses "agent_echo.txt" to preserve Agent output exactly.'
+                                        : 'Using User-defined System Prompt.'
+                                }
+                            }
+                        }));
+
                         // CRITICAL: If session is already active, we MUST stop it to apply the new System Prompt.
                         // The System Prompt is only sent at the beginning of the session (in createInputStream).
                         if (sonicClient.getSessionId()) {
