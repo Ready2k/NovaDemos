@@ -22,6 +22,7 @@ class VoiceAssistant {
         this.ws = null;
         this.audioProcessor = new AudioProcessor();
         this.state = 'disconnected'; // disconnected, connected, recording
+        this.sessionId = null;
 
         // WebSocket configuration
         this.WS_URL = 'ws://localhost:8080/sonic';
@@ -144,7 +145,7 @@ class VoiceAssistant {
 
         if (this.debugModeCheckbox) {
             this.debugModeCheckbox.addEventListener('change', () => {
-                this.debugPanel.style.display = this.debugModeCheckbox.checked ? 'block' : 'none';
+                this.debugPanel.style.display = this.debugModeCheckbox.checked ? 'flex' : 'none';
             });
         }
 
@@ -247,6 +248,11 @@ class VoiceAssistant {
         if (confirm('Start a new session? This will clear the transcript and reset settings.')) {
             // Clear transcript
             this.transcriptEl.innerHTML = '';
+
+            // Clear debug panel
+            if (this.debugContent) {
+                this.debugContent.innerHTML = 'Waiting for interaction...';
+            }
 
             // Reset settings to defaults
             localStorage.removeItem('nova_system_prompt');
@@ -447,6 +453,14 @@ class VoiceAssistant {
                         const message = JSON.parse(event.data);
 
                         switch (message.type) {
+                            case 'connected':
+                                this.sessionId = message.sessionId;
+                                this.log(`Connected: ${message.sessionId}`, 'success');
+                                if (this.debugContent) {
+                                    this.debugContent.innerHTML = `<div style="padding-bottom: 10px; border-bottom: 1px solid #333; margin-bottom: 10px; color: #818cf8;"><strong>🔌 Session ID:</strong> ${this.sessionId}</div>`;
+                                }
+                                break;
+
                             case 'sessionStart':
                                 this.log(`Session: ${message.sessionId}`, 'success');
                                 break;
@@ -474,6 +488,14 @@ class VoiceAssistant {
 
                             case 'usage':
                                 this.updateTokenStats(message.data);
+                                // Also show in debug panel
+                                this.renderDebugInfo({
+                                    metrics: {
+                                        inputTokens: message.data.totalInputTokens,
+                                        outputTokens: message.data.totalOutputTokens,
+                                        totalTokens: message.data.totalTokens
+                                    }
+                                });
                                 break;
                         }
                     } catch (e) {
@@ -1031,42 +1053,72 @@ class VoiceAssistant {
     renderDebugInfo(data) {
         if (!this.debugModeCheckbox.checked) return;
 
+        // Handle Metrics Update
+        if (data.metrics) {
+            let metricsHtml = `<div style="margin-top: 5px; border-top: 1px dashed #444; padding-top: 5px; font-size: 0.8rem; color: #aaa;">`;
+
+            if (data.metrics.firstByteLatency) {
+                metricsHtml += `<strong>📊 Latency:</strong> First Byte: ${data.metrics.firstByteLatency}ms<br>`;
+            }
+
+            if (data.metrics.totalTokens) {
+                metricsHtml += `<strong>🔢 Tokens:</strong> In: ${data.metrics.inputTokens} | Out: ${data.metrics.outputTokens} | Total: ${data.metrics.totalTokens}`;
+            }
+
+            metricsHtml += `</div>`;
+
+            // Append to the last entry if possible, or just append to log
+            const lastEntry = this.debugContent.lastElementChild;
+            if (lastEntry) {
+                lastEntry.insertAdjacentHTML('beforeend', metricsHtml);
+            } else {
+                this.debugContent.insertAdjacentHTML('beforeend', metricsHtml);
+            }
+            return;
+        }
+
         const { transcript, agentReply, trace } = data;
-        let html = `<div><strong>🗣️ Transcript:</strong> "${transcript}"</div>`;
+
+        // Create a new entry container for this turn
+        let html = `<div class="debug-turn" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">`;
+
+        if (transcript) {
+            html += `<div><strong>🗣️ Transcript:</strong> "${transcript}"</div>`;
+        }
 
         if (trace && trace.length > 0) {
-            html += `<div style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"><strong>🧠 Agent Thought:</strong></div>`;
+            html += `<div style="margin-top: 10px; padding-top: 5px;"><strong>🧠 Agent Thought:</strong></div>`;
             trace.forEach(t => {
-                // Check for Orchestration Trace (Tools/KB)
-                // Note: Trace structure is { trace: { orchestrationTrace: ... } }
                 const ot = t.trace?.orchestrationTrace || t.orchestrationTrace;
-
                 if (ot) {
-                    // Tool Usage
                     if (ot.invocationInput?.actionGroupInvocationInput) {
                         const tool = ot.invocationInput.actionGroupInvocationInput;
-                        html += `<div style="color: #00ffff; margin-left: 10px;">🔧 Tool Call: ${tool.function} (${JSON.stringify(tool.parameters)})</div>`;
+                        html += `<div style="color: #00ffff; margin-left: 10px;">🔧 Tool Call: ${tool.function}</div>`;
                     }
-
-                    // KB Search
                     if (ot.observation?.knowledgeBaseLookupOutput?.retrievedReferences) {
                         const refs = ot.observation.knowledgeBaseLookupOutput.retrievedReferences;
-                        html += `<div style="color: #ff00ff; margin-left: 10px;">📚 KB Hits: ${refs.length} references found</div>`;
+                        html += `<div style="color: #ff00ff; margin-left: 10px;">📚 KB Hits: ${refs.length}</div>`;
                     }
-
-                    // Rationale (Reasoning)
                     if (ot.rationale) {
-                        html += `<div style="color: #ffff00; margin-left: 10px;">🤔 Reasoning: ${ot.rationale.text}</div>`;
+                        html += `<div style="color: #ffff00; margin-left: 10px;">🤔 ${ot.rationale.text}</div>`;
                     }
                 }
             });
         }
 
-        html += `<div style="margin-top: 10px; border-top: 1px solid #333; padding-top: 5px;"><strong>🤖 Agent Reply:</strong> "${agentReply}"</div>`;
-        html += `<div style="color: #aaa; font-size: 10px;">🔊 Voice: ${this.voiceSelect.value}</div>`;
-        html += `<div id="tts-output-container" style="margin-top: 5px; color: #888; font-style: italic;"></div>`;
+        if (agentReply && agentReply !== '...') {
+            html += `<div style="margin-top: 10px;"><strong>🤖 Agent Reply:</strong> "${agentReply}"</div>`;
+        } else if (agentReply === '...') {
+            html += `<div style="margin-top: 10px; color: #888;"><em>🤖 Agent thinking...</em></div>`;
+        }
 
-        this.debugContent.innerHTML = html;
+        html += `</div>`;
+
+        // If we are just updating the last turn (e.g. partial transcript), replace it? 
+        // For simplicity in this "append-only" log style, we'll just append new turns.
+        // But for "Thinking..." updates, we might want to be smarter.
+        // For now, let's just append.
+        this.debugContent.insertAdjacentHTML('beforeend', html);
         this.debugPanel.scrollTop = this.debugPanel.scrollHeight;
     }
 

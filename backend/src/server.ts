@@ -59,6 +59,7 @@ interface ClientSession {
     transcribeClient: TranscribeClientWrapper;
     silenceTimer: NodeJS.Timeout | null;
     isInterrupted: boolean;
+    lastUserTranscript?: string;
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -161,7 +162,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         agentBuffer: [],
         transcribeClient,
         silenceTimer: null,
-        isInterrupted: false
+        isInterrupted: false,
+        lastUserTranscript: ''
     };
     activeSessions.set(ws, session);
 
@@ -473,15 +475,57 @@ function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: ClientSessi
                 return;
             }
 
-            // Forward transcript as JSON message
+            // --- RAW NOVA MODE ---
+            // Store user transcript for debug context
+            const role = event.data.role || 'assistant';
+            if (role === 'user') {
+                session.lastUserTranscript = event.data.transcript;
+            }
+
+            // Send Debug Info for Raw Nova Mode
             if (ws.readyState === WebSocket.OPEN) {
+                // If it's an assistant reply, send debug info with context
+                if (role === 'assistant' || role === 'model') {
+                    ws.send(JSON.stringify({
+                        type: 'debugInfo',
+                        data: {
+                            transcript: session.lastUserTranscript || '(No user transcript)',
+                            agentReply: event.data.transcript,
+                            trace: [] // No trace for raw nova
+                        }
+                    }));
+                } else if (role === 'user') {
+                    // Also update debug panel on user input
+                    ws.send(JSON.stringify({
+                        type: 'debugInfo',
+                        data: {
+                            transcript: event.data.transcript,
+                            agentReply: '...',
+                            trace: []
+                        }
+                    }));
+                }
+
+                // Forward transcript as JSON message
                 ws.send(JSON.stringify({
                     type: 'transcript',
-                    role: event.data.role || 'assistant',
+                    role: role,
                     text: event.data.transcript,
                     isFinal: event.data.isFinal // Pass isFinal flag
                 }));
                 console.log(`[Server] Sent transcript: "${event.data.transcript}" (Final: ${event.data.isFinal})`);
+            }
+            break;
+
+        case 'metadata':
+            // Forward metrics to debug panel
+            if (ws.readyState === WebSocket.OPEN && event.data.metrics) {
+                ws.send(JSON.stringify({
+                    type: 'debugInfo',
+                    data: {
+                        metrics: event.data.metrics
+                    }
+                }));
             }
             break;
 

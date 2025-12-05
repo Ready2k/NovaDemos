@@ -134,13 +134,6 @@
         </div>
       </div>
 
-      <!-- Debug Panel -->
-      <div id="debug-panel"
-        style="display: none; margin-top: 20px; padding: 15px; background: #1e1e1e; border-radius: 8px; font-family: monospace; font-size: 12px; color: #00ff00;">
-        <h3 style="margin-top: 0; color: #fff;">🛠️ Debug Panel</h3>
-        <div id="debug-content">Waiting for interaction...</div>
-      </div>
-
       <div class="chat-input-container">
         <input type="text" id="textInput" placeholder="Type a message..." disabled>
         <button id="sendBtn" class="icon-btn" disabled>
@@ -156,6 +149,14 @@
         <button id="stopBtn" class="danger-btn" disabled>Stop Recording</button>
         <button id="disconnectButton" class="danger-btn" disabled>Disconnect</button>
       </div>
+    </div>
+
+    <!-- Debug Panel -->
+    <div id="debug-panel" class="debug-sidebar" style="display: none;">
+      <h3
+        style="margin-top: 0; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 15px;">
+        🛠️ Debug Panel</h3>
+      <div id="debug-content">Waiting for interaction...</div>
     </div>
 
     <div id="toast-container"></div>

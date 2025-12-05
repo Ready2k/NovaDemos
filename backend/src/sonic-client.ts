@@ -682,6 +682,10 @@ export class SonicClient {
 
                     if (eventData.serviceMetrics) {
                         console.log('[SonicClient] Received metrics:', eventData.serviceMetrics);
+                        this.eventCallback?.({
+                            type: 'metadata', // Reuse metadata type or create new one
+                            data: { metrics: eventData.serviceMetrics }
+                        });
                     }
 
                     if (eventData.usageEvent) {
