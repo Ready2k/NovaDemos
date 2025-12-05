@@ -50,9 +50,23 @@ export async function callBankAgent(
     for await (const event of response.completion) {
         if (event.chunk?.bytes) {
             completion += decoder.decode(event.chunk.bytes);
-        }
-        if (event.trace) {
+        } else if (event.trace) {
             traces.push(event.trace);
+        } else if (event.accessDeniedException) {
+            console.error("[Bedrock Agent] Access Denied:", event.accessDeniedException);
+            throw new Error(`Access Denied: ${event.accessDeniedException.message}`);
+        } else if (event.throttlingException) {
+            console.error("[Bedrock Agent] Throttling:", event.throttlingException);
+            throw new Error(`Throttling: ${event.throttlingException.message}`);
+        } else if (event.validationException) {
+            console.error("[Bedrock Agent] Validation Exception:", event.validationException);
+            throw new Error(`Validation Exception: ${event.validationException.message}`);
+        } else if (event.internalServerException) {
+            console.error("[Bedrock Agent] Internal Server Error:", event.internalServerException);
+            throw new Error(`Internal Server Error: ${event.internalServerException.message}`);
+        } else {
+            // Handle other potential events like returnControl (not implemented yet)
+            console.warn("[Bedrock Agent] Received unhandled event:", Object.keys(event));
         }
     }
 

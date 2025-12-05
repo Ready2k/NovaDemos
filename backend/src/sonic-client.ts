@@ -582,6 +582,17 @@ export class SonicClient {
         if (!this.sessionId || !this.isProcessing) {
             throw new Error('Session not active.');
         }
+
+        // --- DEBOUNCE: Prevent duplicate text sending (e.g. from UI double clicks or double-triggering logic) ---
+        const now = Date.now();
+        const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
+        if (lastSent.text === text && (now - lastSent.time) < 2000) {
+            console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
+            return;
+        }
+        (this as any)._lastSentText = { text, time: now };
+        // -------------------------------------------------------------------------------------------------------
+
         this.textQueue.push(text);
     }
 

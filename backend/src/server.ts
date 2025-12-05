@@ -60,6 +60,9 @@ interface ClientSession {
     silenceTimer: NodeJS.Timeout | null;
     isInterrupted: boolean;
     lastUserTranscript?: string;
+    // Deduplication
+    lastAgentReply?: string;
+    lastAgentReplyTime?: number;
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -163,7 +166,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         transcribeClient,
         silenceTimer: null,
         isInterrupted: false,
-        lastUserTranscript: ''
+        lastUserTranscript: '',
+        lastAgentReply: undefined,
+        lastAgentReplyTime: 0
     };
     activeSessions.set(ws, session);
 
@@ -292,7 +297,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     // 2. VAD (Energy-based Silence Detection)
                     const rms = calculateRMS(audioBuffer);
-                    const VAD_THRESHOLD = 1000; // Increased from 600 to reduce false positives
+                    const VAD_THRESHOLD = 800; // Lowered from 1000 to better detect soft speech
 
                     // Only reset silence timer if we detect speech (high energy)
                     if (rms > VAD_THRESHOLD) {
@@ -310,7 +315,10 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     // If no timer is running (meaning we are in a potential silence period), start one
                     if (!session.silenceTimer) {
                         session.silenceTimer = setTimeout(async () => {
+                            // Clear timer reference immediately so VAD knows it fired
+                            session.silenceTimer = null;
                             console.log('[Server] Silence timer fired');
+
                             if (session.agentBuffer.length === 0) return;
 
                             const fullAudio = Buffer.concat(session.agentBuffer);
@@ -355,10 +363,27 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     // Reset interruption flag before new turn
                                     session.isInterrupted = false;
 
+                                    // --- SERVER-SIDE DEDUPLICATION ---
+                                    const now = Date.now();
+                                    // Trim and Normalize for comparison
+                                    const cleanReply = agentReply.trim();
+                                    const cleanLast = (session.lastAgentReply || '').trim();
+
+                                    console.log(`[Server] Checking dedupe: (${cleanReply.length} chars) "${cleanReply.substring(0, 20)}..." vs Last: (${cleanLast.length} chars) "${cleanLast.substring(0, 20)}..." (TimeDiff: ${session.lastAgentReplyTime ? now - session.lastAgentReplyTime : 'N/A'}ms)`);
+
+                                    if (cleanReply === cleanLast && session.lastAgentReplyTime && (now - session.lastAgentReplyTime) < 4000) {
+                                        console.warn(`[Server] 🛑 DUPLICATE AGENT REPLY DETECTED (ignored): "${cleanReply.substring(0, 50)}..."`);
+                                        return;
+                                    }
+                                    session.lastAgentReply = cleanReply;
+                                    session.lastAgentReplyTime = now;
+                                    // ---------------------------------
+
                                     // Ensure session is started
                                     if (!sonicClient.getSessionId()) {
                                         await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
                                     }
+
                                     console.log('[Server] Sending to Sonic:', agentReply);
                                     await sonicClient.sendText(agentReply);
 
@@ -367,7 +392,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
                                 }
                             }
-                        }, 800); // 800ms silence threshold
+                        }, 1500); // 1500ms silence threshold to allow for pauses
                     }
 
                 } else {

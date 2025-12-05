@@ -245,38 +245,39 @@ class VoiceAssistant {
     }
 
     startNewSession() {
-        if (confirm('Start a new session? This will clear the transcript and reset settings.')) {
-            // Clear transcript
-            this.transcriptEl.innerHTML = '';
+        this.log('Starting new session...', 'info');
 
-            // Clear debug panel
-            if (this.debugContent) {
-                this.debugContent.innerHTML = 'Waiting for interaction...';
-            }
+        // Clear transcript
+        this.transcriptEl.innerHTML = '';
 
-            // Reset settings to defaults
-            localStorage.removeItem('nova_system_prompt');
-            localStorage.removeItem('nova_speech_prompt');
-            localStorage.removeItem('nova_voice_id');
-            localStorage.removeItem('nova_brain_mode'); // New: Clear brain mode
-
-            this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
-            this.speechPromptInput.value = "";
-            if (this.voiceSelect) this.voiceSelect.value = "matthew"; // Default
-            if (this.brainModeSelect) this.brainModeSelect.value = "raw_nova"; // Default
-
-            // Reset stats
-            this.resetStats();
-
-            // Save the reset settings (updates backend if connected)
-            this.saveSettings();
-
-            // If connected, reconnect to start fresh session
-            if (this.state !== 'disconnected') {
-                this.disconnect();
-                setTimeout(() => this.connect(), 500);
-            }
+        // Clear debug panel
+        if (this.debugContent) {
+            this.debugContent.innerHTML = 'Waiting for interaction...';
         }
+
+        // Reset settings to defaults
+        localStorage.removeItem('nova_system_prompt');
+        localStorage.removeItem('nova_speech_prompt');
+        localStorage.removeItem('nova_voice_id');
+        localStorage.removeItem('nova_brain_mode');
+
+        this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
+        this.speechPromptInput.value = "";
+        if (this.voiceSelect) this.voiceSelect.value = "matthew";
+        if (this.brainModeSelect) this.brainModeSelect.value = "raw_nova";
+
+        // Reset stats
+        this.resetStats();
+
+        // Save the reset settings
+        this.saveSettings();
+
+        // Disconnect if connected
+        if (this.state !== 'disconnected') {
+            this.disconnect();
+        }
+
+        this.log('Session reset. Ready to connect.', 'success');
     }
 
     loadSettings() {
