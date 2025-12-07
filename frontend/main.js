@@ -213,6 +213,9 @@ class VoiceAssistant {
     initializePresets(prompts) {
         if (!this.presetSelect) return;
 
+        // Capture current prompt text (from text area, which might be restored from localStorage)
+        const currentContent = this.systemPromptInput.value.trim();
+
         // Clear existing options except default
         this.presetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
 
@@ -224,11 +227,12 @@ class VoiceAssistant {
             option.value = prompt.content;
             option.textContent = prompt.name;
             this.presetSelect.appendChild(option);
-        });
 
-        // Re-attach event listener since we might have cleared it or it wasn't attached
-        // Actually, better to attach it once in constructor, but since we are here...
-        // Let's just ensure it's attached in constructor and NOT here to avoid duplicates if called multiple times
+            // Restore selection if content matches
+            if (currentContent && prompt.content.trim() === currentContent) {
+                option.selected = true;
+            }
+        });
     }
 
 
@@ -503,6 +507,25 @@ class VoiceAssistant {
 
                             case 'debugInfo':
                                 this.renderDebugInfo(message.data);
+                                // NEW: Visual feedback for Tool Calls
+                                if (message.data.toolUse) {
+                                    const toolName = message.data.toolUse.name || 'Unknown Tool';
+                                    this.showToast(`🛠️ Processing: ${toolName}`, 'info');
+
+                                    // Visual Status Update
+                                    const originalStatus = this.statusEl.textContent;
+                                    this.statusEl.textContent = `Processing ${toolName}...`;
+                                    this.statusEl.classList.add('recording'); // Pulse effect
+
+                                    // Revert status after 4 seconds (or when next event comes)
+                                    setTimeout(() => {
+                                        if (this.statusEl.textContent.includes('Processing')) {
+                                            this.statusEl.textContent = originalStatus;
+                                            this.statusEl.classList.remove('recording');
+                                            if (this.state === 'recording') this.statusEl.classList.add('recording');
+                                        }
+                                    }, 4000);
+                                }
                                 break;
 
                             case 'error':

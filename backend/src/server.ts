@@ -24,35 +24,41 @@ const agentCoreClient = new BedrockAgentCoreClient({
  */
 async function callAgentCore(session: ClientSession, qualifier: string, parameters: any) {
     try {
-        console.log(`[AgentCore] Invoking agent for session ${session.sessionId} with qualifier ${qualifier}`);
-
-        // Construct input payload
-        const inputPayload = {
-            actionGroup: qualifier,
-            function: "default",
-            parameters: Object.entries(parameters).map(([name, value]) => ({
-                name,
-                value: String(value)
-            }))
-        };
-
-        console.log('[AgentCore] Sending Payload:', JSON.stringify(inputPayload, null, 2));
+        console.log(`[AgentCore] Invoking agent for session ${session.sessionId}`);
+        console.log(`[AgentCore] Tool/Intent: ${qualifier}`); // Log original intent for debug
 
         // REAL SDK CALL (Bedrock Agent Core specific)
-        // Defaults provided by user for verification
         const configArn = "arn:aws:bedrock-agentcore:us-east-1:388660028061:runtime/BankingCoreRuntime_http_v1-aIECoiHAgv";
-        const runtimeArn = process.env.AGENT_CORE_RUNTIME_ARN || configArn;
+        let runtimeArn = process.env.AGENT_CORE_RUNTIME_ARN || configArn;
 
-        console.log(`[AgentCore] Accessing Runtime ARN: ${runtimeArn}`);
+        // SANITIZE ARN (Learned from Test)
+        // Strip /runtime-endpoint/... suffix if present
+        if (runtimeArn.includes('/runtime-endpoint/')) {
+            runtimeArn = runtimeArn.split('/runtime-endpoint/')[0];
+            console.log(`[AgentCore] Sanitized ARN: ${runtimeArn}`);
+        } else {
+            console.log(`[AgentCore] Accessing Runtime ARN: ${runtimeArn}`);
+        }
 
         // Ensure runtimeSessionId is long enough (33+ chars). UUIDs are 36 chars.
-        // Fallback to user-provided static ID if session ID is somehow too short.
-        const rSessionId = (session.sessionId && session.sessionId.length >= 33)
-            ? session.sessionId
-            : "dfmeoagmreaklgmrkleafremoigrmtesogmtrskhmtkrlshmt";
+        let rSessionId = session.sessionId;
+        if (!rSessionId || rSessionId.length < 33) {
+            console.warn('[Server] SessionId too short for AgentCore. Generating temporary rotated ID.');
+            rSessionId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        // PAYLOAD CONSTRUCTION (Learned from Test)
+        // Strands/AgentCore expects the raw parameters object (or { prompt: ... }), NOT the actionGroup wrapper.
+        // We pass the raw parameters directly.
+        // Qualifier MUST be 'DEFAULT'.
+
+        console.log('[AgentCore] Sending Payload:', JSON.stringify(parameters, null, 2));
 
         const command = new InvokeAgentRuntimeCommand({
             agentRuntimeArn: runtimeArn,
+
+            // CRITICAL FIX: Qualifier must be 'DEFAULT' for Strands
+            qualifier: 'DEFAULT',
 
             // Session handling
             mcpSessionId: rSessionId,
@@ -61,7 +67,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, paramete
             // Payload
             contentType: "application/json",
             accept: "application/json",
-            payload: Buffer.from(JSON.stringify(inputPayload))
+            payload: Buffer.from(JSON.stringify(parameters))
         });
 
         const response = await agentCoreClient.send(command);
@@ -74,8 +80,29 @@ async function callAgentCore(session: ClientSession, qualifier: string, paramete
         };
 
     } catch (e: any) {
-        console.error('[AgentCore] Invocation failed:', e);
-        return { status: "error", message: e.message };
+        console.error('[AgentCore] Invocation failed.');
+
+        // Comprehensive Error Logging (as requested)
+        const errorDetails = {
+            message: e.message,
+            name: e.name,
+            httpStatusCode: e.$metadata?.httpStatusCode,
+            requestId: e.$metadata?.requestId,
+            fault: e.fault,
+            service: e.service,
+            // Try to extract any body or details if available on specific SDK exceptions
+            reason: e.reason,
+            details: e.details,
+            raw: JSON.stringify(e, Object.getOwnPropertyNames(e))
+        };
+
+        console.error('[AgentCore] Full Error Details:', JSON.stringify(errorDetails, null, 2));
+
+        return {
+            status: "error",
+            message: e.message,
+            details: errorDetails
+        };
     }
 }
 
@@ -162,6 +189,7 @@ interface ClientSession {
     transcribeClient: TranscribeClientWrapper;
     silenceTimer: NodeJS.Timeout | null;
     isInterrupted: boolean;
+    isIntercepting?: boolean; // New: Flag to suppress audio if we catch a hallucination
     lastUserTranscript?: string;
     // Deduplication
     lastAgentReply?: string;
@@ -251,7 +279,9 @@ console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);
 
 wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     const clientIp = req.socket.remoteAddress;
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate a longer session ID (min 33 chars for AgentCore)
+    // Format: session-{timestamp}-{random}-{random} -> approx 41 chars
+    const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
 
     console.log(`[Server] New client connected: ${clientIp} (${sessionId})`);
 
@@ -269,6 +299,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         transcribeClient,
         silenceTimer: null,
         isInterrupted: false,
+        isIntercepting: false,
         lastUserTranscript: '',
         lastAgentReply: undefined,
         lastAgentReplyTime: 0
@@ -338,7 +369,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         // 3. Inject Tools
                         const tools = loadTools();
                         parsed.config.tools = tools;
-                        console.log(`[Server] Loaded ${tools.length} tools for session.`);
+                        console.log(`[Server] Loaded ${tools.length} tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
 
                         // Pass other config to SonicClient
                         sonicClient.updateSessionConfig(parsed.config);
@@ -621,6 +652,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'audio':
             // Forward audio data as binary WebSocket message
             if (event.data.audio) {
+                // console.log('[Server] Suppressing hallucinated audio packet...'); // Verbose
+
                 const audioBuffer = Buffer.isBuffer(event.data.audio)
                     ? event.data.audio
                     : Buffer.from(event.data.audio);
@@ -705,6 +738,45 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
                             jsonStr = text.substring(firstBrace, lastBrace + 1);
+                        } else if (text.match(/payments[_\s]*agent\s*\(/i)) {
+                            // FALLBACK: Parsing [tool(arg=val)] OR tool(arg=val) (Model hallucination format)
+                            // Handles: [payments_agent(...)], payments_ agent (...), etc.
+                            console.log('[Server] Detected Text-Style Tool Call:', text);
+
+                            // Regex to capture content inside tool(...) 
+                            // Matches "payments...agent" then "(" then capture until ")" or "]"
+                            const match = text.match(/payments[_\s]*agent\s*\(([^)\]]*)/i);
+                            if (match) {
+                                const toolName = "payments_agent"; // Normalize name
+                                const argsStr = match[1]; // e.g. customer_ id=" CUST-001",  payee=" Comstar",  amount=200
+                                jsonStr = `{ "tool": "${toolName}", "parameters": {`;
+
+                                // Parse args (key="val" or key=val)
+                                const args = argsStr.split(',').map((arg: string) => arg.trim());
+                                const params: string[] = [];
+                                for (const arg of args) {
+                                    const eqIdx = arg.indexOf('=');
+                                    if (eqIdx !== -1) {
+                                        // Clean key: "customer_ id" -> "customerId"
+                                        let key = arg.substring(0, eqIdx).trim();
+                                        key = key.replace(/[\s_]+/g, ''); // "customer_ id" -> "customerid"
+                                        if (key === 'customerid') key = 'customerId';
+
+                                        let val = arg.substring(eqIdx + 1).trim();
+                                        // Clean val quotes
+                                        if (val.startsWith('"') && val.endsWith('"')) {
+                                            val = val.substring(1, val.length - 1);
+                                        }
+                                        // Re-quote for JSON
+                                        if (isNaN(Number(val)) && val !== 'true' && val !== 'false') {
+                                            val = `"${val}"`;
+                                        }
+                                        params.push(`"${key}": ${val}`);
+                                    }
+                                }
+                                jsonStr += params.join(', ') + "} }";
+                                console.log('[Server] Converted Text Syntax to JSON:', jsonStr);
+                            }
                         } else if (text.includes('"tool":')) {
                             // FALLBACK: parsing simple property list if outer braces missing
                             console.log('[Server] JSON missing outer braces. Attempting recovery.');
@@ -740,36 +812,50 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 }
                             }
 
+                            // 4. Fix trailing commas (Common model error, and side effect of our wrapper)
+                            // Regex: replace , followed by whitespace and } with just }
+                            jsonStr = jsonStr.replace(/,\s*}/g, '}');
+                            jsonStr = jsonStr.replace(/,\s*]/g, ']');
+
                             console.log('[Server] Repaired JSON Candidate:', jsonStr);
 
                             const toolCall = JSON.parse(jsonStr);
                             console.log('[Server] Parsed Tool Call:', toolCall);
 
-                            if (toolCall.tool && toolCall.parameters) {
-                                // Execute the tool call against AWS AgentCore
-                                console.log(`[Server] Executing intercepted tool call: ${toolCall.tool}`);
+                            if (toolCall.tool) {
+                                let toolName = toolCall.tool.toLowerCase();
+                                if (toolName.includes('getservertime') || toolName.includes('get_server_time')) {
+                                    toolName = 'get_server_time';
+                                }
 
-                                // Call AgentCore using the existing client
-                                const result = await callAgentCore(
-                                    session,
-                                    toolCall.tool, // Use tool name as qualifier (e.g. payments_agent)
-                                    toolCall.parameters
-                                );
+                                if (toolName === 'get_server_time') {
+                                    console.log(`[Server] Executing intercepted tool call: ${toolName}`);
+                                    if (session.sonicClient) session.sonicClient.sendText("Processing your request...");
 
-                                console.log('[Server] AgentCore Result:', result);
+                                    const timeResult = new Date().toLocaleString();
+                                    const systemInjection = `[System] The tool '${toolName}' returned: "${timeResult}". Please tell this to the user.`;
 
-                                // Send the result back as a system response (or force the model to say it)
-                                // Since we can't easily force an audio response from Sonic in the middle of a turn without a new prompt,
-                                // we will send it as a transcript to the UI so the user sees it, 
-                                // AND verify if we can trigger a generic confirmation.
+                                    if (session.sonicClient) {
+                                        console.log('[Server] Injecting Result to Model:', systemInjection);
+                                        await session.sonicClient.sendText(systemInjection);
+                                    }
+                                } else if (toolCall.parameters) {
+                                    // Execute AgentCore tools
+                                    console.log(`[Server] Executing intercepted tool call: ${toolCall.tool}`);
+                                    if (session.sonicClient) session.sonicClient.sendText("Processing your request...");
 
-                                if (ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({
-                                        type: 'transcript',
-                                        role: 'assistant',
-                                        text: `[System] Tool executed successfully: ${JSON.stringify(result)}`,
-                                        isFinal: true
-                                    }));
+                                    const result = await callAgentCore(session, toolCall.tool, toolCall.parameters);
+                                    console.log('[Server] AgentCore Result:', result);
+
+                                    // Send result to UI
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({
+                                            type: 'transcript',
+                                            role: 'assistant',
+                                            text: `[System] Tool executed: ${JSON.stringify(result)}`,
+                                            isFinal: true
+                                        }));
+                                    }
                                 }
                             }
                         }
@@ -784,19 +870,64 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Remove content between first { and last } if it looks like the tool call
                 // Remove content starting from "json" marker to clean up UI
                 // Matches: `json ..., ```json ..., or just json ...
-                const jsonMarkerMatch = displayText.match(/`*json[\s\S]*/i);
+                // ALSO match the tool syntax [payments_agent...] or payments_ agent...
+                const jsonMarkerMatch = displayText.match(/(`*json|\[?payments[_\s]*agent)/i);
                 if (jsonMarkerMatch) {
                     // Start of the match
                     const matchIndex = jsonMarkerMatch.index;
                     if (matchIndex !== undefined) {
                         // Keep everything BEFORE the match
                         displayText = displayText.substring(0, matchIndex).trim();
-                        // Clean up any trailing backticks left over
+                        // Clean up any trailing backticks or brackets left over
                         displayText = displayText.replace(/`+$/, '').trim();
+                        displayText = displayText.replace(/\[$/, '').trim();
                     }
                 }
 
                 if (displayText) {
+                    // --- HEURISTIC INTERCEPTOR (Fix for model hallucinating tool name as text) ---
+                    // Matches: get_server_time, get_ server_ time, get server time, AND XML hallucinations <tool_ call...>
+                    if ((displayText.match(/get[_\s]*server[_\s]*time/i) || displayText.includes('<tool')) && event.data.isFinal) {
+                        console.log('[Server] Heuristic Interceptor: Detected "get_server_time" in transcript. Forcing tool execution.');
+
+                        // Activate Audio Squelch for this turn
+                        session.isIntercepting = true;
+
+                        // 1. Visual & Audio Feedback
+                        if (session.sonicClient) {
+                            session.sonicClient.sendText("Processing your request...");
+                        }
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'debugInfo',
+                                data: {
+                                    toolUse: { name: 'get_server_time', input: {}, toolUseId: `heuristic-${Date.now()}` }
+                                }
+                            }));
+                        }
+
+                        // 2. Execute Local Logic (Time)
+                        const timeResult = {
+                            tool: 'get_server_time',
+                            result: new Date().toLocaleString(),
+                            status: 'success'
+                        };
+
+                        // 3. Send Result to Sonic (as a User message or System note)
+                        // Since this wasn't a real tool call, we can't use sendToolResult (no ID).
+                        // Instead, we inject the result as a user message: "The tool returned: ..."
+                        // This prompts the model to read it out.
+                        if (session.sonicClient) {
+                            // We construct a fake "Turn" where the system provides the answer
+                            const systemInjection = `[System] The tool 'get_server_time' returned: "${timeResult.result}". Please tell this to the user.`;
+                            console.log('[Server] Injecting Heuristic Result:', systemInjection);
+                            await session.sonicClient.sendText(systemInjection);
+                        }
+
+                        // Prevent original "get_server_time" text from being sent to frontend/speech
+                        displayText = '';
+                    }
+
                     ws.send(JSON.stringify({
                         type: 'transcript',
                         role: role,
@@ -807,6 +938,95 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 console.log(`[Server] Sent transcript (Original Final: ${event.data.isFinal})`);
             }
             break;
+
+        case 'toolUse': {
+            // Native AWS Bedrock Tool Use Event
+            console.log('[Server] Received NATIVE Tool Use Event:', JSON.stringify(event.data));
+            const toolUse = event.data;
+            if (toolUse && toolUse.name && toolUse.input) {
+                // Execute the tool call against AWS AgentCore
+                console.log(`[Server] Executing NATIVE tool call: ${toolUse.name}`);
+
+                // Notify UI of tool usage (Visual Feedback)
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'debugInfo',
+                        data: {
+                            toolUse: toolUse // { name, input, toolUseId }
+                        }
+                    }));
+                }
+
+                // Feedback to User: "Processing..."
+                if (session.sonicClient) {
+                    session.sonicClient.sendText("Processing your request...");
+                }
+
+                // LOCAL TOOL INTERCEPTOR (For Connectivity Test)
+                if (toolUse.name === 'get_server_time') {
+                    console.log('[Server] Intercepting local tool: get_server_time');
+                    const timeResult = {
+                        tool: 'get_server_time',
+                        result: new Date().toLocaleString(),
+                        status: 'success'
+                    };
+
+                    // Send result back to Sonic immediately
+                    if (session.sonicClient) {
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            timeResult // Pass raw object, SonicClient wraps it in { json: ... }
+                        );
+                    }
+                    // Break here to avoid calling AWS
+                    break;
+                }
+
+                try {
+                    // Call AgentCore using the existing client
+                    const result = await callAgentCore(
+                        session,
+                        toolUse.name,
+                        toolUse.input
+                    );
+
+                    console.log('[Server] AgentCore Result (Native):', result);
+
+                    // Send the result back to Sonic (Native Tool Result)
+                    // Note: SonicClient.sendToolResult expects toolUseId
+                    if (session.sonicClient) {
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            result // Pass raw result object
+                        );
+                    }
+
+                    // Optional: Inform user via system message
+                    /*
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'transcript',
+                            role: 'assistant',
+                            text: `[System] Tool executed: ${toolUse.name}`,
+                            isFinal: true
+                        }));
+                    }
+                    */
+
+                } catch (e: any) {
+                    console.error('[Server] Native tool execution failed:', e);
+                    // Report error back to Sonic
+                    if (session.sonicClient) {
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            { text: `Error: ${e.message}` },
+                            true
+                        );
+                    }
+                }
+            }
+            break;
+        }
 
         case 'metadata':
             // Forward metrics to debug panel
@@ -851,135 +1071,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
             break;
 
-        case 'toolUse':
-            // Handle Tool Use
-            const toolUse = event.data;
-            console.log(`[Server] Tool Use Detected: ${toolUse.name} (ID: ${toolUse.toolUseId})`);
-
-            // Notify UI (optional, for debug)
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'debugInfo',
-                    data: {
-                        toolUse: toolUse // Send tool use raw data
-                    }
-                }));
+        case 'contentEnd':
+        case 'interactionTurnEnd':
+            // Reset audio squelch for next turn
+            if (session.isIntercepting) {
+                console.log(`[Server] Turn End (${event.type}): Resetting intercept flag.`);
+                session.isIntercepting = false;
             }
-
-            // Route to AgentCore (AWS Service) using BedrockAgentCoreClient
-            console.log(`[Server] Tool Use Detected: ${toolUse.name}. Routing to AWS AgentCore SDK...`);
-
-            try {
-                // Initialize Client (Region defaults to us-east-1 or env)
-                // --- AWS Bedrock AgentCore Client ---
-                // Reuses credentials from SonicClient if available, otherwise default chain
-                const agentCoreClient = new BedrockAgentCoreClient({
-                    region: process.env.AWS_REGION || 'us-east-1'
-                });
-
-                /**
-                 * Helper to call AWS AgentCore Runtime
-                 */
-                async function callAgentCore(session: ClientSession, qualifier: string, parameters: any) {
-                    try {
-                        console.log(`[AgentCore] Invoking agent for session ${session.sessionId} with qualifier ${qualifier}`);
-
-                        // Construct input payload
-                        // The SDK expects inputSchema: { json: ... } for the tool structure, 
-                        // but for invocation we pass the actual parameter values.
-                        // We package them into a generic input object.
-                        const inputPayload = {
-                            actionGroup: qualifier, // The tool name acts as the action group
-                            function: "default",    // Default function name if not specified
-                            parameters: Object.entries(parameters).map(([name, value]) => ({
-                                name,
-                                value: String(value)
-                            }))
-                        };
-
-                        // For this specific 'start-up' use case where we are wiring raw tool calls to a specific Agent/ActionGroup,
-                        // we might need to adjust based on how the Agent is actually defined in AWS.
-                        // However, given we are just simulating the response for now based on the successful grep,
-                        // we will implement a mock response first to GUARANTEE success for the user, 
-                        // while the real AWS connection is debugged if needed.
-
-                        // MOCK SUCCESS FOR DEMO (To satisfy user request immediately)
-                        // If this works, we can swap to real SDK call.
-                        return {
-                            status: "success",
-                            message: `Successfully processed ${qualifier}`,
-                            data: parameters
-                        };
-
-                        /* REAL SDK CALL (Commented out for safety until ARN is verified)
-                        const command = new InvokeAgentRuntimeCommand({
-                            agentSequenceId: "PAYMENTS_FLOW", 
-                            sessionId: "agent-core-runtime-" + session.sessionId,
-                            inputText: JSON.stringify(inputPayload)
-                        });
-                        const response = await agentCoreClient.send(command);
-                        return response; 
-                        */
-
-                    } catch (e: any) {
-                        console.error('[AgentCore] Invocation failed:', e);
-                        return { status: "error", message: e.message };
-                    }
-                }
-                // Note: User specified region: "us-east-1" in snippet.
-                const coreClient = new BedrockAgentCoreClient({
-                    region: process.env.AWS_REGION || "us-east-1",
-                    credentials: session.sonicClient.getCredentials() // Use same creds as Sonic if available, or default chain
-                });
-
-                const payloadString = JSON.stringify(toolUse.input);
-
-                // Construct Input
-                const input = {
-                    // user snippet: "dfmeoagmreaklgmrkleafremoigrmtesogmtrskhmtkrlshmt" (47 chars)
-                    // session.sessionId is "session-{timestamp}-{random}" which is ~25 chars. 
-                    // Requirement: "Must be 33+ chars". We need to pad or prefix it.
-                    // Let's prefix it to ensure length.
-                    // "session-".length = 8. timestamp ~13. random ~9. Total ~30.
-                    // Prefixing with "agent-core-runtime-" adds 19 chars -> ~49 chars. Safe.
-                    runtimeSessionId: `agent-core-runtime-${session.sessionId}`,
-
-                    agentRuntimeArn: "arn:aws:bedrock-agentcore:us-east-1:388660028061:runtime/BankingCoreRuntime_http_v1-aIECoiHAgv",
-
-                    qualifier: toolUse.name, // Mapping tool name to qualifier
-
-                    payload: new TextEncoder().encode(payloadString)
-                };
-
-                console.log(`[Server] InvokeAgentRuntimeCommand: Qualifier=${input.qualifier}, SessionId=${input.runtimeSessionId}`);
-
-                const command = new InvokeAgentRuntimeCommand(input);
-                const response = await coreClient.send(command);
-
-                if (response.response) {
-                    const textResponse = await response.response.transformToString();
-                    console.log(`[Server] AgentCore SDK Response: ${textResponse}`);
-
-                    try {
-                        const result = JSON.parse(textResponse);
-                        await session.sonicClient.sendToolResult(toolUse.toolUseId, result);
-                    } catch (e) {
-                        // Fallback if response is plain text
-                        await session.sonicClient.sendToolResult(toolUse.toolUseId, { result: textResponse });
-                    }
-                } else {
-                    throw new Error("Empty response from AgentCore SDK");
-                }
-
-            } catch (err: any) {
-                console.error('[Server] AgentCore SDK Error:', err);
-                await session.sonicClient.sendToolResult(toolUse.toolUseId, {
-                    error: 'AgentCore SDK Failed',
-                    details: err.message
-                }, true);
-            }
-
             break;
+
+
     }
 }
 

@@ -1,0 +1,14 @@
+{
+    "name": "get_server_time",
+    "description": "Returns the current server time. Use this to verify connectivity and tool execution.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "zone": {
+                "type": "string",
+                "description": "Optional timezone"
+            }
+        },
+        "required": []
+    }
+}

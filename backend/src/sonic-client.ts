@@ -34,7 +34,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd';
     data: any;
 }
 
@@ -223,13 +223,18 @@ export class SonicClient {
                         encoding: "base64",
                         audioType: "SPEECH"
                     },
+                    toolUseOutputConfiguration: {
+                        mediaType: "application/json"
+                    },
                     toolConfig: this.sessionConfig.tools ? {
                         tools: this.sessionConfig.tools
                     } : undefined
                 }
             }
         };
+        console.log('[SonicClient] Prompt Start Payload (with Tools):', JSON.stringify(promptStartEvent, null, 2));
         yield { chunk: { bytes: Buffer.from(JSON.stringify(promptStartEvent)) } };
+
 
         // 3. System Prompt Content Start
         const systemContentName = `system-${Date.now()}`;
