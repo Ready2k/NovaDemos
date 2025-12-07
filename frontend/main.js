@@ -810,10 +810,19 @@ class VoiceAssistant {
             // Create new message
             const entry = document.createElement('div');
             entry.className = `transcript-entry ${role} ${isFinal ? '' : 'temporary'}`;
-            entry.innerHTML = `
-                <span class="role">${role === 'assistant' ? '🤖 Assistant' : '👤 User'}:</span>
-                <span class="text">${text}</span>
-            `;
+            entry.innerHTML = '';
+
+            const roleSpan = document.createElement('span');
+            roleSpan.className = 'role';
+            roleSpan.textContent = role === 'assistant' ? '🤖 Assistant: ' : '👤 User: ';
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'text';
+            textSpan.textContent = text;
+
+            entry.appendChild(roleSpan);
+            entry.appendChild(textSpan);
+
             this.transcriptEl.appendChild(entry);
         }
 

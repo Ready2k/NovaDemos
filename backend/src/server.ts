@@ -2,11 +2,12 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
 import { callBankAgent } from './bedrock-agent-client';
 import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
-// import { startAgentCore } from './banking-core-runtime/server';
+
 import * as dotenv from 'dotenv';
 
 // Load environment variables
@@ -28,8 +29,16 @@ async function callAgentCore(session: ClientSession, qualifier: string, paramete
         console.log(`[AgentCore] Tool/Intent: ${qualifier}`); // Log original intent for debug
 
         // REAL SDK CALL (Bedrock Agent Core specific)
-        const configArn = "arn:aws:bedrock-agentcore:us-east-1:388660028061:runtime/BankingCoreRuntime_http_v1-aIECoiHAgv";
-        let runtimeArn = process.env.AGENT_CORE_RUNTIME_ARN || configArn;
+        // REAL SDK CALL (Bedrock Agent Core specific)
+        let runtimeArn = process.env.AGENT_CORE_RUNTIME_ARN;
+
+        if (!runtimeArn) {
+            console.error('[AgentCore] Missing AGENT_CORE_RUNTIME_ARN in environment variables.');
+            return {
+                status: "error",
+                message: "Configuration Error: AGENT_CORE_RUNTIME_ARN is missing."
+            };
+        }
 
         // SANITIZE ARN (Learned from Test)
         // Strip /runtime-endpoint/... suffix if present
@@ -44,7 +53,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, paramete
         let rSessionId = session.sessionId;
         if (!rSessionId || rSessionId.length < 33) {
             console.warn('[Server] SessionId too short for AgentCore. Generating temporary rotated ID.');
-            rSessionId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
+            rSessionId = crypto.randomUUID();
         }
 
         // PAYLOAD CONSTRUCTION (Learned from Test)
@@ -308,9 +317,8 @@ console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);
 
 wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     const clientIp = req.socket.remoteAddress;
-    // Generate a longer session ID (min 33 chars for AgentCore)
-    // Format: session-{timestamp}-{random}-{random} -> approx 41 chars
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate a longer session ID (UUID is 36 chars)
+    const sessionId = crypto.randomUUID();
 
     console.log(`[Server] New client connected: ${clientIp} (${sessionId})`);
 
@@ -684,7 +692,7 @@ server.listen(PORT, () => {
     console.log(`[Server] Using Nova 2 Sonic model: ${process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0'}`);
 
     // Start Banking Core Runtime
-    // startAgentCore();
+
 });
 
 /**

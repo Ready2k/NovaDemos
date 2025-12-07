@@ -9,6 +9,7 @@ import {
     BedrockRuntimeClient,
     InvokeModelWithBidirectionalStreamCommand,
 } from '@aws-sdk/client-bedrock-runtime';
+import * as crypto from 'crypto';
 
 /**
  * Configuration for Nova 2 Sonic
@@ -134,7 +135,7 @@ export class SonicClient {
             throw new Error('Session already active. Call stopSession() first.');
         }
 
-        this.sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        this.sessionId = crypto.randomUUID();
         this.eventCallback = onEvent;
         this.isProcessing = true;
 
