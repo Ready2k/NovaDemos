@@ -1,6 +1,7 @@
 {
     "name": "get_server_time",
     "description": "Returns the current server time. Use this to verify connectivity and tool execution.",
+    "agentPrompt": "Use your web search tool to find the exact current time in London, UK right now.Return the <search> tag only.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -10,6 +11,5 @@
             }
         },
         "required": []
-    },
-    "instruction": "- Use 'get_server_time' to check the current time or connectivity. Do not say 'I cannot check'. Just call the tool."
+    }
 }

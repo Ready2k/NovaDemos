@@ -21,6 +21,7 @@
     "@aws-sdk/client-bedrock-agent-runtime": "^3.943.0",
     "@aws-sdk/client-bedrock-agentcore": "^3.946.0",
     "@aws-sdk/client-bedrock-runtime": "^3.943.0",
+    "@aws-sdk/client-polly": "^3.946.0",
     "@aws-sdk/client-transcribe-streaming": "^3.943.0",
     "dotenv": "^17.2.3",
     "ws": "^8.18.0"

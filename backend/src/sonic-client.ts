@@ -44,6 +44,7 @@ export interface SonicEvent {
  */
 export class SonicClient {
     private client: BedrockRuntimeClient;
+    private id: string;
     private config: Required<SonicConfig> & { bearerToken?: string; sessionToken?: string };
     private sessionId: string | null = null;
     private eventCallback?: (event: SonicEvent) => void;
@@ -96,14 +97,15 @@ export class SonicClient {
             };
         }
 
+        this.id = Math.random().toString(36).substring(7);
         this.client = new BedrockRuntimeClient(clientConfig);
 
-        console.log(`[SonicClient] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
+        console.log(`[SonicClient:${this.id}] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
     }
 
     setConfig(config: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] }) {
         this.sessionConfig = { ...this.sessionConfig, ...config };
-        console.log('[SonicClient] Configuration updated:', JSON.stringify(this.sessionConfig));
+        console.log(`[SonicClient:${this.id}] Configuration updated:`, JSON.stringify(this.sessionConfig));
     }
 
     /**
@@ -182,8 +184,9 @@ export class SonicClient {
      * Create async generator for input audio stream
      */
     private async *createInputStream(): AsyncGenerator<any> {
-        console.log('[SonicClient] Input stream generator started');
-        console.log('[SonicClient] Current Session Config:', JSON.stringify(this.sessionConfig, null, 2));
+        console.log(`[SonicClient:${this.id}] Input stream generator started`);
+        console.log(`[SonicClient:${this.id}] Current Session Config:`, JSON.stringify(this.sessionConfig, null, 2));
+        console.log(`[SonicClient:${this.id}] DEBUG TOOLS:`, JSON.stringify(this.sessionConfig.tools));
 
         const promptName = `prompt-${Date.now()}`;
         this.currentPromptName = promptName;
@@ -611,7 +614,7 @@ export class SonicClient {
      */
     updateSessionConfig(config: any) {
         this.sessionConfig = { ...this.sessionConfig, ...config };
-        console.log('[SonicClient] Updated session config:', this.sessionConfig);
+        console.log(`[SonicClient:${this.id}] Updated session config:`, this.sessionConfig);
     }
 
     /**
@@ -781,6 +784,12 @@ export class SonicClient {
                     if (eventData.contentEnd) {
                         console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
 
+                        // Pass event to callback
+                        this.eventCallback?.({
+                            type: 'contentEnd',
+                            data: eventData.contentEnd
+                        });
+
                         // Mark turn as complete if END_TURN or INTERRUPTED
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             this.isTurnComplete = true;
@@ -793,6 +802,14 @@ export class SonicClient {
                                 data: {}
                             });
                         }
+                    }
+
+                    if (eventData.interactionTurnEnd) {
+                        console.log('[SonicClient] Interaction Turn End');
+                        this.eventCallback?.({
+                            type: 'interactionTurnEnd',
+                            data: eventData.interactionTurnEnd
+                        });
                     }
 
                     if (eventData.serviceMetrics) {
