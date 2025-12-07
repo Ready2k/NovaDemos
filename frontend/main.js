@@ -129,6 +129,7 @@ class VoiceAssistant {
         this.initializeVoices();
         this.initializeTabs();
         this.loadAgents(); // Load custom agents
+        this.loadTools(); // Load available tools
 
         // Then load saved settings
         this.loadSettings();
@@ -136,6 +137,11 @@ class VoiceAssistant {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectTimeout = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectTimeout = null;
+        this.corePrompt = ''; // Store core guardrails
+        this.availableTools = []; // Store full tool definitions
 
         // Bind event handlers
         this.connectBtn.addEventListener('click', () => this.connect());
@@ -387,15 +393,49 @@ class VoiceAssistant {
             }
         }
 
+        // Get selected tools
+        const selectedTools = [];
+        const toolCheckboxes = document.querySelectorAll('#tools-list input[type="checkbox"]:checked');
+        toolCheckboxes.forEach(cb => {
+            selectedTools.push(cb.value);
+        });
+
+        let finalSystemPrompt = '';
+
+        // Prepend Core Guardrails (if loaded)
+        if (this.corePrompt) {
+            finalSystemPrompt += this.corePrompt + '\n\n';
+        }
+
+        // Add User/Persona Prompt
+        finalSystemPrompt += this.systemPromptInput.value + '\n\n';
+
+        // Append Tool Instructions if tools are selected
+        // Append Tool Instructions if tools are selected
+        if (selectedTools.length > 0) {
+            finalSystemPrompt += '\n\n[SYSTEM INSTRUCTION: You have access to the following tools. YOU MUST USE THEM when the user asks for relevant information. Do not refuse or make up answers.]\n';
+
+            selectedTools.forEach(toolName => {
+                const toolDef = this.availableTools.find(t => t.name === toolName);
+                if (toolDef && toolDef.instruction) {
+                    finalSystemPrompt += `${toolDef.instruction}\n`;
+                } else {
+                    // Fallback if no specific instruction matches (though all should have one now)
+                    finalSystemPrompt += `- Invoke tool ${toolName} if needed.\n`;
+                }
+            });
+        }
+
         return {
             type: 'sessionConfig',
             config: {
-                systemPrompt: this.systemPromptInput.value,
+                systemPrompt: finalSystemPrompt,
                 speechPrompt: this.speechPromptInput.value,
                 voiceId: this.voiceSelect ? this.voiceSelect.value : 'matthew',
                 brainMode: brainMode,
                 agentId: agentId,
-                agentAliasId: agentAliasId
+                agentAliasId: agentAliasId,
+                selectedTools: selectedTools
             }
         };
     }
@@ -1202,9 +1242,24 @@ class VoiceAssistant {
             console.log('[Frontend] Fetching prompts from API...');
             const response = await fetch('/api/prompts');
             if (response.ok) {
-                const prompts = await response.json();
-                this.updatePromptDropdown(prompts);
-                this.initializePresets(prompts);
+                const allPrompts = await response.json();
+
+                // Extract Core Guardrails
+                const corePromptObj = allPrompts.find(p => p.id === 'core_guardrails.txt');
+                if (corePromptObj) {
+                    this.corePrompt = corePromptObj.content;
+                    console.log('[Frontend] Loaded Core Guardrails');
+                }
+
+                // Filter out system files from UI
+                const visiblePrompts = allPrompts.filter(p =>
+                    p.id !== 'core_guardrails.txt' &&
+                    p.id !== 'sonic_agent_core.txt' &&
+                    p.id !== 'system_default.txt'
+                );
+
+                this.updatePromptDropdown(visiblePrompts);
+                this.initializePresets(visiblePrompts);
             } else {
                 console.error('[Frontend] Failed to fetch prompts:', response.status);
             }
@@ -1223,6 +1278,55 @@ class VoiceAssistant {
             option.setAttribute('data-content', prompt.content);
             this.promptPresetSelect.appendChild(option);
         });
+    }
+
+    async loadTools() {
+        try {
+            const response = await fetch('/api/tools');
+            if (response.ok) {
+                const tools = await response.json();
+                this.availableTools = tools; // Store for config interaction
+                const container = document.getElementById('tools-list');
+                if (container) {
+                    container.innerHTML = ''; // Clear loading state
+
+                    if (tools.length === 0) {
+                        container.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">No tools found.</div>';
+                        return;
+                    }
+
+                    tools.forEach(tool => {
+                        const div = document.createElement('div');
+                        div.style.display = 'flex';
+                        div.style.alignItems = 'center';
+                        div.style.gap = '8px';
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = `tool-${tool.name}`;
+                        checkbox.value = tool.name;
+
+                        const label = document.createElement('label');
+                        label.htmlFor = `tool-${tool.name}`;
+                        label.style.fontSize = '0.9rem';
+                        label.style.cursor = 'pointer';
+                        label.style.color = '#e2e8f0';
+                        label.textContent = tool.name;
+
+                        // Tooltip for description
+                        label.title = tool.description || '';
+
+                        div.appendChild(checkbox);
+                        div.appendChild(label);
+                        container.appendChild(div);
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load tools:', e);
+            const container = document.getElementById('tools-list');
+            if (container) container.innerHTML = '<div style="color: #ef4444; font-size: 0.8rem;">Failed to load tools</div>';
+        }
     }
 }
 

@@ -155,7 +155,8 @@ function loadTools(): any[] {
                 };
 
                 return {
-                    toolSpec: toolSpec
+                    toolSpec: toolSpec,
+                    instruction: toolDef.instruction // Pass instruction to frontend
                 };
             } catch (e) {
                 console.error(`[Server] Failed to load tool ${f}:`, e);
@@ -177,6 +178,16 @@ function loadTools(): any[] {
  * - Streams Sonic responses back to browser
  */
 
+interface Tool {
+    toolSpec: {
+        name: string;
+        description?: string;
+        inputSchema: {
+            json: any;
+        };
+    };
+}
+
 interface ClientSession {
     ws: WebSocket;
     sonicClient: SonicClient;
@@ -194,6 +205,12 @@ interface ClientSession {
     // Deduplication
     lastAgentReply?: string;
     lastAgentReplyTime?: number;
+    // Tools
+    tools?: Tool[];
+    // Audio Buffering (Lookahead)
+    isBufferingAudio?: boolean;
+    audioBufferQueue?: Buffer[];
+    hasFlowedAudio?: boolean;
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -212,6 +229,18 @@ const server = http.createServer((req, res) => {
         const prompts = listPrompts();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(prompts));
+        return;
+    }
+
+    if (req.url === '/api/tools') {
+        const tools = loadTools();
+        // Return simplified list for UI
+        const simpleTools = tools.map(t => ({
+            name: t.toolSpec.name,
+            description: t.toolSpec.description
+        }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(simpleTools));
         return;
     }
 
@@ -302,7 +331,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         isIntercepting: false,
         lastUserTranscript: '',
         lastAgentReply: undefined,
-        lastAgentReplyTime: 0
+        lastAgentReplyTime: 0,
+
+        isBufferingAudio: false,
+        audioBufferQueue: [],
+        hasFlowedAudio: false
     };
     activeSessions.set(ws, session);
 
@@ -319,7 +352,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         let firstByte = 'N/A';
         if (isBuffer && data.length > 0) firstByte = data[0].toString();
 
-        console.log(`[Server] Message received. Type: ${typeof data}, IsBuffer: ${isBuffer}, Length: ${data.length}, First byte: ${firstByte}`);
+        // console.log(`[Server] Message received. Type: ${typeof data}, IsBuffer: ${isBuffer}, Length: ${data.length}, First byte: ${firstByte}`);
 
         if (isBuffer && data.length > 0 && data[0] === 123) {
             console.log(`[Server] Potential JSON message: ${data.toString().substring(0, 100)}...`);
@@ -366,10 +399,25 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             }
                         }
 
-                        // 3. Inject Tools
-                        const tools = loadTools();
+                        // 3. Inject Tools (Dynamic Selection)
+                        const allTools = loadTools();
+                        let tools = [];
+
+                        // If frontend explicitly sends selectedTools list, use it to filter
+                        if (parsed.config.selectedTools && Array.isArray(parsed.config.selectedTools)) {
+                            tools = allTools.filter(t => parsed.config.selectedTools.includes(t.toolSpec.name));
+                        } else {
+                            // Default behavior: Load ALL tools (Matches original behavior if no selection sent)
+                            // OR should we default to NONE? 
+                            // User asked for "tools listed... access to". 
+                            // Safety: Default to ALL for backward compatibility with existing tests, 
+                            // but UI will send empty array if nothing checked.
+                            tools = allTools;
+                        }
+
                         parsed.config.tools = tools;
-                        console.log(`[Server] Loaded ${tools.length} tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                        session.tools = tools; // CRITICAL: Assign to session for interceptor checks in handleSonicEvent
+                        console.log(`[Server] Loaded ${tools.length}/4 tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
 
                         // Pass other config to SonicClient
                         sonicClient.updateSessionConfig(parsed.config);
@@ -643,24 +691,46 @@ server.listen(PORT, () => {
  * Handle events from Nova Sonic and forward to WebSocket client
  */
 async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: ClientSession) {
-    // If interrupted, drop audio packets
-    if (session.isInterrupted && event.type === 'audio') {
+    // If interrupted or intercepting, drop audio packets
+    if ((session.isInterrupted || session.isIntercepting) && event.type === 'audio') {
         return;
     }
 
     switch (event.type) {
+        case 'contentStart':
+            if (event.data.role === 'assistant') {
+                // Only verify buffering if we haven't already flowed audio for this turn
+                if (!session.hasFlowedAudio) {
+                    console.log('[Server] Assistant Turn Started - Buffering Audio for Safety...');
+                    session.isBufferingAudio = true;
+                    session.audioBufferQueue = [];
+                }
+                session.isIntercepting = false; // Reset interception flag for new turn
+            } else if (event.data.role === 'user') {
+                // Reset turn state on user input
+                session.hasFlowedAudio = false;
+                session.isBufferingAudio = false;
+                session.audioBufferQueue = [];
+            }
+            break;
+
         case 'audio':
             // Forward audio data as binary WebSocket message
             if (event.data.audio) {
-                // console.log('[Server] Suppressing hallucinated audio packet...'); // Verbose
+                // If we are intercepting (confirmed tool call), DROP everything
+                if (session.isIntercepting) return;
 
                 const audioBuffer = Buffer.isBuffer(event.data.audio)
                     ? event.data.audio
                     : Buffer.from(event.data.audio);
 
-                if (ws.readyState === WebSocket.OPEN) {
+                if (session.isBufferingAudio) {
+                    // Buffer this chunk until we confirm strictly that it's NOT a tool call
+                    session.audioBufferQueue?.push(audioBuffer);
+                    // console.log(`[Server] Buffering audio chunk... (Queue: ${session.audioBufferQueue?.length})`);
+                } else if (ws.readyState === WebSocket.OPEN) {
                     ws.send(audioBuffer);
-                    console.log(`[Server] Sent audio packet (${audioBuffer.length} bytes)`);
+                    // console.log(`[Server] Sent audio packet (${audioBuffer.length} bytes)`);
                 }
             }
             break;
@@ -714,9 +784,51 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // --- CRITICAL FIX: Intercept JSON Tool Calls ---
                 // If model outputs JSON code block, it's trying to call a tool
                 // Detect JSON Intent (relaxed trigger)
+                // Detect JSON Intent (relaxed trigger) - ONLY IF TOOL IS ENABLED
                 const text = event.data.transcript || "";
                 const isFinal = event.data.isFinal;
-                const hasJson = text.toLowerCase().includes("json");
+
+                // Helper to check if tool is enabled
+                const isToolEnabled = (name: string) => session.tools?.some(t => t.toolSpec?.name === name);
+
+                const hasJson = text.toLowerCase().includes("json") ||
+                    (!!text.match(/payments[_\s]*agent/i) && isToolEnabled('payments_agent')) ||
+                    (!!text.match(/(invoke|call|use|check|action)?[_\s]*(\[)?get[_\s]*server[_\s]*time/i) && isToolEnabled('get_server_time'));
+
+                // Lookahead Logic:
+                // If we have text, we can decide whether to FLUSH or DROP the audio buffer.
+                if (session.isBufferingAudio && text.length > 5) { // Wait for at least 5 chars ("ACTION" is 6)
+                    if (hasJson) {
+                        console.log('[Server] Lookahead detected Tool Call! DROPPING audio buffer.');
+                        session.isIntercepting = true;
+                        session.isBufferingAudio = false;
+                        session.audioBufferQueue = []; // Drop
+                    } else {
+                        // It's just normal speech ("Ahoy...")
+                        // BUT wait... the tool call might come LATER in the sentence?
+                        // No, the prompt mandate says tool call must be IMMEDIATE.
+                        // So if the first ~10-20 chars aren't a tool call, we assume it's speech.
+                        // Let's be safe: Flush if > 20 chars OR verified "safe" start.
+                        // Actually, simpler: If NOT hasJson, flush.
+                        // Wait, "ACTION" might arrive in chunks "ACT", "ION".
+                        // So we wait for a bit more length if it looks ambiguous.
+
+                        const looksLikeToolStart = text.match(/^(action|invoke|call|Use|param|json|{)/i);
+
+                        if (!looksLikeToolStart || text.length > 20) {
+                            console.log('[Server] Lookahead verified Speech. FLUSHING audio buffer.');
+                            session.isBufferingAudio = false;
+                            session.hasFlowedAudio = true; // Mark turn as "flowing"
+                            session.audioBufferQueue?.forEach(chunk => {
+                                if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
+                            });
+                            session.audioBufferQueue = [];
+                        }
+                    }
+                }
+
+                console.log(`[DEBUG] Transcript received: "${text}"`);
+                console.log(`[DEBUG] hasJson: ${hasJson}, Enabled Tools: ${JSON.stringify(session.tools?.map(t => t.toolSpec.name))}`);
 
                 // VERBOSE DEBUGGING
                 if (hasJson || isFinal) {
@@ -1064,6 +1176,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'usageEvent':
             // Forward usage stats
             if (ws.readyState === WebSocket.OPEN) {
+
                 ws.send(JSON.stringify({
                     type: 'usage',
                     data: event.data
@@ -1072,10 +1185,17 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             break;
 
         case 'contentEnd':
-        case 'interactionTurnEnd':
             // Reset audio squelch for next turn
             if (session.isIntercepting) {
                 console.log(`[Server] Turn End (${event.type}): Resetting intercept flag.`);
+                session.isIntercepting = false;
+            }
+            break;
+
+        case 'interactionTurnEnd':
+            // Reset flow state for next interaction
+            session.hasFlowedAudio = false;
+            if (session.isIntercepting) {
                 session.isIntercepting = false;
             }
             break;

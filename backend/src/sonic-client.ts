@@ -34,7 +34,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart';
     data: any;
 }
 
@@ -223,9 +223,11 @@ export class SonicClient {
                         encoding: "base64",
                         audioType: "SPEECH"
                     },
-                    toolUseOutputConfiguration: {
-                        mediaType: "application/json"
-                    },
+                    ...(this.sessionConfig.tools && this.sessionConfig.tools.length > 0 ? {
+                        toolUseOutputConfiguration: {
+                            mediaType: "application/json"
+                        }
+                    } : {}),
                     toolConfig: this.sessionConfig.tools ? {
                         tools: this.sessionConfig.tools
                     } : undefined
@@ -734,6 +736,14 @@ export class SonicClient {
 
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
                         this.currentRole = eventData.contentStart.role;
+
+                        this.eventCallback?.({
+                            type: 'contentStart',
+                            data: {
+                                role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                contentId: contentId
+                            }
+                        });
                     }
 
                     if (eventData.audioOutput) {

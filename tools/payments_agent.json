@@ -30,5 +30,6 @@
             "customerId",
             "intent"
         ]
-    }
+    },
+    "instruction": "- Use 'payments_agent' for any payment or balance related queries."
 }
