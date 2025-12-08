@@ -358,7 +358,7 @@ export class SonicClient {
                             contentName: contentName,
                             toolUseId: resultData.toolUseId,
                             content: [{ json: resultData.result }],
-                            status: resultData.isError ? "ERROR" : "SUCCESS"
+                            status: resultData.isError ? "error" : "success"
                         }
                     }
                 };
