@@ -203,6 +203,9 @@ export class SonicClient {
                         maxTokens: 2048,
                         topP: 0.9,
                         temperature: 0.7
+                    },
+                    turnDetectionConfiguration: {
+                        endpointingSensitivity: "HIGH"  // Controls when Nova detects end of user speech
                     }
                 }
             }
@@ -220,7 +223,7 @@ export class SonicClient {
                     },
                     audioOutputConfiguration: {
                         mediaType: "audio/lpcm",
-                        sampleRateHertz: 16000,
+                        sampleRateHertz: 24000,  // Nova 2 Sonic outputs at 24kHz for better quality
                         sampleSizeBits: 16,
                         channelCount: 1,
                         voiceId: this.sessionConfig.voiceId || "matthew",
@@ -681,6 +684,12 @@ export class SonicClient {
         (this as any)._lastSentText = { text, time: now };
         // ------------------------------------------------
 
+        // CRITICAL: Reset transcript when user sends new text
+        // This ensures the next assistant response starts fresh
+        console.log(`[SonicClient] User text input received. Resetting transcript for new response.`);
+        this.currentTurnTranscript = '';
+        this.isTurnComplete = true; // Mark previous turn as complete
+
         this.textQueue.push(text);
     }
 
@@ -732,8 +741,19 @@ export class SonicClient {
                         }
                         this.contentStages.set(contentId, stage);
 
-                        // Reset transcript if role changes OR previous turn completed
-                        if (eventData.contentStart.role !== this.currentRole || this.isTurnComplete) {
+                        // Normalize role for comparison (Nova sends uppercase, we use lowercase internally)
+                        const normalizedRole = eventData.contentStart.role.toLowerCase();
+                        const currentRoleNormalized = this.currentRole.toLowerCase();
+                        
+                        // Reset transcript if:
+                        // 1. Role changes (USER -> ASSISTANT or vice versa)
+                        // 2. Previous turn completed (isTurnComplete flag)
+                        // 3. It's a TEXT content start for ASSISTANT after a turn completed
+                        const roleChanged = normalizedRole !== currentRoleNormalized;
+                        const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
+                        
+                        if (shouldReset) {
+                            console.log(`[SonicClient] Resetting transcript. Reason: ${roleChanged ? 'Role changed' : 'New turn starting'}. Old role: ${this.currentRole}, New role: ${eventData.contentStart.role}, Type: ${eventData.contentStart.type}`);
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
                         }
@@ -770,12 +790,16 @@ export class SonicClient {
 
                             console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" -> Turn Total: "${this.currentTurnTranscript.substring(0, 50)}..."`);
 
+                            // Send transcript event for streaming AND debug purposes
+                            // For SPECULATIVE stage, send as streaming (non-final)
+                            // This allows real-time text updates in the UI
                             this.eventCallback?.({
                                 type: 'transcript',
                                 data: {
                                     transcript: this.currentTurnTranscript, // Send FULL accumulated turn text
                                     role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                    isFinal: stage === 'FINAL'
+                                    isFinal: false,  // Always false here - final comes from END_TURN
+                                    isStreaming: true  // Flag for UI to show as streaming
                                 },
                             });
                         }
@@ -790,9 +814,40 @@ export class SonicClient {
                             data: eventData.contentEnd
                         });
 
+                        // Send final transcript when turn ends
+                        if (eventData.contentEnd.stopReason === 'END_TURN' && this.currentTurnTranscript.length > 0) {
+                            this.eventCallback?.({
+                                type: 'transcript',
+                                data: {
+                                    transcript: this.currentTurnTranscript,
+                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                    isFinal: true,
+                                    isStreaming: false
+                                },
+                            });
+                        }
+                        
+                        // If interrupted, mark the current transcript as cancelled
+                        if (eventData.contentEnd.stopReason === 'INTERRUPTED' && this.currentTurnTranscript.length > 0) {
+                            this.eventCallback?.({
+                                type: 'transcript',
+                                data: {
+                                    transcript: this.currentTurnTranscript,
+                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                    isFinal: false,
+                                    isStreaming: false,
+                                    isCancelled: true
+                                },
+                            });
+                        }
+
                         // Mark turn as complete if END_TURN or INTERRUPTED
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             this.isTurnComplete = true;
+                            // Also reset the transcript immediately for the next turn
+                            // This prevents accumulation across multiple assistant responses
+                            console.log(`[SonicClient] Turn ended (${eventData.contentEnd.stopReason}). Resetting transcript for next turn.`);
+                            this.currentTurnTranscript = '';
                         }
 
                         if (eventData.contentEnd.stopReason === 'INTERRUPTED') {

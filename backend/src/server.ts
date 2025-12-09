@@ -14,10 +14,25 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 // --- AWS Bedrock AgentCore Client ---
-// Reuses credentials from SonicClient if available, otherwise default chain
-const agentCoreClient = new BedrockAgentCoreClient({
+// Build credentials config for AgentCore client
+const agentCoreConfig: any = {
     region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
-});
+};
+
+// Add explicit credentials if NOVA_ prefixed env vars are set
+if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
+    agentCoreConfig.credentials = {
+        accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+    };
+} else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    agentCoreConfig.credentials = {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+}
+
+const agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
 
 /**
  * Helper to call AWS AgentCore Runtime
@@ -647,6 +662,16 @@ You have access to NATIVE tools.
                         // Start session if not already started (or if we just stopped it)
                         if (!sonicClient.getSessionId()) {
                             await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                            
+                            // AI SPEAKS FIRST: Send initial greeting trigger
+                            // This makes the AI greet the user immediately after connection
+                            console.log('[Server] Triggering initial AI greeting...');
+                            setTimeout(async () => {
+                                if (sonicClient.getSessionId()) {
+                                    await sonicClient.sendText("Hi");
+                                    console.log('[Server] Initial greeting sent to AI');
+                                }
+                            }, 500); // Small delay to ensure session is fully ready
                         }
                         return;
                     } else if (parsed.type === 'ping') {
@@ -655,6 +680,17 @@ You have access to NATIVE tools.
                     } else if (parsed.type === 'textInput') {
                         console.log('[Server] Received text input:', parsed.text);
                         if (parsed.text) {
+                            // Store user transcript for debug panel
+                            session.lastUserTranscript = parsed.text;
+                            
+                            // Send user message to transcript display
+                            ws.send(JSON.stringify({
+                                type: 'transcript',
+                                role: 'user',
+                                text: parsed.text,
+                                isFinal: true
+                            }));
+                            
                             // Ensure session is started
                             if (!sonicClient.getSessionId()) {
                                 console.log('[Server] Starting session for text input');
@@ -958,7 +994,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 session.lastUserTranscript = event.data.transcript;
             }
 
-            // Send Debug Info for Raw Nova Mode
+            // Send Debug Info for Raw Nova Mode - Show ALL updates for debugging
             if (ws.readyState === WebSocket.OPEN) {
                 // If it's an assistant reply, send debug info with context
                 if (role === 'assistant' || role === 'model') {
@@ -967,6 +1003,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         data: {
                             transcript: session.lastUserTranscript || '(No user transcript)',
                             agentReply: event.data.transcript,
+                            isFinal: event.data.isFinal,
+                            stage: event.data.isFinal ? 'FINAL' : 'STREAMING',
                             trace: [] // No trace for raw nova
                         }
                     }));
@@ -977,6 +1015,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         data: {
                             transcript: event.data.transcript,
                             agentReply: '...',
+                            isFinal: true,
+                            stage: 'USER_INPUT',
                             trace: []
                         }
                     }));
@@ -1337,14 +1377,69 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         displayText = '';
                     }
 
-                    ws.send(JSON.stringify({
-                        type: 'transcript',
-                        role: role,
-                        text: displayText,
-                        isFinal: event.data.isFinal
-                    }));
+                    // Filter out interruption messages and empty text
+                    const isInterruptionMessage = displayText.includes('"interrupted"') || displayText.includes('interrupted');
+                    
+                    if (isInterruptionMessage) {
+                        console.log(`[Server] Filtered out interruption message`);
+                        return;
+                    }
+                    
+                    if (displayText.trim().length === 0) {
+                        console.log(`[Server] Skipped empty transcript`);
+                        return;
+                    }
+                    
+                    // Handle streaming transcripts
+                    if (event.data.isStreaming) {
+                        // Send streaming updates to show text appearing in real-time
+                        ws.send(JSON.stringify({
+                            type: 'transcript',
+                            role: role,
+                            text: displayText,
+                            isFinal: false,
+                            isStreaming: true
+                        }));
+                        console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
+                    } 
+                    // Handle cancelled transcripts (interrupted)
+                    else if (event.data.isCancelled) {
+                        // Clear the streaming message
+                        ws.send(JSON.stringify({
+                            type: 'transcriptCancelled',
+                            role: role
+                        }));
+                        console.log(`[Server] Sent cancellation for interrupted transcript`);
+                    }
+                    // Handle final transcripts
+                    else if (event.data.isFinal) {
+                        // Smart deduplication: Only skip if it's exactly the same OR if it's shorter than the last one
+                        const isDuplicate = session.lastAgentReply === displayText;
+                        const isShorterThanLast = session.lastAgentReply && displayText.length <= session.lastAgentReply.length && 
+                                                 session.lastAgentReply.startsWith(displayText);
+                        
+                        if (!isDuplicate && !isShorterThanLast) {
+                            ws.send(JSON.stringify({
+                                type: 'transcript',
+                                role: role,
+                                text: displayText,
+                                isFinal: true,
+                                isStreaming: false
+                            }));
+                            
+                            // Track last message for deduplication
+                            if (role === 'assistant') {
+                                session.lastAgentReply = displayText;
+                                session.lastAgentReplyTime = Date.now();
+                            }
+                            console.log(`[Server] Sent final transcript: "${displayText.substring(0, 50)}..."`);
+                        } else if (isDuplicate) {
+                            console.log(`[Server] Skipped duplicate transcript: "${displayText.substring(0, 50)}..."`);
+                        } else if (isShorterThanLast) {
+                            console.log(`[Server] Skipped shorter transcript (already have longer): "${displayText.substring(0, 50)}..."`);
+                        }
+                    }
                 }
-                console.log(`[Server] Sent transcript(Original Final: ${event.data.isFinal})`);
             }
             break;
 

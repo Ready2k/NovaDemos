@@ -6,9 +6,24 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const client = new BedrockAgentRuntimeClient({
+// Build credentials config
+const clientConfig: any = {
     region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
-});
+};
+
+if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
+    clientConfig.credentials = {
+        accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+    };
+} else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    clientConfig.credentials = {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+}
+
+const client = new BedrockAgentRuntimeClient(clientConfig);
 
 const agentId = process.env.AGENT_ID!;
 const agentAliasId = process.env.AGENT_ALIAS_ID!;

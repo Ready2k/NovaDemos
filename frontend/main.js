@@ -485,6 +485,9 @@ class VoiceAssistant {
                     this.ws.send(JSON.stringify(config));
                     this.log('Sent persona configuration');
                     console.log('[Frontend] Sent config:', config);
+                    
+                    // Show that AI is preparing to greet
+                    this.showToast('AI is greeting you...', 'info');
                 } catch (e) {
                     console.error('[Frontend] Failed to send config:', e);
                     this.log('Failed to send configuration', 'error');
@@ -533,8 +536,12 @@ class VoiceAssistant {
                                 break;
 
                             case 'transcript':
-                                this.displayTranscript(message.role || 'assistant', message.text, message.isFinal);
+                                this.displayTranscript(message.role || 'assistant', message.text, message.isFinal, message.isStreaming);
                                 this.log(`Transcript [${message.role}]: ${message.text}`);
+                                break;
+
+                            case 'transcriptCancelled':
+                                this.cancelStreamingTranscript(message.role);
                                 break;
 
                             case 'interruption':
@@ -788,29 +795,61 @@ class VoiceAssistant {
     }
 
     /**
-     * Display transcript in UI
+     * Display transcript in UI with streaming support
      */
-    displayTranscript(role, text, isFinal = true) {
+    displayTranscript(role, text, isFinal = true, isStreaming = false) {
         // Filter out JSON-like strings or interruption signals that might have leaked into text
         if (typeof text === 'string' && (text.includes('"interrupted"') || text.trim().startsWith('{'))) {
             return;
         }
 
+        // Filter out empty or whitespace-only text
+        if (!text || text.trim().length === 0) {
+            return;
+        }
+
         const lastMessage = this.transcriptEl.lastElementChild;
         const isTemporary = lastMessage && lastMessage.classList.contains('temporary');
+        const isStreamingMsg = lastMessage && lastMessage.classList.contains('streaming');
         const isSameRole = lastMessage && lastMessage.classList.contains(role);
 
-        if (isTemporary && isSameRole) {
-            // Update existing temporary message (backend sends full accumulated text)
+        // STREAMING MODE: Update existing streaming message
+        if (isStreaming && (isTemporary || isStreamingMsg) && isSameRole) {
+            // Update the text content with the accumulated text
             lastMessage.querySelector('.text').textContent = text;
-            if (isFinal) {
-                lastMessage.classList.remove('temporary');
+            lastMessage.classList.add('streaming');
+            return;
+        }
+
+        // FINALIZE: Convert streaming message to final
+        if (isFinal && (isTemporary || isStreamingMsg) && isSameRole) {
+            const lastText = lastMessage.querySelector('.text').textContent;
+            // Only update if the text is different or longer
+            if (text.length >= lastText.length) {
+                lastMessage.querySelector('.text').textContent = text;
+                lastMessage.classList.remove('temporary', 'streaming');
             }
-        } else {
-            // Create new message
+            return;
+        }
+
+        // Check if this is the same text as the last message (prevent exact duplicates)
+        if (lastMessage && isSameRole && !isStreaming) {
+            const lastText = lastMessage.querySelector('.text').textContent;
+            if (lastText === text && isFinal && !isTemporary) {
+                return; // Don't create duplicate final message
+            }
+        }
+
+        // CREATE NEW MESSAGE
+        if (!isSameRole || (!isTemporary && !isStreamingMsg)) {
             const entry = document.createElement('div');
-            entry.className = `transcript-entry ${role} ${isFinal ? '' : 'temporary'}`;
-            entry.innerHTML = '';
+            entry.className = `transcript-entry ${role}`;
+            if (!isFinal || isStreaming) {
+                entry.classList.add('temporary');
+            }
+            if (isStreaming) {
+                entry.classList.add('streaming');
+            }
 
             const roleSpan = document.createElement('span');
             roleSpan.className = 'role';
@@ -832,6 +871,21 @@ class VoiceAssistant {
         // Limit transcript entries
         while (this.transcriptEl.children.length > 20) {
             this.transcriptEl.removeChild(this.transcriptEl.firstChild);
+        }
+    }
+
+    /**
+     * Cancel/remove streaming transcript when interrupted
+     */
+    cancelStreamingTranscript(role) {
+        const lastMessage = this.transcriptEl.lastElementChild;
+        const isStreamingMsg = lastMessage && lastMessage.classList.contains('streaming');
+        const isSameRole = lastMessage && lastMessage.classList.contains(role);
+
+        if (isStreamingMsg && isSameRole) {
+            // Remove the interrupted streaming message
+            lastMessage.remove();
+            this.log('Streaming transcript cancelled due to interruption', 'info');
         }
     }
 
@@ -1201,8 +1255,33 @@ class VoiceAssistant {
         }
 
         if (data.agentReply) {
-            html += `<div style="color: #94a3b8; font-size: 0.8rem;">Agent Response</div>
-                     <div style="color: #86efac; margin-bottom: 8px;">"${data.agentReply}"</div>`;
+            // Show stage indicator for streaming vs final
+            const stageColor = data.stage === 'FINAL' ? '#86efac' : 
+                              data.stage === 'STREAMING' ? '#fbbf24' : 
+                              data.stage === 'USER_INPUT' ? '#60a5fa' : '#94a3b8';
+            const stageIcon = data.stage === 'FINAL' ? '✓' : 
+                             data.stage === 'STREAMING' ? '⋯' : 
+                             data.stage === 'USER_INPUT' ? '👤' : '•';
+            const stageLabel = data.stage || (data.isFinal ? 'FINAL' : 'STREAMING');
+            
+            html += `<div style="color: #94a3b8; font-size: 0.8rem;">
+                        Agent Response 
+                        <span style="color: ${stageColor}; font-weight: 600; margin-left: 8px;">${stageIcon} ${stageLabel}</span>
+                     </div>
+                     <div style="color: ${stageColor}; margin-bottom: 8px;">"${data.agentReply}"</div>`;
+        }
+
+        // Show Tool Use if present
+        if (data.toolUse) {
+            html += `<div style="margin-top: 8px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-left: 3px solid #a78bfa; border-radius: 4px;">
+                        <div style="color: #c4b5fd; font-size: 0.8rem; font-weight: 600;">🛠️ Tool Call</div>
+                        <div style="color: #e9d5ff; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                            ${data.toolUse.name}
+                        </div>
+                        <div style="color: #ddd6fe; font-size: 0.75rem; margin-top: 4px;">
+                            ${JSON.stringify(data.toolUse.input, null, 2)}
+                        </div>
+                     </div>`;
         }
 
         // Render Reasoning Trace

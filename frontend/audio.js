@@ -20,7 +20,8 @@ class AudioProcessor {
         this.nextStartTime = 0; // Track when the next audio chunk should play
 
         // Audio configuration
-        this.SAMPLE_RATE = 16000;
+        this.INPUT_SAMPLE_RATE = 16000;   // Microphone input at 16kHz
+        this.OUTPUT_SAMPLE_RATE = 24000;  // Nova 2 Sonic outputs at 24kHz
         this.CHANNELS = 1; // Mono
         this.BUFFER_SIZE = 2048; // Lower latency (was 4096)
 
@@ -51,7 +52,7 @@ class AudioProcessor {
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: this.CHANNELS,
-                    sampleRate: this.SAMPLE_RATE,
+                    sampleRate: this.INPUT_SAMPLE_RATE,
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true
@@ -118,8 +119,8 @@ class AudioProcessor {
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0); // Get mono channel
 
-            // Downsample to 16kHz
-            const downsampledData = this.downsample(inputData, this.audioContext.sampleRate, this.SAMPLE_RATE);
+            // Downsample to 16kHz for input to Nova
+            const downsampledData = this.downsample(inputData, this.audioContext.sampleRate, this.INPUT_SAMPLE_RATE);
 
             // Convert Float32Array to PCM16 (Int16Array)
             const pcm16Data = this.convertToPCM16(downsampledData);
@@ -176,11 +177,11 @@ class AudioProcessor {
             // Convert PCM16 to Float32Array for Web Audio API
             const float32Data = this.convertToFloat32(pcm16Data);
 
-            // Create audio buffer
+            // Create audio buffer (Nova outputs at 24kHz)
             const audioBuffer = this.audioContext.createBuffer(
                 this.CHANNELS,
                 float32Data.length,
-                this.SAMPLE_RATE
+                this.OUTPUT_SAMPLE_RATE
             );
 
             // Copy data to audio buffer
