@@ -16,7 +16,7 @@ dotenv.config();
 // --- AWS Bedrock AgentCore Client ---
 // Reuses credentials from SonicClient if available, otherwise default chain
 const agentCoreClient = new BedrockAgentCoreClient({
-    region: process.env.AWS_REGION || 'us-east-1'
+    region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
 });
 
 /**
@@ -470,7 +470,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
     // Create Sonic client for this session
     const sonicClient = new SonicClient();
-    const transcribeClient = new TranscribeClientWrapper(process.env.AWS_REGION);
+    const transcribeClient = new TranscribeClientWrapper(process.env.NOVA_AWS_REGION || process.env.AWS_REGION);
 
     // Store session
     const session: ClientSession = {

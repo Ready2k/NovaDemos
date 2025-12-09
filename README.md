@@ -70,9 +70,9 @@ cp .env.example .env
 Edit `.env` and add your AWS credentials:
 
 ```env
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_access_key_here
-AWS_SECRET_ACCESS_KEY=your_secret_key_here
+NOVA_AWS_REGION=us-east-1
+NOVA_AWS_ACCESS_KEY_ID=your_access_key_here
+NOVA_AWS_SECRET_ACCESS_KEY=your_secret_key_here
 NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
 ```
 

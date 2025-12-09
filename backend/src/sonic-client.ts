@@ -70,10 +70,10 @@ export class SonicClient {
     constructor(config: SonicConfig = {}) {
         // Load configuration from environment variables with fallbacks
         this.config = {
-            region: config.region || process.env.AWS_REGION || 'us-east-1',
+            region: config.region || process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
             modelId: config.modelId || process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0',
-            accessKeyId: config.accessKeyId || process.env.AWS_ACCESS_KEY_ID || '',
-            secretAccessKey: config.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY || '',
+            accessKeyId: config.accessKeyId || process.env.NOVA_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || '',
+            secretAccessKey: config.secretAccessKey || process.env.NOVA_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
             sessionToken: config.sessionToken || process.env.AWS_SESSION_TOKEN || '',
             bearerToken: config.bearerToken || process.env.AWS_BEARER_TOKEN_BEDROCK || '',
         };

@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../backend/.env") });
 
-const region = process.env.AWS_REGION || 'us-east-1';
+const region = process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
 const agentId = process.env.AGENT_ID!;
 const agentAliasId = process.env.AGENT_ALIAS_ID!;
 

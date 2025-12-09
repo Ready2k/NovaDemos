@@ -7,7 +7,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const client = new BedrockAgentRuntimeClient({
-    region: process.env.AWS_REGION || 'us-east-1',
+    region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
 });
 
 const agentId = process.env.AGENT_ID!;

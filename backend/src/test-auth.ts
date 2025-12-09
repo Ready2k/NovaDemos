@@ -6,18 +6,24 @@ dotenv.config();
 
 async function testAuth() {
     console.log('Testing AWS Authentication...');
-    console.log(`Region: ${process.env.AWS_REGION || 'us-east-1'}`);
+    console.log(`Region: ${process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'}`);
 
     const config: any = {
-        region: process.env.AWS_REGION || 'us-east-1',
+        region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
     };
 
     // Configure credentials
     if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
         console.log('Using Bearer Token authentication');
         config.token = { token: process.env.AWS_BEARER_TOKEN_BEDROCK };
-    } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    } else if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
         console.log('Using IAM Credentials authentication');
+        config.credentials = {
+            accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+        };
+    } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+        console.log('Using IAM Credentials authentication (legacy)');
         config.credentials = {
             accessKeyId: process.env.AWS_ACCESS_KEY_ID,
             secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,

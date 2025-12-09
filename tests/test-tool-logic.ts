@@ -44,7 +44,7 @@ async function runTest() {
     console.log(`[Test] 📝 Injected Prompt (First 50 chars): "${toolDef.agentPrompt.substring(0, 50)}..."`);
 
     // 3. Prepare Client
-    const client = new BedrockAgentCoreClient({ region: process.env.AWS_REGION || 'us-east-1' });
+    const client = new BedrockAgentCoreClient({ region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1' });
     const sessionId = crypto.randomUUID();
     let RUNTIME_ARN = process.env.AGENT_CORE_RUNTIME_ARN || "";
     if (RUNTIME_ARN.includes('/runtime-endpoint/')) {
