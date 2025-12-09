@@ -222,7 +222,7 @@ async function generateFillerWithSonic(text: string, voiceId: string = 'matthew'
 
     // Config as an Echo/Repeater Bot
     tempClient.setConfig({
-        systemPrompt: "You are a repeater. You must repeat exactly what the user says. Do not add any other words, greetings, or punctuation descriptions. Just say the words.",
+        systemPrompt: "You are a text-to-speech converter. Your ONLY job is to speak the exact text the user provides. Rules: 1) Say the text EXACTLY ONCE. 2) Do NOT repeat the text. 3) Do NOT add any words before or after. 4) Do NOT say hello or goodbye. 5) Just speak the provided text one time and stop.",
         voiceId: voiceId,
     });
 
@@ -1235,7 +1235,18 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     console.log('[Server] AgentCore Result (Heuristic):', result);
 
                                     // Inject result back to model
-                                    const systemInjection = `[System] The tool '${toolName}' returned: "${JSON.stringify(result)}". Please tell this to the user naturally.`;
+                                    // Extract clean data from result
+                                    let cleanData = result.data || result;
+                                    if (typeof cleanData === 'string') {
+                                        // Remove markdown formatting
+                                        cleanData = cleanData.replace(/\*\*/g, '').replace(/\*/g, '');
+                                        // Extract just the time if it's in the format "time is X"
+                                        const timeMatch = cleanData.match(/time.*?is[:\s]+([^.\n]+)/i);
+                                        if (timeMatch) {
+                                            cleanData = timeMatch[1].trim();
+                                        }
+                                    }
+                                    const systemInjection = `The current time is ${cleanData}`;
                                     if (session.sonicClient) {
                                         console.log('[Server] Injecting AgentCore Result to Model:', systemInjection);
                                         await session.sonicClient.sendText(systemInjection);
