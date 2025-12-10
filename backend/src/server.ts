@@ -339,6 +339,29 @@ async function handleFillerWord(session: ClientSession) {
     }
 }
 
+/**
+ * Delayed filler word - waits 2 seconds before playing, can be cancelled
+ */
+async function handleDelayedFillerWord(session: ClientSession): Promise<() => void> {
+    let cancelled = false;
+    
+    // Return a cancel function immediately
+    const cancelFiller = () => {
+        cancelled = true;
+        console.log('[Server] Filler cancelled - tool responded quickly');
+    };
+    
+    // Start the delayed filler in the background
+    setTimeout(async () => {
+        if (!cancelled) {
+            console.log('[Server] Tool taking longer than 2s, playing filler...');
+            await handleFillerWord(session);
+        }
+    }, 2000);
+    
+    return cancelFiller;
+}
+
 
 
 
@@ -961,10 +984,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     ? event.data.audio
                     : Buffer.from(event.data.audio);
 
-                if (session.isBufferingAudio) {
+                if (session.isBufferingAudio || session.isIntercepting) {
                     // Buffer this chunk until we confirm strictly that it's NOT a tool call
-                    session.audioBufferQueue?.push(audioBuffer);
-                    // console.log(`[Server] Buffering audio chunk... (Queue: ${session.audioBufferQueue?.length})`);
+                    // OR suppress audio completely during tool execution
+                    if (session.isBufferingAudio) {
+                        session.audioBufferQueue?.push(audioBuffer);
+                        // console.log(`[Server] Buffering audio chunk... (Queue: ${session.audioBufferQueue?.length})`);
+                    } else {
+                        // Tool is executing - drop all audio to prevent mid-sentence interruptions
+                        // console.log(`[Server] Dropping audio during tool execution (${audioBuffer.length} bytes)`);
+                    }
                 } else if (ws.readyState === WebSocket.OPEN) {
                     ws.send(audioBuffer);
                     // console.log(`[Server] Sent audio packet (${audioBuffer.length} bytes)`);
@@ -1213,12 +1242,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 }
 
                                 if (toolName === 'get_server_time') {
-                                    console.log(`[Server] Heuristic detected tool: ${toolName} - Routing to AgentCore`);
-
-                                    // Play filler word
-                                    await handleFillerWord(session);
-
-                                    // Get tool definition and agentPrompt (same as Native Tool Handler)
+                                    console.log(`[Server] Heuristic detected tool: ${toolName} - checking if native handler processed it...`);
+                                    
+                                    // Start delayed filler (2 second delay)
+                                    const cancelFiller = await handleDelayedFillerWord(session);
+                                    
                                     const toolDef = loadTools().find(t => t.toolSpec.name === toolName);
                                     let agentPayload = {};
 
@@ -1230,26 +1258,50 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                         agentPayload = { prompt: promptToUse };
                                     }
 
-                                    // Call AgentCore
                                     const result = await callAgentCore(session, toolName, agentPayload);
-                                    console.log('[Server] AgentCore Result (Heuristic):', result);
+                                    console.log('[Server] AgentCore Result (Heuristic Fallback):', result);
+                                    
+                                    // Cancel filler since tool completed
+                                    cancelFiller();
+                                    
+                                    // Reset intercepting flag to allow audio again
+                                    session.isIntercepting = false;
 
-                                    // Inject result back to model
-                                    // Extract clean data from result
+                                    // Send clean result
                                     let cleanData = result.data || result;
+                                    
+                                    // Handle object results by converting to string first
+                                    if (typeof cleanData === 'object') {
+                                        // Check if it's an error object
+                                        if (cleanData.status === 'error') {
+                                            console.log('[Server] AgentCore returned error, skipping UI display:', cleanData.message);
+                                            return; // Don't show error to user, let it retry
+                                        }
+                                        cleanData = JSON.stringify(cleanData);
+                                    }
+                                    
                                     if (typeof cleanData === 'string') {
-                                        // Remove markdown formatting
                                         cleanData = cleanData.replace(/\*\*/g, '').replace(/\*/g, '');
-                                        // Extract just the time if it's in the format "time is X"
                                         const timeMatch = cleanData.match(/time.*?is[:\s]+([^.\n]+)/i);
                                         if (timeMatch) {
                                             cleanData = timeMatch[1].trim();
                                         }
                                     }
+                                    
                                     const systemInjection = `The current time is ${cleanData}`;
                                     if (session.sonicClient) {
-                                        console.log('[Server] Injecting AgentCore Result to Model:', systemInjection);
+                                        console.log('[Server] Injecting clean time result:', systemInjection);
                                         await session.sonicClient.sendText(systemInjection);
+                                    }
+
+                                    // CRITICAL: Also send the time result to the UI so user can see it
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({
+                                            type: 'transcript',
+                                            role: 'assistant',
+                                            text: systemInjection,
+                                            isFinal: true
+                                        }));
                                     }
                                 } else if (toolCall.parameters) {
                                     // Execute AgentCore tools
@@ -1307,7 +1359,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         session.isIntercepting = true;
 
                         // --- FILLER WORD LOGIC (Refactored) ---
-                        await handleFillerWord(session);
+                        const cancelFiller = await handleDelayedFillerWord(session);
                         // -------------------------
 
 
@@ -1348,6 +1400,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 agentPayload
                             );
                             console.log('[Server] AgentCore Heuristic Result:', result);
+                            
+                            // Cancel filler since tool completed
+                            cancelFiller();
+                            
+                            // Reset intercepting flag to allow audio again
+                            session.isIntercepting = false;
 
                             // 3. Send Result to Sonic
                             if (session.sonicClient) {
@@ -1463,7 +1521,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 console.log(`[Server] Executing NATIVE tool call: ${toolUse.name}`);
 
                 // --- FILLER WORD LOGIC (Refactored) ---
-                await handleFillerWord(session);
+                const cancelFiller = await handleDelayedFillerWord(session);
                 // -------------------------
 
                 // Notify UI of tool usage (Visual Feedback)
@@ -1510,6 +1568,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     );
 
                     console.log('[Server] AgentCore Result (Native):', result);
+                    
+                    // Cancel filler since tool completed
+                    cancelFiller();
+                    
+                    // Reset intercepting flag to allow audio again
+                    session.isIntercepting = false;
 
                     // Send the result back to Sonic (Native Tool Result)
                     // Note: SonicClient.sendToolResult expects toolUseId
