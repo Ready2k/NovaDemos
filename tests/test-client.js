@@ -6,12 +6,24 @@
  */
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 class TestClient {
     constructor() {
         this.ws = null;
         this.sessionId = null;
         this.WS_URL = 'ws://localhost:8080/sonic';
+    }
+
+    async loadPrompt(filename) {
+        try {
+            const PROMPTS_DIR = path.join(__dirname, '../backend/prompts');
+            return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+        } catch (err) {
+            console.error(`[TestClient] Failed to load prompt ${filename}:`, err);
+            return 'You are a helpful AI assistant.';
+        }
     }
 
     async connect() {
@@ -81,15 +93,7 @@ class TestClient {
         const config = {
             type: 'sessionConfig',
             config: {
-                systemPrompt: `You are a helpful AI assistant. When you need to use tools, use the native tool syntax. 
-                
-CRITICAL: For time requests, you MUST use the get_server_time tool by generating:
-{
-  "name": "get_server_time", 
-  "arguments": {}
-}
-
-Do NOT speak the JSON - execute it silently and wait for the result.`,
+                systemPrompt: await this.loadPrompt('core-tool_usage_assistant.txt'),
                 voiceId: 'matthew',
                 brainMode: 'raw_nova', // Direct mode
                 selectedTools: ['get_server_time'], // Only enable time tool for testing

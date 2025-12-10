@@ -6,6 +6,8 @@
  */
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 class NativeTestClient {
     constructor() {
@@ -15,6 +17,16 @@ class NativeTestClient {
         this.nativeToolUseDetected = false;
         this.heuristicFallbackDetected = false;
         this.spokenJsonDetected = false;
+    }
+
+    async loadPrompt(filename) {
+        try {
+            const PROMPTS_DIR = path.join(__dirname, '../backend/prompts');
+            return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+        } catch (err) {
+            console.error(`[NativeTestClient] Failed to load prompt ${filename}:`, err);
+            return 'You are a helpful AI assistant.';
+        }
     }
 
     async connect() {
@@ -122,17 +134,7 @@ class NativeTestClient {
         const config = {
             type: 'sessionConfig',
             config: {
-                systemPrompt: `You are a helpful AI assistant with native tool access.
-
-CRITICAL NATIVE TOOL INSTRUCTIONS:
-- You have access to the get_server_time tool
-- When user asks for time, use the tool NATIVELY (do not speak JSON)
-- Execute tools silently and wait for results
-- Respond naturally with the tool results
-
-Available tools: get_server_time
-
-IMPORTANT: Do NOT speak tool names, JSON, or say "ACTION". Use native tool execution.`,
+                systemPrompt: await this.loadPrompt('core-native_tool_assistant.txt'),
                 voiceId: 'matthew',
                 brainMode: 'raw_nova', // Direct mode for native tools
                 selectedTools: ['get_server_time'], // Enable time tool

@@ -9,6 +9,8 @@
  */
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 class CompleteNativeTest {
     constructor() {
@@ -19,6 +21,16 @@ class CompleteNativeTest {
         this.toolExecutionStarted = false;
         this.actualTimeReceived = false;
         this.receivedTime = null;
+    }
+
+    async loadPrompt(filename) {
+        try {
+            const PROMPTS_DIR = path.join(__dirname, '../backend/prompts');
+            return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+        } catch (err) {
+            console.error(`[CompleteTest] Failed to load prompt ${filename}:`, err);
+            return 'You are a helpful AI assistant.';
+        }
     }
 
     async connect() {
@@ -114,7 +126,7 @@ class CompleteNativeTest {
         const config = {
             type: 'sessionConfig',
             config: {
-                systemPrompt: 'You are a helpful assistant with access to tools. When users ask for the current time, call the get_server_time tool to get the information and then respond naturally with the result.',
+                systemPrompt: await this.loadPrompt('core-tool_access_assistant.txt'),
                 voiceId: 'matthew',
                 brainMode: 'raw_nova',
                 selectedTools: ['get_server_time'],

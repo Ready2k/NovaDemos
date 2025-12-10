@@ -1,6 +1,18 @@
 #!/usr/bin/env node
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
+
+function loadPrompt(filename) {
+    try {
+        const PROMPTS_DIR = path.join(__dirname, '../backend/prompts');
+        return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+    } catch (err) {
+        console.error(`[SimpleConfigTest] Failed to load prompt ${filename}:`, err);
+        return 'You are a helpful AI assistant.';
+    }
+}
 
 const ws = new WebSocket('ws://localhost:8080/sonic');
 
@@ -10,7 +22,7 @@ ws.on('open', () => {
     const config = {
         type: 'sessionConfig',
         config: {
-            systemPrompt: 'Test',
+            systemPrompt: loadPrompt('core-simple_assistant.txt'),
             selectedTools: ['get_server_time']
         }
     };

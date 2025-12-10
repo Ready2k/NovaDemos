@@ -46,6 +46,27 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
   - Deduplication prevents multiple notifications
   - Clean UI with proper cleanup
 
+## Recent Updates (December 2025)
+
+### 🎵 Progressive Filler System Enhancement
+- **Fixed tool execution silence**: Eliminated 5-7 second silence periods during tool execution
+- **Immediate audio feedback**: "Let me check that for you" plays instantly when tools are called
+- **Duplicate detection bypass**: Filler messages can be sent multiple times without blocking
+- **Timing optimization**: Restored working 3-second secondary filler timing
+- **Error suppression**: Prevents Nova Sonic from generating "fritz" error messages during tool delays
+
+### 📁 Project Organization Improvements
+- **Prompt naming convention**: Implemented `core-` prefix for platform prompts, `persona-` prefix for character prompts
+- **Test file organization**: Moved all test files to `/tests/` folder for cleaner main directory
+- **Prompt externalization**: All hardcoded LLM prompts moved to external files with `loadPrompt()` function calls
+- **Enhanced documentation**: Added comprehensive README sections and prompt documentation
+
+### 🛠️ Technical Enhancements
+- **Tool execution timing**: Added timestamps and duration measurements for debugging
+- **Enhanced logging**: Improved debug output with ISO timestamps and execution tracking
+- **Filler system reliability**: Restored working progressive filler implementation from commit 8850d88
+- **Session management**: Better handling of tool execution states and cleanup
+
 ### Integration Details
 
 The backend uses AWS Bedrock Runtime's `InvokeModelWithBidirectionalStreamCommand` for real-time streaming:

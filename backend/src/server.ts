@@ -215,11 +215,27 @@ function loadPrompt(filename: string): string {
 function listPrompts(): { id: string, name: string, content: string }[] {
     try {
         const files = fs.readdirSync(PROMPTS_DIR);
-        return files.filter(f => f.endsWith('.txt')).map(f => ({
-            id: f,
-            name: f.replace('.txt', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            content: loadPrompt(f)
-        }));
+        return files.filter(f => f.endsWith('.txt')).map(f => {
+            let displayName = f.replace('.txt', '');
+            
+            // Handle prefixed naming convention
+            if (displayName.startsWith('core-')) {
+                displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
+            } else if (displayName.startsWith('persona-')) {
+                displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
+            } else {
+                displayName = displayName.replace(/_/g, ' ');
+            }
+            
+            // Capitalize words
+            displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+            
+            return {
+                id: f,
+                name: displayName,
+                content: loadPrompt(f)
+            };
+        });
     } catch (err) {
         console.error('[Server] Failed to list prompts:', err);
         return [];
@@ -275,17 +291,24 @@ async function startProgressiveFiller(session: ClientSession, toolName: string, 
     
     console.log(`[Server] Starting progressive filler for ${toolName} (ID: ${toolUseId})`);
     
-    // IMMEDIATE VISUAL FILLER: Send UI message immediately
-    if (session.ws.readyState === WebSocket.OPEN) {
-        session.ws.send(JSON.stringify({
-            type: 'transcript',
-            role: 'assistant',
-            text: "Let me check that for you...",
-            isFinal: false,
-            isToolFiller: true
-        }));
-        console.log(`[Server] Sent immediate visual filler for ${toolName}`);
-    }
+    // WAIT 2 SECONDS BEFORE SHOWING FILLER: Only show filler if tool takes longer than 2 seconds
+    session.primaryFillerTimer = setTimeout(() => {
+        if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
+            console.log(`[Server] Tool taking longer than 2 seconds, showing visual filler for ${toolName}`);
+            
+            // Send visual filler after 2 seconds
+            if (session.ws.readyState === WebSocket.OPEN) {
+                session.ws.send(JSON.stringify({
+                    type: 'transcript',
+                    role: 'assistant',
+                    text: "Let me check that for you...",
+                    isFinal: false,
+                    isToolFiller: true
+                }));
+                console.log(`[Server] Sent 2-second visual filler for ${toolName}`);
+            }
+        }
+    }, 2000); // 2 seconds as requested by user
     
     // IMMEDIATE AUDIO FILLER: Send audio immediately when tool starts
     if (session.sonicClient && session.sonicClient.getSessionId()) {
@@ -327,10 +350,10 @@ async function startProgressiveFiller(session: ClientSession, toolName: string, 
                 }
             }
             
-            // TERTIARY FILLER: After 6 seconds if still processing
-            session.primaryFillerTimer = setTimeout(async () => {
+            // TERTIARY FILLER: After 8 seconds if still processing
+            session.tertiaryFillerTimer = setTimeout(async () => {
                 if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
-                    console.log(`[Server] Tool taking longer than 6 seconds, playing tertiary filler`);
+                    console.log(`[Server] Tool taking longer than 8 seconds, showing tertiary filler`);
                     
                     if (session.ws.readyState === WebSocket.OPEN) {
                         session.ws.send(JSON.stringify({
@@ -342,17 +365,12 @@ async function startProgressiveFiller(session: ClientSession, toolName: string, 
                         }));
                     }
                     
-                    if (session.sonicClient && session.sonicClient.getSessionId()) {
-                        try {
-                            await session.sonicClient.sendText("Just a moment more");
-                        } catch (error) {
-                            console.log(`[Server] Failed to play tertiary filler audio: ${error}`);
-                        }
-                    }
+                    // Audio filler disabled during tool execution
+                    console.log(`[Server] Tertiary audio filler disabled during tool execution`);
                 }
-            }, 3000); // Additional 3 seconds (6 total)
+            }, 8000); // 8 seconds total
         }
-    }, 3000); // 3 second delay for secondary filler
+    }, 3000); // 3 seconds for secondary filler
 }
 
 function clearProgressiveFiller(session: ClientSession) {
@@ -363,6 +381,10 @@ function clearProgressiveFiller(session: ClientSession) {
     if (session.secondaryFillerTimer) {
         clearTimeout(session.secondaryFillerTimer);
         session.secondaryFillerTimer = undefined;
+    }
+    if (session.tertiaryFillerTimer) {
+        clearTimeout(session.tertiaryFillerTimer);
+        session.tertiaryFillerTimer = undefined;
     }
     session.isToolExecuting = false;
     session.currentToolExecution = undefined;
@@ -544,6 +566,7 @@ interface ClientSession {
     // Progressive Filler System
     primaryFillerTimer?: NodeJS.Timeout;
     secondaryFillerTimer?: NodeJS.Timeout;
+    tertiaryFillerTimer?: NodeJS.Timeout;
     isToolExecuting?: boolean;
     currentToolExecution?: {
         toolName: string;
@@ -755,7 +778,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
-                                parsed.config.systemPrompt = loadPrompt('agent_echo.txt');
+                                parsed.config.systemPrompt = loadPrompt('core-agent_echo.txt');
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
                                 console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
                                 
@@ -841,9 +864,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         // CONDITIONAL NATIVE TOOL INSTRUCTION - only if tools are enabled
                         const nativeToolInstruction = tools.length > 0 ? `
-You have access to tools. When users ask for the current time, use the get_server_time tool to get the information and then respond naturally with the result.
+You have access to helpful tools that can enhance your responses when relevant. Use them naturally when they would be helpful to answer the user's question, but you can have normal conversations about any topic. Available tools: ${tools.map(t => t.toolSpec.name).join(', ')}. 
+
+IMPORTANT: When you use a tool, wait patiently for the result - do NOT generate error messages or assume failure. Tools may take a few seconds to respond.
 ` : `
-You do not have access to any tools. Answer questions directly based on your knowledge.
+You do not have access to any tools. Answer questions directly based on your knowledge and maintain your personality.
 `;
 
 
@@ -1598,6 +1623,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                                     if (toolDef && toolDef.agentPrompt) {
                                         let promptToUse = toolDef.agentPrompt;
+                                        
+                                        // Check if agentPrompt is a filename (ends with .txt)
+                                        if (promptToUse.endsWith('.txt')) {
+                                            promptToUse = loadPrompt(promptToUse);
+                                        }
+                                        
                                         promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
                                         promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
                                         console.log(`[Server] Using configured agentPrompt for ${toolName}`);
@@ -1727,6 +1758,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             let promptToUse = "What time is it?"; // Fallback
                             if (toolDef && toolDef.agentPrompt) {
                                 promptToUse = toolDef.agentPrompt;
+                                
+                                // Check if agentPrompt is a filename (ends with .txt)
+                                if (promptToUse.endsWith('.txt')) {
+                                    promptToUse = loadPrompt(promptToUse);
+                                }
+                                
                                 // DYNAMIC INJECTION: Replace placeholders with session variables
                                 promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
                                 promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
@@ -1934,7 +1971,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'toolUse': {
             // Native AWS Bedrock Tool Use Event
             // PRODUCTION: Native Nova 2 Sonic Tool Use Detected
-            console.log(`[DEBUG] ===== TOOL USE CASE HANDLER CALLED =====`);
+            const toolStartTime = Date.now();
+            console.log(`[DEBUG] ===== TOOL USE CASE HANDLER CALLED AT ${new Date().toISOString()} =====`);
             logWithTimestamp('[Server]', `🔧 NATIVE TOOL USE: ${event.data.toolName || event.data.name} (ID: ${event.data.toolUseId})`);
             console.log('[Server] 🔧 Native Tool Use Event:', JSON.stringify(event.data, null, 2));
             const toolUse = event.data;
@@ -2019,16 +2057,13 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     return; // Skip actual tool execution
                 }
                 
-                // IMMEDIATE PROGRESSIVE FILLER: Start immediately to prevent Nova Sonic from generating error messages
-                console.log(`[Server] Tool execution started: ${actualToolName} (ID: ${toolUse.toolUseId})`);
-                console.log(`[DEBUG] ===== ABOUT TO CALL PROGRESSIVE FILLER =====`);
-                console.log(`[DEBUG] Tool: ${actualToolName}, ID: ${toolUse.toolUseId}`);
+                // SIMPLE PROGRESSIVE FILLER: Just start the timing system
+                console.log(`[Server] Tool execution started: ${actualToolName} (ID: ${toolUse.toolUseId}) at ${new Date().toISOString()}`);
                 try {
                     await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
-                    console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL COMPLETED =====`);
+                    console.log(`[Server] Progressive filler started for ${actualToolName}`);
                 } catch (error) {
-                    console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL FAILED =====`);
-                    console.log(`[DEBUG] Error:`, error);
+                    console.log(`[Server] Progressive filler failed: ${error}`);
                 }
 
                 // Execute the tool call against AWS AgentCore
@@ -2068,6 +2103,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     if (toolDef && toolDef.agentPrompt) {
                         let promptToUse = toolDef.agentPrompt;
+                        
+                        // Check if agentPrompt is a filename (ends with .txt)
+                        if (promptToUse.endsWith('.txt')) {
+                            promptToUse = loadPrompt(promptToUse);
+                        }
+                        
                         // DYNAMIC INJECTION
                         promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
                         promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
@@ -2128,7 +2169,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 { text: cleanResult },
                                 false
                             );
-                            logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName}`);
+                            const toolEndTime = Date.now();
+                            const toolDuration = toolEndTime - toolStartTime;
+                            logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
                         } else {
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');
                             // Try to restart the session and send the result
@@ -2141,7 +2184,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                         { text: cleanResult },
                                         false
                                     );
-                                    logWithTimestamp('[Server]', `Tool result sent to Nova Sonic after restart: ${actualToolName}`);
+                                    const toolEndTime = Date.now();
+                                    const toolDuration = toolEndTime - toolStartTime;
+                                    logWithTimestamp('[Server]', `Tool result sent to Nova Sonic after restart: ${actualToolName} (Duration: ${toolDuration}ms)`);
                                 }
                             } catch (restartError) {
                                 console.log('[Server] Failed to restart Nova Sonic session:', restartError);
@@ -2244,6 +2289,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             session.hasFlowedAudio = false;
             if (session.isIntercepting) {
                 session.isIntercepting = false;
+            }
+            break;
+
+        case 'toolExecutionDetected':
+            // Nova Sonic completed a tool execution - trigger filler system
+            console.log('[Server] Tool execution detected by Nova Sonic - triggering progressive filler');
+            try {
+                await startProgressiveFiller(session, 'detected_tool', `tool-${Date.now()}`);
+            } catch (error) {
+                console.error('[Server] Failed to start progressive filler for detected tool:', error);
             }
             break;
 

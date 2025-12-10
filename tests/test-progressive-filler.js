@@ -8,8 +8,20 @@
  */
 
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 const SERVER_URL = 'ws://localhost:8080/sonic';
+
+function loadPrompt(filename) {
+    try {
+        const PROMPTS_DIR = path.join(__dirname, '../backend/prompts');
+        return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+    } catch (err) {
+        console.error(`[ProgressiveTest] Failed to load prompt ${filename}:`, err);
+        return 'You are a helpful AI assistant.';
+    }
+}
 
 async function testProgressiveFiller() {
     console.log('🧪 Testing Progressive Filler and Caching System...\n');
@@ -23,7 +35,7 @@ async function testProgressiveFiller() {
         const config = {
             type: 'sessionConfig',
             config: {
-                systemPrompt: 'You are a helpful assistant. When asked for time, use the get_server_time tool.',
+                systemPrompt: loadPrompt('core-simple_assistant.txt'),
                 selectedTools: ['get_server_time'],
                 voiceId: 'matthew',
                 brainMode: 'raw_nova'

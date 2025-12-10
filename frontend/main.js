@@ -233,8 +233,8 @@ class VoiceAssistant {
         this.presetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
 
         prompts.forEach(prompt => {
-            // Filter out system-internal prompts like Agent Echo from the Persona list
-            if (prompt.id === 'agent_echo.txt') return;
+            // Filter out core platform prompts from the Persona list - only show persona- prefixed prompts
+            if (prompt.id.startsWith('core-')) return;
 
             const option = document.createElement('option');
             option.value = prompt.content;
@@ -300,7 +300,8 @@ class VoiceAssistant {
         localStorage.removeItem('nova_voice_id');
         localStorage.removeItem('nova_brain_mode');
 
-        this.systemPromptInput.value = "You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.";
+        // Load default prompt from server
+        this.loadDefaultPrompt();
         this.speechPromptInput.value = "";
         if (this.voiceSelect) this.voiceSelect.value = "matthew";
         if (this.brainModeSelect) this.brainModeSelect.value = "raw_nova";
@@ -1452,18 +1453,14 @@ class VoiceAssistant {
                 const allPrompts = await response.json();
 
                 // Extract Core Guardrails
-                const corePromptObj = allPrompts.find(p => p.id === 'core_guardrails.txt');
+                const corePromptObj = allPrompts.find(p => p.id === 'core-guardrails.txt');
                 if (corePromptObj) {
                     this.corePrompt = corePromptObj.content;
                     console.log('[Frontend] Loaded Core Guardrails');
                 }
 
-                // Filter out system files from UI
-                const visiblePrompts = allPrompts.filter(p =>
-                    p.id !== 'core_guardrails.txt' &&
-                    p.id !== 'sonic_agent_core.txt' &&
-                    p.id !== 'system_default.txt'
-                );
+                // Filter prompts for UI - show all prompts in dropdown but filter personas for preset selector
+                const visiblePrompts = allPrompts;
 
                 this.updatePromptDropdown(visiblePrompts);
                 this.initializePresets(visiblePrompts);
@@ -1475,16 +1472,75 @@ class VoiceAssistant {
         }
     }
 
+    async loadDefaultPrompt() {
+        try {
+            const response = await fetch('/api/prompts');
+            if (response.ok) {
+                const prompts = await response.json();
+                const defaultPrompt = prompts.find(p => p.id === 'core-system_default.txt');
+                if (defaultPrompt) {
+                    this.systemPromptInput.value = defaultPrompt.content;
+                } else {
+                    // Fallback if prompt file doesn't exist
+                    this.systemPromptInput.value = "You are a helpful AI assistant.";
+                }
+            }
+        } catch (err) {
+            console.error('[Frontend] Error loading default prompt:', err);
+            this.systemPromptInput.value = "You are a helpful AI assistant.";
+        }
+    }
+
     updatePromptDropdown(prompts) {
         if (!this.promptPresetSelect) return;
         this.promptPresetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
-        prompts.forEach(prompt => {
-            const option = document.createElement('option');
-            option.value = prompt.id;
-            option.textContent = prompt.name;
-            option.setAttribute('data-content', prompt.content);
-            this.promptPresetSelect.appendChild(option);
-        });
+        
+        // Group prompts by category
+        const corePrompts = prompts.filter(p => p.id.startsWith('core-'));
+        const personaPrompts = prompts.filter(p => p.id.startsWith('persona-'));
+        const otherPrompts = prompts.filter(p => !p.id.startsWith('core-') && !p.id.startsWith('persona-'));
+        
+        // Add Core prompts group
+        if (corePrompts.length > 0) {
+            const coreGroup = document.createElement('optgroup');
+            coreGroup.label = 'Core Platform';
+            corePrompts.forEach(prompt => {
+                const option = document.createElement('option');
+                option.value = prompt.id;
+                option.textContent = prompt.name.replace('Core ', '');
+                option.setAttribute('data-content', prompt.content);
+                coreGroup.appendChild(option);
+            });
+            this.promptPresetSelect.appendChild(coreGroup);
+        }
+        
+        // Add Persona prompts group
+        if (personaPrompts.length > 0) {
+            const personaGroup = document.createElement('optgroup');
+            personaGroup.label = 'Personas';
+            personaPrompts.forEach(prompt => {
+                const option = document.createElement('option');
+                option.value = prompt.id;
+                option.textContent = prompt.name.replace('Persona ', '');
+                option.setAttribute('data-content', prompt.content);
+                personaGroup.appendChild(option);
+            });
+            this.promptPresetSelect.appendChild(personaGroup);
+        }
+        
+        // Add other prompts if any
+        if (otherPrompts.length > 0) {
+            const otherGroup = document.createElement('optgroup');
+            otherGroup.label = 'Other';
+            otherPrompts.forEach(prompt => {
+                const option = document.createElement('option');
+                option.value = prompt.id;
+                option.textContent = prompt.name;
+                option.setAttribute('data-content', prompt.content);
+                otherGroup.appendChild(option);
+            });
+            this.promptPresetSelect.appendChild(otherGroup);
+        }
     }
 
     async loadTools() {

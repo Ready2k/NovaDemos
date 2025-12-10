@@ -2,7 +2,8 @@
 set -e
 
 # Define paths
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 
 echo "=========================================="
@@ -31,4 +32,4 @@ npm run build
 
 # 3. Start Server
 echo "[3/3] Starting server..."
-npm start > "$PROJECT_ROOT/server.log" 2>&1
+npm start > "$TESTS_DIR/logs/server.log" 2>&1

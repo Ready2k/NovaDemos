@@ -10,6 +10,8 @@ import {
     InvokeModelWithBidirectionalStreamCommand,
 } from '@aws-sdk/client-bedrock-runtime';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Configuration for Nova 2 Sonic
@@ -36,7 +38,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'toolExecutionDetected';
     data: any;
 }
 
@@ -108,6 +110,16 @@ export class SonicClient {
     setConfig(config: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] }) {
         this.sessionConfig = { ...this.sessionConfig, ...config };
         console.log(`[SonicClient:${this.id}] Configuration updated:`, JSON.stringify(this.sessionConfig));
+    }
+
+    private loadDefaultPrompt(): string {
+        try {
+            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            return fs.readFileSync(path.join(PROMPTS_DIR, 'core-system_default.txt'), 'utf-8').trim();
+        } catch (err) {
+            console.error(`[SonicClient:${this.id}] Failed to load default prompt:`, err);
+            return "You are a warm, professional, and helpful AI assistant.";
+        }
     }
 
     /**
@@ -295,7 +307,7 @@ export class SonicClient {
         yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStartEvent)) } };
 
         // 4. System Prompt Text Input
-        const systemPromptText = this.sessionConfig.systemPrompt || "You are a warm, professional, and helpful AI assistant.";
+        const systemPromptText = this.sessionConfig.systemPrompt || this.loadDefaultPrompt();
         console.log('[SonicClient] Using System Prompt:', systemPromptText);
         const systemTextInputEvent = {
             event: {
@@ -779,14 +791,21 @@ export class SonicClient {
             throw new Error('Session not active.');
         }
 
-        // --- DEBOUNCE: Prevent duplicate text sending --
-        const now = Date.now();
-        const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
-        if (lastSent.text === text && (now - lastSent.time) < 2000) {
-            console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
-            return;
+        // --- DEBOUNCE: Prevent duplicate text sending (except for filler messages) --
+        const fillerPhrases = ["Let me check that for you", "I'm still working on that", "Just a moment more"];
+        const isFiller = fillerPhrases.some(phrase => text.includes(phrase));
+        
+        if (!isFiller) {
+            const now = Date.now();
+            const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
+            if (lastSent.text === text && (now - lastSent.time) < 2000) {
+                console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
+                return;
+            }
+            (this as any)._lastSentText = { text, time: now };
+        } else {
+            console.log(`[SonicClient] Allowing filler message to bypass duplicate detection: "${text}"`);
         }
-        (this as any)._lastSentText = { text, time: now };
         // ------------------------------------------------
 
         // CRITICAL: Reset transcript when user sends new text
@@ -866,6 +885,18 @@ export class SonicClient {
                         
                         if (shouldReset) {
                             console.log(`[SonicClient] Resetting transcript. Reason: ${roleChanged ? 'Role changed' : 'New turn starting'}. Old role: ${this.currentRole}, New role: ${eventData.contentStart.role}, Type: ${eventData.contentStart.type}`);
+                            
+                            // FILLER SYSTEM: Detect tool execution completion
+                            if (roleChanged && this.currentRole === 'TOOL' && eventData.contentStart.role === 'ASSISTANT') {
+                                console.log('[SonicClient] Tool execution completed - triggering filler system');
+                                this.eventCallback?.({
+                                    type: 'toolExecutionDetected',
+                                    data: {
+                                        message: 'Tool execution completed, ready for filler'
+                                    }
+                                });
+                            }
+                            
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
                         }
