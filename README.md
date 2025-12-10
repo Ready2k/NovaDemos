@@ -29,6 +29,7 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Session Stats**: Real-time tracking of latency, token usage, and session duration
 - **Configuration Persistence**: Settings are automatically saved to `localStorage`
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
+- **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
 - **Hybrid Filler System**: Combines explicit system prompts with visual feedback for seamless tool execution
 
 ### Integration Details

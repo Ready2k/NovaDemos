@@ -117,18 +117,21 @@ Expected output:
 - Tools appear in configuration panel
 - Enable/disable specific tools
 - Selection sent to backend in `selectedTools` array
+- **Fixed**: Empty array `[]` properly disables all tools
 
 ### Backend Tool Loading
 ```typescript
 // Load all available tools
 const allTools = loadTools();
 
-// Filter by frontend selection
-const tools = allTools.filter(t => 
-    selectedTools.includes(t.toolSpec.name)
-);
+// Filter by frontend selection (fixed to handle empty arrays)
+if (selectedTools !== undefined && Array.isArray(selectedTools)) {
+    tools = allTools.filter(t => selectedTools.includes(t.toolSpec.name));
+} else {
+    tools = allTools; // Default: all tools
+}
 
-// Pass to Nova Sonic
+// Pass to Nova Sonic (empty array = no tools)
 sonicClient.updateSessionConfig({ tools: mappedTools });
 ```
 
@@ -140,10 +143,16 @@ Use in `agentPrompt` field:
 ## 🐛 Troubleshooting
 
 ### Tool Not Executing
-1. Check tool is in `selectedTools` array
+1. Check tool is in `selectedTools` array (verify UI selection)
 2. Verify tool definition JSON is valid
 3. Check system prompt includes tool instructions
 4. Look for `toolUse` events in logs
+5. Ensure tool enable/disable UI is working correctly
+
+### Tool Executing When Disabled
+1. Check frontend sends `selectedTools: []` when no tools selected
+2. Verify server logs show "Loaded 0/X tools: NONE"
+3. Check system prompt says "You do not have access to any tools"
 
 ### Duplicate Audio
 1. Ensure only one delivery method active

@@ -135,7 +135,7 @@ User Speech → Transcription → Bedrock Agent → Agent Response → Nova Soni
 
 ## 🛠️ Configuration
 
-### Tool Configuration
+### Tool Configuration & Enable/Disable
 **File**: `tools/time_tool.json`
 ```json
 {
@@ -153,6 +153,16 @@ User Speech → Transcription → Bedrock Agent → Agent Response → Nova Soni
     },
     "instruction": "- Invoke tool get_server_time if needed.",
     "agentPrompt": "What is the current time in {{USER_LOCATION}} ({{USER_TIMEZONE}})?"
+}
+```
+
+**Tool Enable/Disable Logic**: Fixed to properly handle empty tool selections
+```typescript
+// Correctly handles selectedTools: [] (no tools) vs undefined (default to all)
+if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
+    tools = allTools.filter(t => parsed.config.selectedTools.includes(t.toolSpec.name));
+} else {
+    tools = allTools; // Default: all tools for backward compatibility
 }
 ```
 
@@ -184,8 +194,14 @@ System: [Transcription] → [Bedrock Agent] → [TTS: "Hello! How may I assist y
 
 ### If Tools Don't Execute
 1. Check system prompt includes native tool instructions
-2. Verify tool is in `selectedTools` array
+2. Verify tool is in `selectedTools` array (check frontend tool selection)
 3. Check tool definition format in `tools/` directory
+4. Verify tool enable/disable functionality in UI is working correctly
+
+### If Tools Execute When Disabled
+1. Check that frontend sends `selectedTools: []` (empty array) when no tools selected
+2. Verify server logs show "Loaded 0/X tools: NONE"
+3. Ensure system prompt says "You do not have access to any tools"
 
 ### If Audio Issues Occur
 1. Check VAD_THRESHOLD (should be 100)

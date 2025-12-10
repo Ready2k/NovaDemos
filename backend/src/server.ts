@@ -549,20 +549,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let tools = [];
 
                         // If frontend explicitly sends selectedTools list, use it to filter
-                        if (parsed.config.selectedTools && Array.isArray(parsed.config.selectedTools)) {
+                        if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
+                            // Use the exact selection from frontend (including empty array for no tools)
                             tools = allTools.filter(t => parsed.config.selectedTools.includes(t.toolSpec.name));
+                            console.log(`[Server] Using frontend tool selection: ${JSON.stringify(parsed.config.selectedTools)}`);
                         } else {
-                            // Default behavior: Load ALL tools (Matches original behavior if no selection sent)
-                            // OR should we default to NONE? 
-                            // User asked for "tools listed... access to". 
-                            // Safety: Default to ALL for backward compatibility with existing tests, 
-                            // but UI will send empty array if nothing checked.
+                            // Default behavior when no selectedTools sent: Load ALL tools for backward compatibility
                             tools = allTools;
+                            console.log('[Server] No selectedTools sent from frontend, defaulting to ALL tools');
                         }
 
                         parsed.config.tools = tools;
                         session.tools = tools; // CRITICAL: Assign to session for interceptor checks in handleSonicEvent
-                        logWithTimestamp('[Server]', `Loaded ${tools.length}/4 tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                        logWithTimestamp('[Server]', `Loaded ${tools.length}/${allTools.length} tools: ${tools.map(t => t.toolSpec.name).join(', ') || 'NONE'}`);
                         logWithTimestamp('[Server]', `Tools array: ${JSON.stringify(tools.map(t => t.toolSpec.name))}`);
 
                         // --- PROMPT ENGINEERING: Inject Tool Instructions ---
@@ -572,9 +571,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             .filter(i => i) // Remove undefined
                             .join('\n');
 
-                        // SIMPLIFIED NATIVE TOOL INSTRUCTION
-                        const nativeToolInstruction = `
+                        // CONDITIONAL NATIVE TOOL INSTRUCTION - only if tools are enabled
+                        const nativeToolInstruction = tools.length > 0 ? `
 You have access to tools. When users ask for the current time, use the get_server_time tool to get the information and then respond naturally with the result.
+` : `
+You do not have access to any tools. Answer questions directly based on your knowledge.
 `;
 
 
