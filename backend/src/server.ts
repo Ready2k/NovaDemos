@@ -272,53 +272,86 @@ async function startProgressiveFiller(session: ClientSession, toolName: string, 
         toolUseId
     };
     
-    // Primary filler - immediate (interruptible)
+    console.log(`[Server] Starting progressive filler for ${toolName} (ID: ${toolUseId})`);
+    
+    // IMMEDIATE VISUAL FILLER: Send UI message immediately
     if (session.ws.readyState === WebSocket.OPEN) {
         session.ws.send(JSON.stringify({
             type: 'transcript',
             role: 'assistant',
             text: "Let me check that for you...",
             isFinal: false,
-            isInterruptible: true
+            isToolFiller: true
         }));
-        
-        // Use Nova Sonic for primary filler (interruptible)
-        if (session.sonicClient && session.sonicClient.getSessionId()) {
-            try {
-                console.log(`[Server] Playing primary filler for ${toolName}`);
-                await session.sonicClient.sendText("Let me check that for you");
-            } catch (error) {
-                console.log(`[Server] Failed to play primary filler: ${error}`);
-            }
-        }
+        console.log(`[Server] Sent immediate visual filler for ${toolName}`);
     }
     
-    // Secondary filler - after 2 seconds (non-interruptible)
+    // IMMEDIATE AUDIO FILLER: Send audio immediately when tool starts
+    if (session.sonicClient && session.sonicClient.getSessionId()) {
+        try {
+            console.log(`[Server] Playing immediate filler audio for ${toolName}`);
+            // Send filler audio immediately - this should play right away
+            await session.sonicClient.sendText("Let me check that for you");
+            console.log(`[Server] Immediate filler audio sent successfully for ${toolName}`);
+        } catch (error) {
+            console.log(`[Server] Failed to play immediate filler audio: ${error}`);
+        }
+    } else {
+        console.log(`[Server] Cannot play filler audio - Nova Sonic session not active`);
+    }
+    
+    // SECONDARY FILLER: After 3 seconds if still processing
     session.secondaryFillerTimer = setTimeout(async () => {
         if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
-            console.log(`[Server] Playing secondary filler for ${toolName} (non-interruptible)`);
+            console.log(`[Server] Tool taking longer than 3 seconds, playing secondary filler`);
             
+            // Send visual feedback
             if (session.ws.readyState === WebSocket.OPEN) {
                 session.ws.send(JSON.stringify({
                     type: 'transcript',
                     role: 'assistant',
-                    text: "I'm still checking for you...",
+                    text: "I'm still working on that...",
                     isFinal: false,
-                    isInterruptible: false
+                    isToolFiller: true
                 }));
             }
             
-            // Use a separate audio channel or flag for non-interruptible audio
+            // Send audio filler
             if (session.sonicClient && session.sonicClient.getSessionId()) {
                 try {
-                    // Send as system message to make it non-interruptible
-                    await session.sonicClient.sendText("[SYSTEM_FILLER] I'm still checking for you");
+                    console.log(`[Server] Playing secondary filler audio`);
+                    await session.sonicClient.sendText("I'm still working on that");
                 } catch (error) {
-                    console.log(`[Server] Failed to play secondary filler: ${error}`);
+                    console.log(`[Server] Failed to play secondary filler audio: ${error}`);
                 }
             }
+            
+            // TERTIARY FILLER: After 6 seconds if still processing
+            session.primaryFillerTimer = setTimeout(async () => {
+                if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
+                    console.log(`[Server] Tool taking longer than 6 seconds, playing tertiary filler`);
+                    
+                    if (session.ws.readyState === WebSocket.OPEN) {
+                        session.ws.send(JSON.stringify({
+                            type: 'transcript',
+                            role: 'assistant',
+                            text: "Just a moment more...",
+                            isFinal: false,
+                            isToolFiller: true
+                        }));
+                    }
+                    
+                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                        try {
+                            await session.sonicClient.sendText("Just a moment more");
+                        } catch (error) {
+                            console.log(`[Server] Failed to play tertiary filler audio: ${error}`);
+                        }
+                    }
+                }
+            }, 3000); // Additional 3 seconds (6 total)
         }
-    }, 2000); // 2 second delay
+    }, 3000); // 3 second delay for secondary filler
 }
 
 function clearProgressiveFiller(session: ClientSession) {
@@ -341,12 +374,20 @@ function getCacheKey(toolName: string, query: string, parameters?: any): string 
 }
 
 function getCachedToolResult(session: ClientSession, toolName: string, query: string, parameters?: any): any | null {
-    if (!session.toolResultCache) return null;
+    if (!session.toolResultCache) {
+        console.log(`[Cache] No cache initialized for session`);
+        return null;
+    }
     
     const cacheKey = getCacheKey(toolName, query, parameters);
+    console.log(`[Cache] Looking for cache key: ${cacheKey}`);
+    console.log(`[Cache] Available cache keys:`, Array.from(session.toolResultCache.keys()));
     const cached = session.toolResultCache.get(cacheKey);
     
-    if (!cached) return null;
+    if (!cached) {
+        console.log(`[Cache] No cached result found for key: ${cacheKey}`);
+        return null;
+    }
     
     const now = Date.now();
     const age = now - cached.timestamp;
@@ -1892,29 +1933,59 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'toolUse': {
             // Native AWS Bedrock Tool Use Event
             // PRODUCTION: Native Nova 2 Sonic Tool Use Detected
+            console.log(`[DEBUG] ===== TOOL USE CASE HANDLER CALLED =====`);
             logWithTimestamp('[Server]', `🔧 NATIVE TOOL USE: ${event.data.toolName || event.data.name} (ID: ${event.data.toolUseId})`);
             console.log('[Server] 🔧 Native Tool Use Event:', JSON.stringify(event.data, null, 2));
             const toolUse = event.data;
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+            console.log(`[DEBUG] Tool use validation:`);
+            console.log(`[DEBUG] - toolUse exists:`, !!toolUse);
+            console.log(`[DEBUG] - has name/toolName:`, !!(toolUse.name || toolUse.toolName));
+            console.log(`[DEBUG] - has input/content:`, !!(toolUse.input !== undefined || toolUse.content !== undefined));
+            console.log(`[DEBUG] - toolUse.input:`, toolUse.input);
+            console.log(`[DEBUG] - toolUse.content:`, toolUse.content);
             
             if (toolUse && (toolUse.name || toolUse.toolName) && (toolUse.input !== undefined || toolUse.content !== undefined)) {
                 // Check cache first for interrupted/repeated queries
                 const userQuery = session.lastUserTranscript || '';
                 const toolInput = toolUse.content || toolUse.input;
+                console.log(`[CACHE DEBUG] ===== CACHE CHECK START =====`);
+                console.log(`[CACHE DEBUG] Tool: ${actualToolName}`);
+                console.log(`[CACHE DEBUG] User Query: "${userQuery}"`);
+                console.log(`[CACHE DEBUG] Tool Input:`, toolInput);
+                console.log(`[CACHE DEBUG] Session has cache:`, !!session.toolResultCache);
                 const cachedResult = getCachedToolResult(session, actualToolName, userQuery, toolInput);
+                console.log(`[CACHE DEBUG] Cache result:`, cachedResult ? 'HIT' : 'MISS');
+                console.log(`[CACHE DEBUG] ===== CACHE CHECK END =====`);
                 
                 if (cachedResult) {
                     console.log(`[Server] Using cached result for ${actualToolName}`);
                     
-                    // Send cached result immediately
+                    // PROGRESSIVE FILLER FOR CACHED RESULTS: Same experience as fresh tool execution
+                    console.log(`[Server] Tool execution started (cached): ${actualToolName} (ID: ${toolUse.toolUseId})`);
+                    console.log(`[DEBUG] ===== ABOUT TO CALL PROGRESSIVE FILLER (CACHED) =====`);
+                    try {
+                        await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
+                        console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL COMPLETED (CACHED) =====`);
+                    } catch (error) {
+                        console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL FAILED (CACHED) =====`);
+                        console.log(`[DEBUG] Error:`, error);
+                    }
+                    
+                    // Send UI notification for cached tool use
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
-                            type: 'transcript',
-                            role: 'assistant',
-                            text: "I have that information ready for you...",
-                            isFinal: false
+                            type: 'debugInfo',
+                            data: {
+                                toolUse: {
+                                    name: actualToolName,
+                                    toolName: actualToolName,
+                                    input: toolUse.content || toolUse.input,
+                                    toolUseId: toolUse.toolUseId
+                                }
+                            }
                         }));
                     }
                     
@@ -1927,6 +1998,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             cleanResult = `The current time is ${timeMatch[1].trim()}`;
                         }
                     }
+                    
+                    // Add small delay for cached results to allow filler to play
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Clear progressive filler
+                    clearProgressiveFiller(session);
                     
                     // Send cached result to Nova Sonic
                     if (session.sonicClient && session.sonicClient.getSessionId()) {
@@ -1941,11 +2018,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     return; // Skip actual tool execution
                 }
                 
+                // IMMEDIATE PROGRESSIVE FILLER: Start immediately to prevent Nova Sonic from generating error messages
+                console.log(`[Server] Tool execution started: ${actualToolName} (ID: ${toolUse.toolUseId})`);
+                console.log(`[DEBUG] ===== ABOUT TO CALL PROGRESSIVE FILLER =====`);
+                console.log(`[DEBUG] Tool: ${actualToolName}, ID: ${toolUse.toolUseId}`);
+                try {
+                    await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
+                    console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL COMPLETED =====`);
+                } catch (error) {
+                    console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL FAILED =====`);
+                    console.log(`[DEBUG] Error:`, error);
+                }
+
                 // Execute the tool call against AWS AgentCore
                 console.log(`[Server] Executing native tool call: ${actualToolName}`);
-
-                // Start progressive filler system
-                await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
 
                 // Notify UI of tool usage (Visual Feedback)
                 if (ws.readyState === WebSocket.OPEN) {

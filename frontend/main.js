@@ -564,24 +564,39 @@ class VoiceAssistant {
 
                             case 'debugInfo':
                                 this.renderDebugInfo(message.data);
-                                // NEW: Visual feedback for Tool Calls
+                                // NEW: Visual feedback for Tool Calls with deduplication
                                 if (message.data.toolUse) {
                                     const toolName = message.data.toolUse.name || 'Unknown Tool';
-                                    this.showToast(`🛠️ Processing: ${toolName}`, 'info');
+                                    const toolUseId = message.data.toolUse.toolUseId;
+                                    
+                                    // Prevent duplicate toasts for the same tool execution
+                                    if (!this.recentToolNotifications) {
+                                        this.recentToolNotifications = new Set();
+                                    }
+                                    
+                                    if (!this.recentToolNotifications.has(toolUseId)) {
+                                        this.recentToolNotifications.add(toolUseId);
+                                        this.showToast(`🛠️ Processing: ${toolName}`, 'info');
 
-                                    // Visual Status Update
-                                    const originalStatus = this.statusEl.textContent;
-                                    this.statusEl.textContent = `Processing ${toolName}...`;
-                                    this.statusEl.classList.add('recording'); // Pulse effect
+                                        // Visual Status Update
+                                        const originalStatus = this.statusEl.textContent;
+                                        this.statusEl.textContent = `Processing ${toolName}...`;
+                                        this.statusEl.classList.add('recording'); // Pulse effect
 
-                                    // Revert status after 4 seconds (or when next event comes)
-                                    setTimeout(() => {
-                                        if (this.statusEl.textContent.includes('Processing')) {
-                                            this.statusEl.textContent = originalStatus;
-                                            this.statusEl.classList.remove('recording');
-                                            if (this.state === 'recording') this.statusEl.classList.add('recording');
-                                        }
-                                    }, 4000);
+                                        // Revert status after 4 seconds (or when next event comes)
+                                        setTimeout(() => {
+                                            if (this.statusEl.textContent.includes('Processing')) {
+                                                this.statusEl.textContent = originalStatus;
+                                                this.statusEl.classList.remove('recording');
+                                                if (this.state === 'recording') this.statusEl.classList.add('recording');
+                                            }
+                                        }, 4000);
+                                        
+                                        // Clean up old notifications after 30 seconds
+                                        setTimeout(() => {
+                                            this.recentToolNotifications.delete(toolUseId);
+                                        }, 30000);
+                                    }
                                 }
                                 break;
 

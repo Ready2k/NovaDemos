@@ -30,8 +30,20 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Configuration Persistence**: Settings are automatically saved to `localStorage`
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
 - **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
-- **Progressive Filler System**: Cascading filler messages ("Let me check..." → "I'm still checking...") with smart timing
-- **Tool Result Caching**: Intelligent caching with smart invalidation to avoid re-executing tools for repeated/interrupted queries
+- **🎵 Progressive Filler System**: 
+  - Immediate audio filler ("Let me check that for you") on tool execution
+  - Cascading secondary fillers for longer operations
+  - Works for both fresh executions and cached results
+  - Prevents Nova Sonic error messages during tool delays
+- **💾 Smart Tool Result Caching**: 
+  - Intelligent caching with tool-specific TTL (time: 30s, account: 60s, weather: 5min)
+  - Fuzzy query matching for interrupted/repeated questions
+  - Cost optimization - prevents redundant AgentCore calls
+  - Consistent user experience for cached vs fresh results
+- **🔔 Toast Notification System**: 
+  - Visual feedback for tool processing
+  - Deduplication prevents multiple notifications
+  - Clean UI with proper cleanup
 
 ### Integration Details
 
