@@ -41,6 +41,45 @@ if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY
 const agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
 
 /**
+ * Check if two messages are similar enough to be considered duplicates
+ * Uses fuzzy matching to catch variations in formatting, punctuation, etc.
+ */
+function areSimilarMessages(msg1: string, msg2: string): boolean {
+    // Normalize both messages for comparison
+    const normalize = (text: string) => text
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '') // Remove punctuation
+        .replace(/\s+/g, ' ')    // Normalize whitespace
+        .trim();
+    
+    const norm1 = normalize(msg1);
+    const norm2 = normalize(msg2);
+    
+    // Check for exact match after normalization
+    if (norm1 === norm2) return true;
+    
+    // Check if one is contained in the other (with significant overlap)
+    const minLength = Math.min(norm1.length, norm2.length);
+    if (minLength > 20) { // Only for substantial messages
+        if (norm1.includes(norm2) || norm2.includes(norm1)) {
+            return true;
+        }
+    }
+    
+    // Check for high similarity using simple word overlap
+    const words1 = norm1.split(' ').filter(w => w.length > 2);
+    const words2 = norm2.split(' ').filter(w => w.length > 2);
+    
+    if (words1.length > 3 && words2.length > 3) {
+        const commonWords = words1.filter(w => words2.includes(w));
+        const similarity = commonWords.length / Math.max(words1.length, words2.length);
+        return similarity > 0.8; // 80% word overlap
+    }
+    
+    return false;
+}
+
+/**
  * Helper to call AWS AgentCore Runtime
  * NOW SUPPORTS: Multi-Turn Loop (The "Orchestrator" Pattern)
  */
@@ -286,6 +325,7 @@ interface ClientSession {
     // Deduplication
     lastAgentReply?: string;
     lastAgentReplyTime?: number;
+    recentAgentReplies?: Array<{text: string, time: number}>; // Track multiple recent messages
     // Tools
     tools?: Tool[];
     // Audio Buffering (Lookahead)
@@ -418,6 +458,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         lastUserTranscript: '',
         lastAgentReply: undefined,
         lastAgentReplyTime: 0,
+        recentAgentReplies: [],
 
         userLocation: "Unknown Location",
         userTimezone: "UTC",
@@ -1500,15 +1541,33 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     
                     // Handle streaming transcripts
                     if (event.data.isStreaming) {
-                        // Send streaming updates to show text appearing in real-time
-                        ws.send(JSON.stringify({
-                            type: 'transcript',
-                            role: role,
-                            text: displayText,
-                            isFinal: false,
-                            isStreaming: true
-                        }));
-                        console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
+                        // Apply deduplication to streaming transcripts too
+                        const now = Date.now();
+                        let isDuplicateStreaming = false;
+                        
+                        if (session.recentAgentReplies) {
+                            for (const recentMsg of session.recentAgentReplies) {
+                                if (recentMsg.text === displayText || 
+                                    areSimilarMessages(recentMsg.text, displayText)) {
+                                    isDuplicateStreaming = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!isDuplicateStreaming) {
+                            // Send streaming updates to show text appearing in real-time
+                            ws.send(JSON.stringify({
+                                type: 'transcript',
+                                role: role,
+                                text: displayText,
+                                isFinal: false,
+                                isStreaming: true
+                            }));
+                            console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
+                        } else {
+                            console.log(`[Dedup] SKIPPED streaming transcript (duplicate): "${displayText.substring(0, 50)}..."`);
+                        }
                     } 
                     // Handle cancelled transcripts (interrupted)
                     else if (event.data.isCancelled) {
@@ -1521,22 +1580,58 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     }
                     // Handle final transcripts
                     else if (event.data.isFinal) {
-                        // Enhanced deduplication: Skip duplicates, shorter versions, and overlapping content
-                        const isDuplicate = session.lastAgentReply === displayText;
-                        const isShorterThanLast = session.lastAgentReply && displayText.length <= session.lastAgentReply.length && 
-                                                 session.lastAgentReply.startsWith(displayText);
+                        // Enhanced deduplication: Check against recent messages (not just the last one)
+                        const now = Date.now();
                         
-                        // Check for overlapping content (when new message is contained within the previous one)
-                        const isOverlapping = session.lastAgentReply && 
-                                            session.lastAgentReply.includes(displayText.trim()) &&
-                                            displayText.trim().length > 20; // Only for substantial overlaps
+                        console.log(`[Dedup] Processing message: "${displayText.substring(0, 50)}..."`);
+                        console.log(`[Dedup] Recent messages count: ${session.recentAgentReplies?.length || 0}`);
                         
-                        // Check if this is a continuation/fragment that should be merged
-                        const isFragment = session.lastAgentReply && 
-                                         displayText.trim().length > 10 &&
-                                         (session.lastAgentReplyTime && (Date.now() - session.lastAgentReplyTime) < 2000); // Within 2 seconds
+                        // Clean up old messages (older than 15 seconds)
+                        if (session.recentAgentReplies) {
+                            session.recentAgentReplies = session.recentAgentReplies.filter(msg => 
+                                (now - msg.time) < 15000
+                            );
+                        }
                         
-                        if (!isDuplicate && !isShorterThanLast && !isOverlapping) {
+                        // Check against all recent messages
+                        let isDuplicateOrSimilar = false;
+                        let skipReason = '';
+                        
+                        if (session.recentAgentReplies) {
+                            for (const recentMsg of session.recentAgentReplies) {
+                                // Exact duplicate
+                                if (recentMsg.text === displayText) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'exact duplicate';
+                                    break;
+                                }
+                                
+                                // Shorter version
+                                if (displayText.length <= recentMsg.text.length && 
+                                    recentMsg.text.startsWith(displayText)) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'shorter version';
+                                    break;
+                                }
+                                
+                                // Overlapping content
+                                if (recentMsg.text.includes(displayText.trim()) && 
+                                    displayText.trim().length > 20) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'overlapping content';
+                                    break;
+                                }
+                                
+                                // Similar content
+                                if (areSimilarMessages(recentMsg.text, displayText)) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'similar content';
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!isDuplicateOrSimilar) {
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
@@ -1545,18 +1640,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 isStreaming: false
                             }));
                             
-                            // Track last message for deduplication
+                            // Track message for deduplication
                             if (role === 'assistant') {
                                 session.lastAgentReply = displayText;
-                                session.lastAgentReplyTime = Date.now();
+                                session.lastAgentReplyTime = now;
+                                
+                                // Add to recent messages list
+                                if (!session.recentAgentReplies) {
+                                    session.recentAgentReplies = [];
+                                }
+                                session.recentAgentReplies.push({
+                                    text: displayText,
+                                    time: now
+                                });
                             }
                             console.log(`[Server] Sent final transcript: "${displayText.substring(0, 50)}..."`);
-                        } else if (isDuplicate) {
-                            console.log(`[Server] Skipped duplicate transcript: "${displayText.substring(0, 50)}..."`);
-                        } else if (isShorterThanLast) {
-                            console.log(`[Server] Skipped shorter transcript (already have longer): "${displayText.substring(0, 50)}..."`);
-                        } else if (isOverlapping) {
-                            console.log(`[Server] Skipped overlapping transcript (content already included): "${displayText.substring(0, 50)}..."`);
+                        } else {
+                            console.log(`[Dedup] SKIPPED transcript (${skipReason}): "${displayText.substring(0, 50)}..."`);
                         }
                     }
                 }
@@ -1648,21 +1748,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     const toolResult = result.status === "success" ? result.data : result.message;
                     console.log(`[Server] Processing tool result: "${toolResult.substring(0, 100)}..."`);
                     
-                    // OPTIMIZED DELIVERY: Direct transcript + Separate TTS
-                    console.log(`[Server] Delivering tool result via optimized approach`);
+                    // NATIVE DELIVERY: Let Nova Sonic handle the response naturally
+                    console.log(`[Server] Delivering tool result via Nova Sonic native response`);
                     
-                    // 1. Send to transcript (immediate visual feedback)
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'transcript',
-                            role: 'assistant',
-                            text: toolResult,
-                            isFinal: true
-                        }));
-                        logWithTimestamp('[Server]', `Tool result sent to transcript: ${actualToolName}`);
-                    }
-                    
-                    // 2. Send tool result back to Nova Sonic for natural speech synthesis
+                    // Send tool result back to Nova Sonic for natural speech synthesis
+                    // Nova Sonic will generate its own natural response which will appear in transcript
                     try {
                         console.log('[Server] Sending tool result back to Nova Sonic for natural speech...');
                         
