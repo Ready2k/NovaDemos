@@ -7,6 +7,7 @@ import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
 import { callBankAgent } from './bedrock-agent-client';
 import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
+import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 
 import * as dotenv from 'dotenv';
 
@@ -39,6 +40,15 @@ if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY
 }
 
 const agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
+
+// Initialize AgentCore Gateway Client
+let agentCoreGatewayClient: AgentCoreGatewayClient | null = null;
+try {
+    agentCoreGatewayClient = new AgentCoreGatewayClient();
+    console.log('[Server] AgentCore Gateway Client initialized successfully');
+} catch (error) {
+    console.warn('[Server] AgentCore Gateway Client initialization failed:', error);
+}
 
 /**
  * Check if two messages are similar enough to be considered duplicates
@@ -420,7 +430,7 @@ function getCachedToolResult(session: ClientSession, toolName: string, query: st
     
     switch (toolName) {
         case 'get_server_time':
-            maxAge = 30000; // 30 seconds for time queries
+            maxAge = 30000; // 30 seconds for time queries (now via AgentCore Gateway)
             break;
         case 'get_account_info':
         case 'payments_agent':
@@ -1727,107 +1737,13 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 if (displayText) {
-                    // --- HEURISTIC INTERCEPTOR (Restored & Redirected to AgentCore) ---
+                    // --- HEURISTIC INTERCEPTOR (Updated for AgentCore Gateway) ---
                     // Matches: XML hallucinations <tool_ call...> ONLY.
-                    // REMOVED: get_server_time regex (Trusted Native Tool now)
+                    // NOTE: get_server_time now handled via AgentCore Gateway like other tools
                     if (displayText.includes('<tool') && event.data.isFinal) {
-                        console.log('[Server] Heuristic Interceptor: Detected XML tool tag. Forcing AgentCore execution.');
-
-                        // Activate Audio Squelch for this turn
-                        session.isIntercepting = true;
-
-                        // Filler logic removed - Nova 2 Sonic handles filler natively
-
-
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                type: 'debugInfo',
-                                data: {
-                                    toolUse: { name: 'get_server_time', input: {}, toolUseId: `heuristic-${Date.now()}` }
-                                }
-
-                            }));
-                        }
-
-                        // 2. Execute AgentCore Logic (Replaces Local Logic)
-                        try {
-                            // DYNAMIC PROMPT: Check if this tool has a specific 'agentPrompt' defined
-                            // We look up the tool definition from our loaded list (assuming we have access or can find it)
-                            const toolDef = loadTools().find(t => t.toolSpec.name === 'get_server_time'); // Simple lookup for now
-
-                            let promptToUse = "What time is it?"; // Fallback
-                            if (toolDef && toolDef.agentPrompt) {
-                                promptToUse = toolDef.agentPrompt;
-                                
-                                // Check if agentPrompt is a filename (ends with .txt)
-                                if (promptToUse.endsWith('.txt')) {
-                                    promptToUse = loadPrompt(promptToUse);
-                                }
-                                
-                                // DYNAMIC INJECTION: Replace placeholders with session variables
-                                promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
-                                promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
-
-                                console.log(`[Server] Using configured agentPrompt for ${'get_server_time'}`);
-                                console.log(`[Server] Injected Prompt: ${promptToUse}`);
-                            }
-
-                            const agentPayload = {
-                                prompt: promptToUse
-                            };
-
-                            const result = await callAgentCore(
-                                session,
-                                'get_server_time',
-                                agentPayload
-                            );
-                            console.log('[Server] AgentCore Heuristic Result:', result);
-                            
-                            // Filler cancellation removed - Nova 2 Sonic handles filler natively
-                            
-                            // Reset intercepting flag to allow audio again
-                            session.isIntercepting = false;
-
-                            // 3. Send Result to Sonic
-                            if (session.sonicClient) {
-                                // Extract safe data to avoid circular JSON error
-                                let safeResult = "Success";
-                                // Cast to any to avoid TS errors with mismatched SDK types
-                                const data = result?.data as any;
-
-                                if (data) {
-                                    if (typeof data === 'string') {
-                                        safeResult = data;
-                                    } else if (data.completion) {
-                                        safeResult = "Agent execution triggered.";
-                                    } else if (data.payload) {
-                                        try {
-                                            const payloadStr = new TextDecoder().decode(data.payload);
-                                            safeResult = payloadStr;
-                                        } catch (e) {
-                                            safeResult = "Binary Payload";
-                                        }
-                                    } else {
-                                        // Fallback: Use stringified data if it's an object/result
-                                        safeResult = JSON.stringify(data);
-                                    }
-                                } else if (result && result.status === 'error') {
-                                    safeResult = result.message || "Unknown Error";
-                                }
-
-                                const systemInjection = `[System] The tool 'get_server_time' returned: "${safeResult}".Please tell this to the user.`;
-                                console.log('[Server] Injecting Heuristic Result:', systemInjection);
-                                if (session.sonicClient.getSessionId()) {
-                                    await session.sonicClient.sendText(systemInjection);
-                                } else {
-                                    console.log('[Server] Skipping heuristic result injection - Nova Sonic session not active');
-                                }
-                            }
-                        } catch (e: any) {
-                            console.error('[Server] Heuristic AgentCore call failed:', e);
-                        }
-
-                        // Prevent original "get_server_time" text from being sent to frontend/speech
+                        console.log('[Server] Heuristic Interceptor: Detected XML tool tag. Tools now handled via native tool use events and AgentCore Gateway.');
+                        
+                        // Prevent original tool text from being sent to frontend/speech
                         displayText = '';
                     }
 
@@ -2087,42 +2003,71 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
 
                 // LOCAL TOOL INTERCEPTOR REMOVED per user request (Steps 355)
-                // All tools now flow to callAgentCore below.
-                /*
-                if (toolUse.name === 'get_server_time') {
-                    // ... removed local logic ...
-                }
-                */
+                // All tools now flow to AgentCore Gateway or callAgentCore below.
 
                 try {
-                    // DYNAMIC PROMPT: Check if this tool has a specific 'agentPrompt' defined
-                    const toolDef = loadTools().find(t => t.toolSpec.name === actualToolName);
-
-                    // Use content field (Nova Sonic format) or input field (fallback)
-                    let agentPayload = toolUse.content ? JSON.parse(toolUse.content) : toolUse.input;
-
-                    if (toolDef && toolDef.agentPrompt) {
-                        let promptToUse = toolDef.agentPrompt;
+                    let result: any;
+                    
+                    // Check if this is an AgentCore Gateway tool
+                    const isAgentCoreGatewayTool = actualToolName === 'agentcore_balance' || 
+                                                 actualToolName === 'agentcore_transactions' || 
+                                                 actualToolName === 'get_server_time';
+                    
+                    if (isAgentCoreGatewayTool && agentCoreGatewayClient) {
                         
-                        // Check if agentPrompt is a filename (ends with .txt)
-                        if (promptToUse.endsWith('.txt')) {
-                            promptToUse = loadPrompt(promptToUse);
+                        console.log(`[Server] Executing AgentCore Gateway tool: ${actualToolName}`);
+                        
+                        // Extract parameters from tool use
+                        const toolParams = toolUse.content ? JSON.parse(toolUse.content) : toolUse.input;
+                        console.log(`[Server] Tool parameters:`, toolParams);
+                        
+                        try {
+                            const gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams);
+                            result = {
+                                status: "success",
+                                data: gatewayResult
+                            };
+                            console.log(`[Server] AgentCore Gateway result: ${gatewayResult}`);
+                        } catch (error: any) {
+                            console.error(`[Server] AgentCore Gateway error:`, error);
+                            result = {
+                                status: "error",
+                                message: `Failed to execute ${actualToolName}: ${error.message}`
+                            };
                         }
+                    } else {
+                        // Original AgentCore logic for other tools
+                        console.log(`[Server] Executing standard AgentCore tool: ${actualToolName}`);
                         
-                        // DYNAMIC INJECTION
-                        promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
-                        promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
+                        // DYNAMIC PROMPT: Check if this tool has a specific 'agentPrompt' defined
+                        const toolDef = loadTools().find(t => t.toolSpec.name === actualToolName);
 
-                        console.log(`[Server] Using configured agentPrompt for ${toolUse.name}`);
-                        agentPayload = { prompt: promptToUse };
+                        // Use content field (Nova Sonic format) or input field (fallback)
+                        let agentPayload = toolUse.content ? JSON.parse(toolUse.content) : toolUse.input;
+
+                        if (toolDef && toolDef.agentPrompt) {
+                            let promptToUse = toolDef.agentPrompt;
+                            
+                            // Check if agentPrompt is a filename (ends with .txt)
+                            if (promptToUse.endsWith('.txt')) {
+                                promptToUse = loadPrompt(promptToUse);
+                            }
+                            
+                            // DYNAMIC INJECTION
+                            promptToUse = promptToUse.replace('{{USER_LOCATION}}', session.userLocation || "Unknown Location");
+                            promptToUse = promptToUse.replace('{{USER_TIMEZONE}}', session.userTimezone || "UTC");
+
+                            console.log(`[Server] Using configured agentPrompt for ${toolUse.name}`);
+                            agentPayload = { prompt: promptToUse };
+                        }
+
+                        // Call AgentCore using the existing client
+                        result = await callAgentCore(
+                            session,
+                            toolUse.name,
+                            agentPayload
+                        );
                     }
-
-                    // Call AgentCore using the existing client
-                    const result = await callAgentCore(
-                        session,
-                        toolUse.name,
-                        agentPayload
-                    );
 
                     console.log('[Server] AgentCore Result (Native):', result);
                     

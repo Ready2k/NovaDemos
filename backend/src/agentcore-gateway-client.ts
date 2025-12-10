@@ -1,0 +1,187 @@
+const aws4 = require('aws4');
+
+interface AgentCoreGatewayConfig {
+    gatewayUrl: string;
+    awsRegion: string;
+    awsAccessKey: string;
+    awsSecretKey: string;
+}
+
+interface ToolCallParams {
+    name: string;
+    arguments: any;
+}
+
+interface ToolCallResponse {
+    isError: boolean;
+    content: Array<{
+        type: string;
+        text: string;
+    }>;
+}
+
+export class AgentCoreGatewayClient {
+    private config: AgentCoreGatewayConfig;
+
+    constructor() {
+        this.config = {
+            gatewayUrl: "https://agentcore-gateway-lambda-rsxfef9nbr.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
+            awsRegion: process.env.NOVA_AWS_REGION || 'us-east-1',
+            awsAccessKey: process.env.NOVA_AWS_ACCESS_KEY_ID!,
+            awsSecretKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY!
+        };
+
+        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
+            throw new Error('AgentCore Gateway requires NOVA_AWS_ACCESS_KEY_ID and NOVA_AWS_SECRET_ACCESS_KEY');
+        }
+    }
+
+    async callTool(toolName: string, args: any): Promise<string> {
+        console.log(`[AgentCoreGateway] Calling tool: ${toolName} with args:`, args);
+
+        // Map our tool names to AgentCore Gateway tool names
+        const toolMapping: { [key: string]: string } = {
+            'agentcore_balance': 'get-Balance___get_Balance',
+            'agentcore_transactions': 'get-TransactionalHistory___get_TransactionHistory',
+            'get_server_time': 'get-Time___get_current_time'
+        };
+
+        const actualToolName = toolMapping[toolName] || toolName;
+        console.log(`[AgentCoreGateway] Mapped tool name: ${actualToolName}`);
+
+        // Create JSON-RPC 2.0 payload
+        const payload = {
+            jsonrpc: "2.0",
+            id: `tool-call-${Date.now()}`,
+            method: "tools/call",
+            params: {
+                name: actualToolName,
+                arguments: args
+            }
+        };
+
+        try {
+            const url = new URL(this.config.gatewayUrl);
+            const body = JSON.stringify(payload);
+            
+            // Create AWS request object for signing
+            const request = {
+                host: url.hostname,
+                method: 'POST',
+                path: url.pathname,
+                service: 'bedrock-agentcore',
+                region: this.config.awsRegion,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: body
+            };
+
+            // Sign the request with AWS credentials
+            const signedRequest = aws4.sign(request, {
+                accessKeyId: this.config.awsAccessKey,
+                secretAccessKey: this.config.awsSecretKey
+            });
+
+            console.log(`[AgentCoreGateway] Making signed request to gateway...`);
+            
+            // Make the signed request using fetch
+            const response = await fetch(this.config.gatewayUrl, {
+                method: 'POST',
+                headers: signedRequest.headers,
+                body: body
+            });
+
+            console.log(`[AgentCoreGateway] Response status: ${response.status}`);
+            
+            if (!response.ok) {
+                const text = await response.text();
+                console.error(`[AgentCoreGateway] Request failed: ${text}`);
+                throw new Error(`Gateway Request Failed (${response.status}): ${text}`);
+            }
+
+            const data: any = await response.json();
+            console.log(`[AgentCoreGateway] Raw response:`, JSON.stringify(data, null, 2));
+
+            // Check for JSON-RPC errors
+            if (data.error) {
+                console.error(`[AgentCoreGateway] Tool execution error:`, data.error);
+                throw new Error(`Tool Execution Error: ${data.error.message}`);
+            }
+
+            // Extract the result from the MCP response
+            const result = data.result as ToolCallResponse;
+            
+            if (result && result.content && result.content.length > 0) {
+                // Try to parse the inner response
+                const innerText = result.content[0].text;
+                
+                try {
+                    const innerResponse = JSON.parse(innerText);
+                    if (innerResponse.body) {
+                        console.log(`[AgentCoreGateway] Tool result: ${innerResponse.body}`);
+                        return innerResponse.body;
+                    }
+                } catch (e) {
+                    // If not JSON, return as-is
+                    console.log(`[AgentCoreGateway] Tool result (raw): ${innerText}`);
+                    return innerText;
+                }
+            }
+
+            throw new Error('No valid result found in gateway response');
+
+        } catch (error: any) {
+            console.error(`[AgentCoreGateway] Error calling tool ${toolName}:`, error);
+            throw new Error(`AgentCore Gateway error: ${error.message}`);
+        }
+    }
+
+    async listTools(): Promise<any[]> {
+        const payload = {
+            jsonrpc: "2.0",
+            id: `list-tools-${Date.now()}`,
+            method: "tools/list",
+            params: {}
+        };
+
+        try {
+            const url = new URL(this.config.gatewayUrl);
+            const body = JSON.stringify(payload);
+            
+            const request = {
+                host: url.hostname,
+                method: 'POST',
+                path: url.pathname,
+                service: 'bedrock-agentcore',
+                region: this.config.awsRegion,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: body
+            };
+
+            const signedRequest = aws4.sign(request, {
+                accessKeyId: this.config.awsAccessKey,
+                secretAccessKey: this.config.awsSecretKey
+            });
+
+            const response = await fetch(this.config.gatewayUrl, {
+                method: 'POST',
+                headers: signedRequest.headers,
+                body: body
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to list tools: ${response.status}`);
+            }
+
+            const data: any = await response.json();
+            return data.result?.tools || [];
+
+        } catch (error: any) {
+            console.error(`[AgentCoreGateway] Error listing tools:`, error);
+            return [];
+        }
+    }
+}

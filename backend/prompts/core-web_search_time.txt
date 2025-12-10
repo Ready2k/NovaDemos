@@ -1,1 +1,1 @@
-Use your web search tool to find the exact current time in London, UK right now. Return the <search> tag only.
+Use the browser tool to navigate to a reliable time website like worldclock.com or timeanddate.com to get the current time in London, UK. Return the exact current time and date.
