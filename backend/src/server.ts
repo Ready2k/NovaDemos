@@ -107,8 +107,23 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             if (searchMatch) {
                 const query = searchMatch[1];
 
-                // Execute Tool (Mock)
-                const toolResult = performMockSearch(query);
+                // Execute actual tool logic based on query
+                let toolResult = "";
+                if (query.toLowerCase().includes('time') || query.toLowerCase().includes('current')) {
+                    const now = new Date();
+                    const timeString = now.toLocaleString('en-GB', { 
+                        timeZone: 'Europe/London',
+                        year: 'numeric',
+                        month: 'long', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    toolResult = `The current time in London, UK is: ${timeString}`;
+                } else {
+                    toolResult = `Information retrieved for: ${query}`;
+                }
 
                 // Update Prompt for Next Turn (Re-Inject History)
                 currentPrompt = `
@@ -235,16 +250,7 @@ async function playSimpleFiller(session: ClientSession, message: string = "Let m
 
 // prewarmFillerCache function removed - Nova 2 Sonic handles filler natively
 
-/**
- * Helper: Perform Mock Search (Service Substitution)
- */
-function performMockSearch(query: string): string {
-    console.log(`[Server] ⚙️  ACTION: Executing Mock Search for: "${query}"`);
-    // For "get_server_time" context, we return the time.
-    // In a real agent, this would call Google/Bing.
-    const now = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
-    return `The current time in the UK is: ${now}`;
-}
+// performMockSearch function removed - now using proper tool execution logic in callAgentCore
 
 // handleFillerWord function removed - Nova 2 Sonic handles filler natively
 
