@@ -30,7 +30,8 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Configuration Persistence**: Settings are automatically saved to `localStorage`
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
 - **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
-- **Hybrid Filler System**: Combines explicit system prompts with visual feedback for seamless tool execution
+- **Progressive Filler System**: Cascading filler messages ("Let me check..." → "I'm still checking...") with smart timing
+- **Tool Result Caching**: Intelligent caching with smart invalidation to avoid re-executing tools for repeated/interrupted queries
 
 ### Integration Details
 
@@ -139,7 +140,9 @@ Open your browser and navigate to:
    - `💬 Chat Only`: Audio muted, mic disabled
 
 ### Tool Usage Examples
-- **Time Queries**: "What time is it?" → Native tool execution with natural speech response
+- **Time Queries**: "What time is it?" → Progressive filler → Native tool execution → Natural speech response
+- **Repeated Queries**: "What was the time?" → Instant cached response without re-execution
+- **Interrupted Queries**: Ask for time, interrupt, then ask again → Smart cache hit detection
 - **Banking Queries**: "Hello" → Banking Bot greeting and assistance
 - **General Chat**: Any conversational input → Natural AI responses
 
