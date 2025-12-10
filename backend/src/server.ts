@@ -451,9 +451,14 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
         try {
             // Check if it's a JSON message (configuration)
-            if (!Buffer.isBuffer(data) || (data.length > 0 && data[0] === 123)) { // 123 is '{'
-                try {
-                    const message = data.toString();
+            // Improved detection: must be string data or buffer that looks like valid JSON
+            const isLikelyJson = !Buffer.isBuffer(data) || 
+                                (data.length > 10 && data[0] === 123 && data[1] === 34); // Starts with '{"'
+            
+            if (isLikelyJson) {
+                const message = data.toString('utf8');
+                // Additional validation: must be valid UTF-8 and contain common JSON patterns
+                if (message.includes('"type"') || message.includes('"config"')) {
                     const parsed = JSON.parse(message);
 
                     if (parsed.type === 'getPrompts') {
@@ -691,14 +696,11 @@ You do not have access to any tools. Answer questions directly based on your kno
                             ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));
                         }
                         return;
-                    }
-                } catch (e) {
-                    // Only log error if not a buffer (otherwise it's likely just audio starting with '{')
-                    if (!Buffer.isBuffer(data)) {
-                        console.log('[Server] JSON parse failed:', e);
-                    }
-                    // Ignore binary data that failed parse, fall through to audio handler
+                } else {
+                    // Not a valid JSON message, treat as binary data
+                    // Fall through to audio processing
                 }
+            }
             }
 
             // Validate binary data for audio
@@ -1519,12 +1521,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     }
                     // Handle final transcripts
                     else if (event.data.isFinal) {
-                        // Smart deduplication: Only skip if it's exactly the same OR if it's shorter than the last one
+                        // Enhanced deduplication: Skip duplicates, shorter versions, and overlapping content
                         const isDuplicate = session.lastAgentReply === displayText;
                         const isShorterThanLast = session.lastAgentReply && displayText.length <= session.lastAgentReply.length && 
                                                  session.lastAgentReply.startsWith(displayText);
                         
-                        if (!isDuplicate && !isShorterThanLast) {
+                        // Check for overlapping content (when new message is contained within the previous one)
+                        const isOverlapping = session.lastAgentReply && 
+                                            session.lastAgentReply.includes(displayText.trim()) &&
+                                            displayText.trim().length > 20; // Only for substantial overlaps
+                        
+                        // Check if this is a continuation/fragment that should be merged
+                        const isFragment = session.lastAgentReply && 
+                                         displayText.trim().length > 10 &&
+                                         (session.lastAgentReplyTime && (Date.now() - session.lastAgentReplyTime) < 2000); // Within 2 seconds
+                        
+                        if (!isDuplicate && !isShorterThanLast && !isOverlapping) {
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
@@ -1543,6 +1555,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             console.log(`[Server] Skipped duplicate transcript: "${displayText.substring(0, 50)}..."`);
                         } else if (isShorterThanLast) {
                             console.log(`[Server] Skipped shorter transcript (already have longer): "${displayText.substring(0, 50)}..."`);
+                        } else if (isOverlapping) {
+                            console.log(`[Server] Skipped overlapping transcript (content already included): "${displayText.substring(0, 50)}..."`);
                         }
                     }
                 }
