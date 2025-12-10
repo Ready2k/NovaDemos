@@ -34,7 +34,7 @@ async function runTest() {
     // Updated to match server.ts: Request Python script execution
 
     // 1. Define your location context variables
-    const userLocation = "Yarnfield, England, United Kingdom";
+    const userLocation = "London, England, United Kingdom";
     const userTimezone = "Europe/London"; // Handles GMT vs BST automatically
 
     // 2. Inject these variables into the prompt using Template Literals (``)

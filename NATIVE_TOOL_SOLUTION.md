@@ -12,7 +12,7 @@ We have successfully implemented complete native Nova 2 Sonic tool capability wi
 - **Tool Result Processing**: AgentCore executes tools and returns detailed time information
 - **Visual Feedback**: Tool results appear correctly in transcript
 - **Audible Feedback**: Tool results are spoken naturally by Nova Sonic (single playback, no duplicates)
-- **Filler Audio**: Delayed filler system provides user feedback during tool execution
+- **Hybrid Filler**: Explicit system prompts + visual feedback provide seamless user experience during tool execution
 - **No Retry Loops**: Nova Sonic calls tools once and stops after successful completion
 
 ### Bedrock Agent (Banking Bot) Mode
@@ -71,13 +71,27 @@ if (rms < 5) { // Lowered from 50
 }
 ```
 
-### 5. Filler Audio System
-**File**: `backend/src/server.ts`
+### 5. Hybrid Filler System
+**System Prompt**: Explicit instructions for natural acknowledgments
+```
+Tool Usage Rules:
+- When a user asks for the current time, you MUST:
+  1. First say "Let me check that for you" 
+  2. Then use the get_server_time tool
+  3. Wait for the result and speak it naturally
+```
+
+**Server Implementation**: Immediate visual feedback during tool execution
 ```typescript
-// Delayed filler (2 second delay, cancellable)
-const cancelFiller = await handleDelayedFillerWord(session);
-// ... tool execution ...
-cancelFiller(); // Cancel when tool completes
+// Provide immediate feedback while tool executes
+if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+        type: 'transcript',
+        role: 'assistant',
+        text: "Let me check that for you...",
+        isFinal: false
+    }));
+}
 ```
 
 ## 🏗️ Architecture Overview
@@ -106,7 +120,7 @@ User Speech → Transcription → Bedrock Agent → Agent Response → Nova Soni
 ✅ TOOL EXECUTION: Tool execution was initiated  
 ✅ ACTUAL RESULTS: Time information was returned
 ✅ SINGLE AUDIO: No duplicate playback
-✅ FILLER AUDIO: Provides feedback during execution
+✅ HYBRID FILLER: Explicit prompts + visual feedback provide seamless user experience
 
 🎉 SUCCESS: Complete native Nova 2 Sonic tool capability achieved!
 ```
@@ -204,8 +218,16 @@ We have successfully achieved **100% Native Nova 2 Sonic Tool Capability** with:
 - ✅ Native tool detection and execution
 - ✅ Single audio playback (no duplicates)
 - ✅ Visual and audible feedback
-- ✅ Filler audio during execution
+- ✅ Hybrid filler system (explicit prompts + visual feedback)
 - ✅ Support for both architectural approaches
 - ✅ Optimized audio thresholds for reliable transcription
 
-The system now provides a seamless, voice-first experience with native tool integration that showcases the full potential of Nova 2 Sonic's capabilities.
+## Key Learnings
+
+**Nova 2 Sonic Filler Capabilities**: While Nova 2 Sonic supports bidirectional streaming and asynchronous tool execution, it does not automatically provide conversational filler during tool processing. The optimal approach is:
+
+1. **Explicit System Prompts**: Instruct Nova 2 Sonic to provide acknowledgments before tool calls
+2. **Visual Feedback**: Provide immediate transcript updates during tool execution
+3. **Natural Flow**: Let Nova 2 Sonic speak the acknowledgment and tool results naturally
+
+This hybrid approach provides a seamless, voice-first experience with native tool integration while ensuring users always receive immediate feedback during tool execution.

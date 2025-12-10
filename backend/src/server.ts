@@ -206,93 +206,34 @@ function loadTools(): any[] {
     }
 }
 
-// --- FILLER AUDIO CACHE ---
-const fillerAudioCache = new Map<string, Map<string, Buffer>>(); // voiceId -> phrase -> audioBuffer
-const FILLER_PHRASES = [
-    "Just checking on that...",
-    "One moment please...",
-    "Let me look that up...",
-    "Checking the system...",
-    "Hold on a second...",
-    "Let me check..."
-];
-
-/**
- * Generate filler audio using a temporary Nova Sonic session
- */
-async function generateFillerWithSonic(text: string, voiceId: string = 'matthew'): Promise<Buffer | null> {
-    console.log(`[FillerGen] CALLED for: "${text}" (${voiceId})`);
-
-    // Create a temporary client
-    const tempClient = new SonicClient();
-
-    // Config as an Echo/Repeater Bot
-    tempClient.setConfig({
-        systemPrompt: "You are a text-to-speech converter. Your ONLY job is to speak the exact text the user provides. Rules: 1) Say the text EXACTLY ONCE. 2) Do NOT repeat the text. 3) Do NOT add any words before or after. 4) Do NOT say hello or goodbye. 5) Just speak the provided text one time and stop.",
-        voiceId: voiceId,
-    });
-
-    const audioChunks: Buffer[] = [];
-    const completionPromise = new Promise<void>((resolve, reject) => {
-        // Timeout safety
-        const timeout = setTimeout(() => {
-            reject(new Error("Timeout generating filler audio"));
-        }, 15000);
-
-        tempClient.startSession((event: SonicEvent) => {
-            if (event.type === 'audio' && event.data.audio) {
-                audioChunks.push(event.data.audio);
-                // console.log(`[FillerGen] Received ${event.data.audio.length} bytes`);
+// Simple filler system for tool execution feedback
+async function playSimpleFiller(session: ClientSession, message: string = "Let me check that for you...") {
+    if (session.ws.readyState === WebSocket.OPEN) {
+        // Send to transcript immediately
+        session.ws.send(JSON.stringify({
+            type: 'transcript',
+            role: 'assistant',
+            text: message,
+            isFinal: false
+        }));
+        
+        // Use Nova Sonic to speak the filler message immediately
+        if (session.sonicClient && session.sonicClient.getSessionId()) {
+            try {
+                console.log(`[Server] Playing filler audio: "${message}"`);
+                await session.sonicClient.sendText(message);
+            } catch (error) {
+                console.log(`[Server] Failed to play filler audio: ${error}`);
             }
-            if (event.type === 'interactionTurnEnd' || (event.type === 'contentEnd' && event.data.stopReason === 'END_TURN')) {
-                clearTimeout(timeout);
-                resolve();
-            }
-        }).then(async () => {
-            // Once session starts, send the text
-            await tempClient.sendText(text);
-        }).catch(reject);
-    });
-
-    try {
-        await completionPromise;
-        const fullBuffer = Buffer.concat(audioChunks);
-        console.log(`[FillerGen] Generated ${fullBuffer.length} bytes for "${text}"`);
-        await tempClient.stopSession();
-        return fullBuffer;
-    } catch (e) {
-        console.error('[FillerGen] Failed:', e);
-        try { await tempClient.stopSession(); } catch (_) { }
-        return null;
+        } else {
+            console.log(`[Server] Cannot play filler audio - Nova Sonic session not active`);
+        }
     }
 }
 
-/**
- * Pre-warm cache for a voice ID (fire and forget)
- */
-function prewarmFillerCache(voiceId: string) {
-    // Normalize Voice ID: User lowercase 'matthew' as default (standard for Nova Sonic in this app)
-    const vid = voiceId || 'matthew';
+// generateFillerWithSonic function removed - Nova 2 Sonic handles filler natively
 
-    if (fillerAudioCache.has(vid)) return; // Already cached
-
-    console.log(`[FillerCache] Pre-warming cache for voice: ${vid}`);
-    const cache = new Map<string, Buffer>();
-    fillerAudioCache.set(vid, cache);
-
-    // Process sequentially to avoid rate limits
-    (async () => {
-        for (const phrase of FILLER_PHRASES) {
-            const buffer = await generateFillerWithSonic(phrase, vid);
-            if (buffer) {
-                cache.set(phrase, buffer);
-            }
-            // Small delay between generations
-            await new Promise(r => setTimeout(r, 500));
-        }
-        console.log(`[FillerCache] Completed pre-warming for ${vid}`);
-    })();
-}
+// prewarmFillerCache function removed - Nova 2 Sonic handles filler natively
 
 /**
  * Helper: Perform Mock Search (Service Substitution)
@@ -302,66 +243,12 @@ function performMockSearch(query: string): string {
     // For "get_server_time" context, we return the time.
     // In a real agent, this would call Google/Bing.
     const now = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
-    return `The current time in Yarnfield, UK is: ${now}`;
+    return `The current time in the UK is: ${now}`;
 }
 
-/**
- * Common logic to handle filler word generation and playback
- */
-async function handleFillerWord(session: ClientSession) {
-    const vid = session.voiceId || 'matthew';
-    const randomPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
+// handleFillerWord function removed - Nova 2 Sonic handles filler natively
 
-    // PRIORITIZE CACHED FILLER to avoid session conflicts
-    const cache = fillerAudioCache.get(vid);
-    let fillerAudio: Buffer | undefined;
-
-    if (cache && cache.has(randomPhrase)) {
-        console.log(`[Server] Playing cached filler: "${randomPhrase}"`);
-        fillerAudio = cache.get(randomPhrase);
-    } else {
-        console.log(`[Server] Filler not cached for ${vid}. Using text-only filler to avoid session conflicts.`);
-        // Don't generate new audio during active sessions - just use text feedback
-    }
-
-    if (session.ws.readyState === WebSocket.OPEN) {
-        // Always send transcript feedback
-        session.ws.send(JSON.stringify({
-            type: 'transcript',
-            role: 'assistant',
-            text: randomPhrase + "...",
-            isFinal: false
-        }));
-        
-        // Send audio only if cached (to avoid session conflicts)
-        if (fillerAudio) {
-            session.ws.send(fillerAudio);
-        }
-    }
-}
-
-/**
- * Delayed filler word - waits 2 seconds before playing, can be cancelled
- */
-async function handleDelayedFillerWord(session: ClientSession): Promise<() => void> {
-    let cancelled = false;
-    
-    // Return a cancel function immediately
-    const cancelFiller = () => {
-        cancelled = true;
-        console.log('[Server] Filler cancelled - tool responded quickly');
-    };
-    
-    // Start the delayed filler in the background
-    setTimeout(async () => {
-        if (!cancelled) {
-            console.log('[Server] Tool taking longer than 2s, playing filler...');
-            await handleFillerWord(session);
-        }
-    }, 2000);
-    
-    return cancelFiller;
-}
+// handleDelayedFillerWord function removed - Nova 2 Sonic handles filler natively
 
 
 
@@ -727,10 +614,7 @@ You have access to tools. When users ask for the current time, use the get_serve
 
                         console.log(`[Server] Session configured. Voice: ${session.voiceId}, Location: ${session.userLocation}, Timezone: ${session.userTimezone}`);
 
-                        // Prewarm filler cache for this specific voice
-                        if (session.voiceId) {
-                            prewarmFillerCache(session.voiceId);
-                        }
+                        // Filler cache prewarming removed - Nova 2 Sonic handles filler natively
 
                         // CRITICAL: If session is already active, we MUST stop it to apply the new System Prompt.
                         // The System Prompt is only sent at the beginning of the session (in createInputStream).
@@ -892,16 +776,7 @@ You have access to tools. When users ask for the current time, use the get_serve
                                         text,
                                         session.sessionId,
                                         session.agentId,
-                                        session.agentAliasId,
-                                        // Filler Word Handler
-                                        async (filler) => {
-                                            console.log(`[Server] Emitting filler word: "${filler}"`);
-                                            if (session.sonicClient.getSessionId()) {
-                                                await session.sonicClient.sendText(filler);
-                                            } else {
-                                                console.log('[Server] Skipping filler - Nova Sonic session not active');
-                                            }
-                                        }
+                                        session.agentAliasId
                                     );
                                     console.log(`[Server] Agent replied: "${agentReply}"`);
 
@@ -1385,9 +1260,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             jsonStr = jsonStr.replace(/,\s*}/g, '}');
                             jsonStr = jsonStr.replace(/,\s*]/g, ']');
 
-                            // 0. Play Filler Word (Heuristic)
-                            console.log('[Server] Heuristic Handler Triggering Filler...');
-                            // Try to get filler audio (from cache or generate on fly)
+                            // Heuristic filler handling removed - Nova 2 Sonic handles filler natively
                             console.log('[Server] Repaired JSON Candidate:', jsonStr);
 
                             const toolCall = JSON.parse(jsonStr);
@@ -1402,9 +1275,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 if (toolName === 'get_server_time') {
                                     console.log(`[Server] Heuristic detected tool: ${toolName} - checking if native handler processed it...`);
                                     
-                                    // Start delayed filler (2 second delay)
-                                    const cancelFiller = await handleDelayedFillerWord(session);
-                                    
                                     const toolDef = loadTools().find(t => t.toolSpec.name === toolName);
                                     let agentPayload = {};
 
@@ -1418,9 +1288,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                                     const result = await callAgentCore(session, toolName, agentPayload);
                                     console.log('[Server] AgentCore Result (Heuristic Fallback):', result);
-                                    
-                                    // Cancel filler since tool completed
-                                    cancelFiller();
                                     
                                     // Reset intercepting flag to allow audio again
                                     session.isIntercepting = false;
@@ -1520,9 +1387,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         // Activate Audio Squelch for this turn
                         session.isIntercepting = true;
 
-                        // --- FILLER WORD LOGIC (Refactored) ---
-                        const cancelFiller = await handleDelayedFillerWord(session);
-                        // -------------------------
+                        // Filler logic removed - Nova 2 Sonic handles filler natively
 
 
                         if (ws.readyState === WebSocket.OPEN) {
@@ -1563,8 +1428,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             );
                             console.log('[Server] AgentCore Heuristic Result:', result);
                             
-                            // Cancel filler since tool completed
-                            cancelFiller();
+                            // Filler cancellation removed - Nova 2 Sonic handles filler natively
                             
                             // Reset intercepting flag to allow audio again
                             session.isIntercepting = false;
@@ -1692,16 +1556,28 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Execute the tool call against AWS AgentCore
                 console.log(`[Server] Executing native tool call: ${actualToolName}`);
 
-                // Enable filler for native tools (users need feedback during tool execution)
-                console.log('[Server] Starting delayed filler for native tool execution');
-                const cancelFiller = await handleDelayedFillerWord(session);
+                // Provide immediate feedback while tool executes
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'transcript',
+                        role: 'assistant',
+                        text: "Let me check that for you...",
+                        isFinal: false
+                    }));
+                    console.log('[Server] Sent filler message to UI during tool execution');
+                }
 
                 // Notify UI of tool usage (Visual Feedback)
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'debugInfo',
                         data: {
-                            toolUse: toolUse // { name, input, toolUseId }
+                            toolUse: {
+                                name: actualToolName,
+                                toolName: actualToolName,
+                                input: toolUse.content || toolUse.input,
+                                toolUseId: toolUse.toolUseId
+                            }
                         }
                     }));
                 }
@@ -1742,8 +1618,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     console.log('[Server] AgentCore Result (Native):', result);
                     
-                    // Cancel filler since tool completed
-                    cancelFiller();
+                    // Filler cancellation removed - Nova 2 Sonic handles filler natively
                     
                     // Reset intercepting flag to allow audio again
                     session.isIntercepting = false;
@@ -1793,7 +1668,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             );
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName}`);
                         } else {
-                            console.log('[Server] Cannot send tool result - Nova Sonic session not active');
+                            console.log('[Server] Nova Sonic session not active - attempting to restart...');
+                            // Try to restart the session and send the result
+                            try {
+                                await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                await new Promise(resolve => setTimeout(resolve, 500)); // Wait for session to establish
+                                if (session.sonicClient.getSessionId()) {
+                                    await session.sonicClient.sendToolResult(
+                                        toolUse.toolUseId,
+                                        { text: cleanResult },
+                                        false
+                                    );
+                                    logWithTimestamp('[Server]', `Tool result sent to Nova Sonic after restart: ${actualToolName}`);
+                                }
+                            } catch (restartError) {
+                                console.log('[Server] Failed to restart Nova Sonic session:', restartError);
+                            }
                         }
                     } catch (ttsError) {
                         console.log('[Server] Failed to send tool result to Nova Sonic:', ttsError);

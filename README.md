@@ -29,7 +29,7 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Session Stats**: Real-time tracking of latency, token usage, and session duration
 - **Configuration Persistence**: Settings are automatically saved to `localStorage`
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
-- **Filler Audio System**: Provides user feedback during tool execution ("Just checking...", "One moment...")
+- **Hybrid Filler System**: Combines explicit system prompts with visual feedback for seamless tool execution
 
 ### Integration Details
 
@@ -189,6 +189,7 @@ Open your browser and navigate to:
 - **Clean Separation**: WebSocket layer is independent of Nova Sonic integration layer
 - **Binary Frames**: WebSocket handles binary audio data efficiently
 - **Minimal Dependencies**: Essential packages only (`ws`, `@aws-sdk/client-bedrock-runtime`, `typescript`)
+- **Hybrid Filler System**: Removed complex Gen Filler caching in favor of explicit system prompts + visual feedback
 
 ## Architecture Decisions
 

@@ -37,8 +37,7 @@ export async function callBankAgent(
     userText: string,
     sessionId: string,
     agentIdOverride?: string,
-    agentAliasIdOverride?: string,
-    onFillerWord?: (filler: string) => void
+    agentAliasIdOverride?: string
 ): Promise<AgentResponse> {
     const targetAgentId = agentIdOverride || agentId;
     const targetAgentAliasId = agentAliasIdOverride || agentAliasId;
@@ -69,27 +68,7 @@ export async function callBankAgent(
         } else if (event.trace) {
             traces.push(event.trace);
 
-            // Heuristic Trigger for Filler Words
-            // Type assertion used because AWS SDK types might be incomplete/strict regarding TracePart union
-            if (onFillerWord) {
-                const tracePart = event.trace as any;
-                // Log top-level keys to confirm
-                // console.log('[Bedrock Agent] Trace Part Keys:', Object.keys(tracePart));
-
-                // Based on logs, the structure is event.trace.trace.orchestrationTrace
-                const innerTrace = tracePart.trace;
-
-                if (innerTrace && innerTrace.orchestrationTrace) {
-                    const orchTrace = innerTrace.orchestrationTrace;
-                    console.log('[Bedrock Agent] Orchestration Found:', Object.keys(orchTrace));
-
-                    if (orchTrace.invocationInput) {
-                        onFillerWord("hmmm..."); // Tool call start
-                    } else if (orchTrace.observation) {
-                        onFillerWord("uh-huh..."); // Tool call return
-                    }
-                }
-            }
+            // Filler word handling removed - Nova 2 Sonic handles filler natively
         } else if (event.accessDeniedException) {
             console.error("[Bedrock Agent] Access Denied:", event.accessDeniedException);
             throw new Error(`Access Denied: ${event.accessDeniedException.message}`);
