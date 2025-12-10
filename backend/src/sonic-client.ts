@@ -233,16 +233,45 @@ export class SonicClient {
                     ...(this.sessionConfig.tools && this.sessionConfig.tools.length > 0 ? {
                         toolUseOutputConfiguration: {
                             mediaType: "application/json"
+                        },
+                        toolConfiguration: {
+                            tools: this.sessionConfig.tools
                         }
-                    } : {}),
-                    toolConfig: this.sessionConfig.tools ? {
-                        tools: this.sessionConfig.tools
-                    } : undefined
+                    } : {})
                 }
             }
         };
         console.log('[SonicClient] Prompt Start Payload (with Tools):', JSON.stringify(promptStartEvent, null, 2));
-        yield { chunk: { bytes: Buffer.from(JSON.stringify(promptStartEvent)) } };
+        console.log('[SonicClient] DEBUG TOOLS:', JSON.stringify(this.sessionConfig.tools, null, 2));
+        
+        // CRITICAL DEBUG: Check if tools structure is valid
+        if (this.sessionConfig.tools && this.sessionConfig.tools.length > 0) {
+            console.log('[SonicClient] TOOL VALIDATION:');
+            this.sessionConfig.tools.forEach((tool, index) => {
+                console.log(`[SonicClient] Tool ${index}:`, JSON.stringify(tool, null, 2));
+                if (!tool.toolSpec) {
+                    console.error(`[SonicClient] ERROR: Tool ${index} missing toolSpec!`);
+                }
+                if (!tool.toolSpec?.name) {
+                    console.error(`[SonicClient] ERROR: Tool ${index} missing name!`);
+                }
+                if (!tool.toolSpec?.inputSchema) {
+                    console.error(`[SonicClient] ERROR: Tool ${index} missing inputSchema!`);
+                }
+            });
+        }
+        
+        // CRITICAL: Validate JSON before sending
+        const promptStartJson = JSON.stringify(promptStartEvent);
+        try {
+            JSON.parse(promptStartJson); // Validate it's valid JSON
+            console.log('[SonicClient] JSON validation passed');
+        } catch (e) {
+            console.error('[SonicClient] INVALID JSON:', e);
+            console.error('[SonicClient] JSON STRING:', promptStartJson);
+        }
+        
+        yield { chunk: { bytes: Buffer.from(promptStartJson) } };
 
 
         // 3. System Prompt Content Start
@@ -337,46 +366,115 @@ export class SonicClient {
             if (this.toolResultQueue.length > 0) {
                 const resultData = this.toolResultQueue.shift()!;
                 console.log('[SonicClient] Processing tool result:', resultData.toolUseId);
+                console.log('[SonicClient] Tool result data:', JSON.stringify(resultData.result));
 
-                // 1. Tool Result Content Start
-                const contentName = `tool-result-${Date.now()}`;
-                const trStart = {
+                // OPTIMIZED APPROACH: Send tool result as system message to Nova Sonic
+                const resultText = typeof resultData.result === 'string' ? resultData.result : JSON.stringify(resultData.result);
+                
+                // 1. End current Audio Content (if open)
+                if (this.currentContentName) {
+                    const audioEndEvent = {
+                        event: {
+                            contentEnd: {
+                                promptName: promptName,
+                                contentName: this.currentContentName
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(audioEndEvent)) } };
+                    this.currentContentName = undefined;
+                }
+
+                // 2. Send Tool Result as Text Content
+                const textContentName = `tool-result-${Date.now()}`;
+                const textStartEvent = {
                     event: {
                         contentStart: {
                             promptName: promptName,
-                            contentName: contentName,
-                            type: "TOOL_RESULT",
-                            interactive: false,
-                            role: "USER"
+                            contentName: textContentName,
+                            type: "TEXT",
+                            interactive: true,
+                            role: "USER",
+                            textInputConfiguration: {
+                                mediaType: "text/plain"
+                            }
                         }
                     }
                 };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(trStart)) } };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
 
-                // 2. Tool Result Input
-                const trInput = {
+                const textInputEvent = {
                     event: {
-                        toolResult: {
+                        textInput: {
                             promptName: promptName,
-                            contentName: contentName,
-                            toolUseId: resultData.toolUseId,
-                            content: [{ json: resultData.result }],
-                            status: resultData.isError ? "error" : "success"
+                            contentName: textContentName,
+                            content: `[SYSTEM] Tool execution completed successfully. Result: ${resultText}`
                         }
                     }
                 };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(trInput)) } };
+                console.log('[SonicClient] Sending tool result as text input:', textInputEvent.event.textInput.content.substring(0, 100) + '...');
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textInputEvent)) } };
 
-                // 3. Tool Result Content End
-                const trEnd = {
+                const textEndEvent = {
                     event: {
                         contentEnd: {
                             promptName: promptName,
-                            contentName: contentName
+                            contentName: textContentName
                         }
                     }
                 };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(trEnd)) } };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textEndEvent)) } };
+
+                // 3. Send Silent Audio (Required by Nova Sonic)
+                if (!this.currentContentName) {
+                    const silenceContentName = `audio-silence-${Date.now()}`;
+
+                    // Start Silence Audio
+                    const silenceStartEvent = {
+                        event: {
+                            contentStart: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                type: "AUDIO",
+                                interactive: true,
+                                role: "USER",
+                                audioInputConfiguration: {
+                                    mediaType: "audio/lpcm",
+                                    sampleRateHertz: 16000,
+                                    sampleSizeBits: 16,
+                                    channelCount: 1,
+                                    audioType: "SPEECH",
+                                    encoding: "base64"
+                                }
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
+
+                    // Send Silence Data
+                    const silenceInputEvent = {
+                        event: {
+                            audioInput: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                content: this.SILENCE_FRAME.toString('base64')
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
+
+                    // End Silence Audio
+                    const silenceEndEvent = {
+                        event: {
+                            contentEnd: {
+                                promptName: promptName,
+                                contentName: silenceContentName
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceEndEvent)) } };
+                    console.log('[SonicClient] Sent silent audio frame after tool result');
+                }
             }
 
             // Check for text input first (priority)
@@ -618,6 +716,7 @@ export class SonicClient {
     updateSessionConfig(config: any) {
         this.sessionConfig = { ...this.sessionConfig, ...config };
         console.log(`[SonicClient:${this.id}] Updated session config:`, this.sessionConfig);
+        console.log(`[SonicClient:${this.id}] Tools in updated config:`, JSON.stringify(this.sessionConfig.tools, null, 2));
     }
 
     /**
@@ -714,14 +813,21 @@ export class SonicClient {
 
                 if (event.chunk && event.chunk.bytes) {
                     const rawEvent = JSON.parse(Buffer.from(event.chunk.bytes).toString());
-                    console.log('[SonicClient] Received event type:', Object.keys(rawEvent.event || rawEvent)[0]);
+                    const eventType = Object.keys(rawEvent.event || rawEvent)[0];
+                    console.log('[SonicClient] Received event type:', eventType);
+                    
+                    // Special logging for tool-related events
+                    if (eventType === 'toolUse' || eventType.includes('tool')) {
+                        console.log('[SonicClient] 🔧 TOOL EVENT DETECTED:', JSON.stringify(rawEvent, null, 2));
+                    }
 
                     // Handle different event types
                     const eventData = rawEvent.event || rawEvent;
 
                     if (eventData.toolUse) {
                         const tu = eventData.toolUse;
-                        console.log(`[SonicClient] Tool Use: ${tu.name} (ID: ${tu.toolUseId})`);
+                        console.log(`[SonicClient] 🔧 NATIVE TOOL USE DETECTED: ${tu.name} (ID: ${tu.toolUseId})`);
+                        console.log(`[SonicClient] Tool Use Data:`, JSON.stringify(tu, null, 2));
                         this.eventCallback?.({
                             type: 'toolUse',
                             data: tu

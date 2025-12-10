@@ -527,7 +527,17 @@ class VoiceAssistant {
                                 this.sessionId = message.sessionId;
                                 this.log(`Connected: ${message.sessionId}`, 'success');
                                 if (this.debugContent) {
-                                    this.debugContent.innerHTML = `<div style="padding-bottom: 10px; border-bottom: 1px solid #333; margin-bottom: 10px; color: #818cf8;"><strong>🔌 Session ID:</strong> ${this.sessionId}</div>`;
+                                    const timestamp = new Date().toISOString();
+                                    this.debugContent.innerHTML = `
+                                        <div style="padding: 12px; border: 1px solid #4f46e5; border-radius: 6px; margin-bottom: 12px; background: rgba(79, 70, 229, 0.1);">
+                                            <div style="color: #818cf8; font-weight: 600; margin-bottom: 6px;">🔌 Session Information</div>
+                                            <div style="color: #c7d2fe; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace;">
+                                                <div><strong>Session ID:</strong> ${this.sessionId}</div>
+                                                <div><strong>Connected:</strong> ${timestamp}</div>
+                                                <div><strong>Status:</strong> Active</div>
+                                            </div>
+                                        </div>
+                                    `;
                                 }
                                 break;
 

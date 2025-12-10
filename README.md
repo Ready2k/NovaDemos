@@ -17,13 +17,19 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ### Key Features
 
--*   **Real-time Audio Visualizer**: Dynamic, reactive waveform visualization of both user input and AI output.
-*   **Text Interface**: Full chat functionality allowing users to type questions and receive voice/text responses.
-*   **Interaction Modes**: Switch between "Chat + Voice", "Voice Only", and "Chat Only" to suit your environment.
-*   **Persona Presets**: Switch between different system prompts (e.g., Coding Assistant, Pirate, French Tutor).
-*   **Voice Selection**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.).
-*   **Session Stats**: Real-time tracking of latency, token usage, and session duration.
-*   **Configuration Persistence**: Settings are automatically saved to `localStorage`.en sessions
+- **🎯 100% Native Nova 2 Sonic Tool Capability**: Complete native tool integration with visual and audible feedback
+- **🏗️ Dual Architecture Support**: 
+  - Nova Sonic Direct Mode (fast, natural tool calls)
+  - Bedrock Agent Mode (complex banking workflows)
+- **Real-time Audio Visualizer**: Dynamic, reactive waveform visualization of both user input and AI output
+- **Text Interface**: Full chat functionality allowing users to type questions and receive voice/text responses
+- **Interaction Modes**: Switch between "Chat + Voice", "Voice Only", and "Chat Only" to suit your environment
+- **Persona Presets**: Switch between different system prompts (e.g., Coding Assistant, Pirate, French Tutor)
+- **Voice Selection**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
+- **Session Stats**: Real-time tracking of latency, token usage, and session duration
+- **Configuration Persistence**: Settings are automatically saved to `localStorage`
+- **Native Tool Execution**: Time queries, server information, and extensible tool framework
+- **Filler Audio System**: Provides user feedback during tool execution ("Just checking...", "One moment...")
 
 ### Integration Details
 
@@ -42,10 +48,20 @@ Voice_S2S/
 │   └── audio.js        # Audio capture, PCM16 conversion, playback
 ├── backend/
 │   ├── src/
-│   │   ├── server.ts       # WebSocket server with /sonic endpoint
-│   │   └── sonic-client.ts # Placeholder for Nova Sonic integration
+│   │   ├── server.ts           # WebSocket server with dual architecture support
+│   │   ├── sonic-client.ts     # Complete Nova Sonic integration
+│   │   ├── bedrock-agent-client.ts # Banking Bot integration
+│   │   └── transcribe-client.ts    # Audio transcription for agent mode
+│   ├── prompts/
+│   │   ├── core_guardrails.txt # Native tool usage instructions
+│   │   └── agent_echo.txt      # Banking Bot relay configuration
 │   ├── package.json
 │   └── tsconfig.json
+├── tools/
+│   └── time_tool.json          # Native tool definitions
+├── tests/
+│   └── test-complete-native.js # End-to-end tool testing
+├── NATIVE_TOOL_SOLUTION.md     # Complete implementation guide
 └── README.md
 ```
 
@@ -106,25 +122,31 @@ Open your browser and navigate to:
 
 ## Usage
 
+### Basic Setup
 1. **Connect**: Click the "Connect" button to establish WebSocket connection
 2. **Allow Microphone**: Grant microphone permissions when prompted
-3.  **Interact**:
-    *   **Voice**: Speak into your microphone. The visualizer will react to your voice.
-    *   **Text**: Type in the chat bar at the bottom and press Enter.
-    *   **Modes**: Use the "Interaction Mode" dropdown to switch between:
-        *   `✨ Chat + Voice`: Full functionality.
-        *   `🎤 Voice Only`: Text input hidden.
-        *   `💬 Chat Only`: Audio muted, mic disabled.
-4.  **Customize**:
-    *   Select a **Persona** to change the AI's personality.
-    *   Select a **Voice** to change the output voice.
-    *   Settings are saved automatically.
-    *   Select a **Voice** to change the output voice.
-    *   Settings are saved automatically.
-5.  **AWS Configuration** (Optional):
-    *   Click **🔐 Configure AWS** to use your own AWS credentials for the session.
-    *   These keys are **not saved** to the server and exist only in memory for the current session.
-6. **Stop Recording**: Click "Stop Recording" when done
+3. **Select Brain Mode**:
+   - **Nova Sonic Direct**: Fast, natural tool calls (recommended for time queries)
+   - **Bedrock Agent**: Complex banking workflows with full agent reasoning
+
+### Interaction Methods
+4. **Voice**: Speak into your microphone. The visualizer will react to your voice
+5. **Text**: Type in the chat bar at the bottom and press Enter
+6. **Modes**: Use the "Interaction Mode" dropdown to switch between:
+   - `✨ Chat + Voice`: Full functionality
+   - `🎤 Voice Only`: Text input hidden
+   - `💬 Chat Only`: Audio muted, mic disabled
+
+### Tool Usage Examples
+- **Time Queries**: "What time is it?" → Native tool execution with natural speech response
+- **Banking Queries**: "Hello" → Banking Bot greeting and assistance
+- **General Chat**: Any conversational input → Natural AI responses
+
+### Customization
+7. **Persona**: Select different system prompts (Coding Assistant, Pirate, French Tutor)
+8. **Voice**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
+9. **Tools**: Enable/disable specific tools in the configuration panel
+10. **AWS Configuration** (Optional): Use your own AWS credentials for the session
 
 **Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
 

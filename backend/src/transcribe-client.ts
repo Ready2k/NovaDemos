@@ -3,6 +3,9 @@ import {
     StartStreamTranscriptionCommand,
     AudioStream
 } from "@aws-sdk/client-transcribe-streaming";
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 export class TranscribeClientWrapper {
     private client: TranscribeStreamingClient;
@@ -10,7 +13,23 @@ export class TranscribeClientWrapper {
 
     constructor(region: string = 'us-east-1') {
         this.region = region;
-        this.client = new TranscribeStreamingClient({ region });
+        
+        // Use the same credential configuration as other AWS services
+        const clientConfig: any = { region };
+        
+        if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
+            clientConfig.credentials = {
+                accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+            };
+        } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            clientConfig.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            };
+        }
+        
+        this.client = new TranscribeStreamingClient(clientConfig);
     }
 
     /**

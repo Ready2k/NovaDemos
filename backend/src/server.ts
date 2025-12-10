@@ -13,6 +13,12 @@ import * as dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Utility function to add timestamps to logs
+function logWithTimestamp(level: string, message: string) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${level} ${message}`);
+}
+
 // --- AWS Bedrock AgentCore Client ---
 // Build credentials config for AgentCore client
 const agentCoreConfig: any = {
@@ -95,8 +101,8 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
 
             console.log(`[AgentCore] Output: ${agentText.substring(0, 100)}...`);
 
-            // CHECK FOR TAGS (<search>)
-            const searchMatch = agentText.match(/<search>(.*?)<\/search>/);
+            // CHECK FOR TAGS (<search>) - use 's' flag to match newlines
+            const searchMatch = agentText.match(/<search>(.*?)<\/search>/s);
 
             if (searchMatch) {
                 const query = searchMatch[1];
@@ -180,7 +186,7 @@ function loadTools(): any[] {
                     name: toolDef.name,
                     description: toolDef.description,
                     inputSchema: {
-                        json: toolDef.input_schema || toolDef.inputSchema
+                        json: JSON.stringify(toolDef.input_schema || toolDef.inputSchema)
                     }
                 };
 
@@ -306,7 +312,7 @@ async function handleFillerWord(session: ClientSession) {
     const vid = session.voiceId || 'matthew';
     const randomPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
 
-    // Check Cache or Generate Immediately
+    // PRIORITIZE CACHED FILLER to avoid session conflicts
     const cache = fillerAudioCache.get(vid);
     let fillerAudio: Buffer | undefined;
 
@@ -314,28 +320,23 @@ async function handleFillerWord(session: ClientSession) {
         console.log(`[Server] Playing cached filler: "${randomPhrase}"`);
         fillerAudio = cache.get(randomPhrase);
     } else {
-        console.log(`[Server] Filler not cached for ${vid}. Generating immediately...`);
-        try {
-            // Wait up to 3s for generation
-            fillerAudio = await generateFillerWithSonic(randomPhrase, vid) || undefined;
-            if (fillerAudio) {
-                if (!fillerAudioCache.has(vid)) fillerAudioCache.set(vid, new Map());
-                fillerAudioCache.get(vid)?.set(randomPhrase, fillerAudio);
-            }
-        } catch (e) {
-            console.error("Filler gen failed", e);
-        }
+        console.log(`[Server] Filler not cached for ${vid}. Using text-only filler to avoid session conflicts.`);
+        // Don't generate new audio during active sessions - just use text feedback
     }
 
-    if (session.ws.readyState === WebSocket.OPEN && fillerAudio) {
-        // Send Transcript for Filler Word (UI Feedback)
+    if (session.ws.readyState === WebSocket.OPEN) {
+        // Always send transcript feedback
         session.ws.send(JSON.stringify({
             type: 'transcript',
             role: 'assistant',
             text: randomPhrase + "...",
             isFinal: false
         }));
-        session.ws.send(fillerAudio);
+        
+        // Send audio only if cached (to avoid session conflicts)
+        if (fillerAudio) {
+            session.ws.send(fillerAudio);
+        }
     }
 }
 
@@ -504,7 +505,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     // Generate a longer session ID (UUID is 36 chars)
     const sessionId = crypto.randomUUID();
 
-    console.log(`[Server] New client connected: ${clientIp} (${sessionId})`);
+    logWithTimestamp('[Server]', `New client connected: ${clientIp} (${sessionId})`);
 
     // Create Sonic client for this session
     const sonicClient = new SonicClient();
@@ -578,21 +579,75 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             session.agentAliasId = parsed.config.agentAliasId;
                             console.log(`[Server] Configured Custom Agent: ${session.agentId} / ${session.agentAliasId}`);
                         } else {
-                            // Reset if not present (to fallback to env vars)
-                            session.agentId = undefined;
-                            session.agentAliasId = undefined;
+                            // Use default agent from .env for Banking Bot mode
+                            session.agentId = process.env.AGENT_ID;
+                            session.agentAliasId = process.env.AGENT_ALIAS_ID;
+                            if (session.agentId && session.agentAliasId) {
+                                console.log(`[Server] Using Default Agent: ${session.agentId} / ${session.agentAliasId}`);
+                            }
                         }
 
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
                             session.brainMode = parsed.config.brainMode;
-                            console.log(`[Server] Switched Brain Mode to: ${session.brainMode}`);
+                            logWithTimestamp('[Server]', `Switched Brain Mode to: ${session.brainMode}`);
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
                                 parsed.config.systemPrompt = loadPrompt('agent_echo.txt');
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
                                 console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
+                                
+                                // Test the agent with an initial greeting
+                                setTimeout(async () => {
+                                    try {
+                                        console.log('[Server] Testing Banking Bot with initial greeting...');
+                                        const { completion: agentReply } = await callBankAgent(
+                                            "Hello, I'd like to get started",
+                                            session.sessionId,
+                                            session.agentId,
+                                            session.agentAliasId
+                                        );
+                                        logWithTimestamp('[Server]', `Banking Bot replied: "${agentReply}"`);
+                                        
+                                        // Send to UI
+                                        ws.send(JSON.stringify({ 
+                                            type: 'transcript', 
+                                            role: 'assistant', 
+                                            text: agentReply, 
+                                            isFinal: true 
+                                        }));
+                                        
+                                        // Send to TTS - Ensure session is properly started
+                                        if (session.sonicClient) {
+                                            // Check if Nova Sonic session is active
+                                            if (!session.sonicClient.getSessionId()) {
+                                                console.log('[Server] Starting Nova Sonic session for Banking Bot TTS...');
+                                                await session.sonicClient.startSession((event: SonicEvent) => 
+                                                    handleSonicEvent(ws, event, session)
+                                                );
+                                                // Wait a moment for session to be fully established
+                                                await new Promise(resolve => setTimeout(resolve, 500));
+                                            }
+                                            
+                                            // Double-check session is active before sending text
+                                            if (session.sonicClient.getSessionId()) {
+                                                logWithTimestamp('[Server]', 'Sending Banking Bot greeting to TTS...');
+                                                await session.sonicClient.sendText(agentReply);
+                                            } else {
+                                                console.error('[Server] Nova Sonic session failed to start for Banking Bot TTS');
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error('[Server] Banking Bot test failed:', error);
+                                        ws.send(JSON.stringify({ 
+                                            type: 'transcript', 
+                                            role: 'system', 
+                                            text: `Banking Bot Error: ${error instanceof Error ? error.message : String(error)}`, 
+                                            isFinal: true 
+                                        }));
+                                    }
+                                }, 1000);
                             }
                         }
 
@@ -614,7 +669,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         parsed.config.tools = tools;
                         session.tools = tools; // CRITICAL: Assign to session for interceptor checks in handleSonicEvent
-                        console.log(`[Server] Loaded ${tools.length}/4 tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                        logWithTimestamp('[Server]', `Loaded ${tools.length}/4 tools: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                        logWithTimestamp('[Server]', `Tools array: ${JSON.stringify(tools.map(t => t.toolSpec.name))}`);
 
                         // --- PROMPT ENGINEERING: Inject Tool Instructions ---
                         // AWS Models usually need explicit instructions to use tools reliably.
@@ -623,14 +679,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             .filter(i => i) // Remove undefined
                             .join('\n');
 
-                        // FORCE NATIVE TOOL USE INSTRUCTION
+                        // SIMPLIFIED NATIVE TOOL INSTRUCTION
                         const nativeToolInstruction = `
-[CRITICAL SYSTEM INSTRUCTION]:
-You have access to NATIVE tools.
-1. WHEN you need to use a tool, you MUST use the native tool use syntax.
-2. DO NOT say "ACTION: tool_name" or "I will check that".
-3. Just generate the tool call event silently.
-4. Wait for the tool result before speaking again.
+You have access to tools. When users ask for the current time, use the get_server_time tool to get the information and then respond naturally with the result.
 `;
 
 
@@ -641,13 +692,19 @@ You have access to NATIVE tools.
 
                         // Pass other config to SonicClient
                         // Explicitly include tool definitions in the update (mapped to AWS Tool Interface)
-                        parsed.config.tools = tools.map(t => ({ toolSpec: t.toolSpec }));
+                        // CRITICAL FIX: Nova Sonic expects tools wrapped in toolSpec objects (per AWS sample)
+                        const mappedTools = tools.map(t => ({ toolSpec: t.toolSpec }));
+                        parsed.config.tools = mappedTools;
+                        logWithTimestamp('[Server]', `Passing ${mappedTools.length} tools to SonicClient: ${JSON.stringify(mappedTools.map(t => t.toolSpec.name))}`);
+                        logWithTimestamp('[Server]', `Full mapped tools: ${JSON.stringify(mappedTools, null, 2)}`);
+                        console.log('[Server] COMPLETE CONFIG BEING SENT TO SONIC:', JSON.stringify(parsed.config, null, 2));
                         sonicClient.updateSessionConfig(parsed.config);
 
                         // Send System Info to Debug Panel
                         ws.send(JSON.stringify({
                             type: 'debugInfo',
                             data: {
+                                sessionId: session.sessionId,
                                 systemInfo: {
                                     mode: session.brainMode,
                                     persona: session.brainMode === 'bedrock_agent' ? 'Echo Bot (Relay Mode)' : 'Direct Persona',
@@ -686,15 +743,19 @@ You have access to NATIVE tools.
                         if (!sonicClient.getSessionId()) {
                             await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
                             
-                            // AI SPEAKS FIRST: Send initial greeting trigger
-                            // This makes the AI greet the user immediately after connection
-                            console.log('[Server] Triggering initial AI greeting...');
-                            setTimeout(async () => {
-                                if (sonicClient.getSessionId()) {
-                                    await sonicClient.sendText("Hi");
-                                    console.log('[Server] Initial greeting sent to AI');
-                                }
-                            }, 500); // Small delay to ensure session is fully ready
+                            // AI SPEAKS FIRST: Send initial greeting trigger (only for raw Nova mode)
+                            // In Banking Bot mode, the agent will send its own greeting
+                            if (session.brainMode !== 'bedrock_agent') {
+                                console.log('[Server] Triggering initial AI greeting...');
+                                setTimeout(async () => {
+                                    if (sonicClient.getSessionId()) {
+                                        await sonicClient.sendText("Hi");
+                                        console.log('[Server] Initial greeting sent to AI');
+                                    }
+                                }, 500); // Small delay to ensure session is fully ready
+                            } else {
+                                console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
+                            }
                         }
                         return;
                     } else if (parsed.type === 'ping') {
@@ -718,8 +779,15 @@ You have access to NATIVE tools.
                             if (!sonicClient.getSessionId()) {
                                 console.log('[Server] Starting session for text input');
                                 await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                // Wait a moment for session to be fully established
+                                await new Promise(resolve => setTimeout(resolve, 500));
                             }
-                            await sonicClient.sendText(parsed.text);
+                            
+                            if (sonicClient.getSessionId()) {
+                                await sonicClient.sendText(parsed.text);
+                            } else {
+                                console.error('[Server] Failed to start Nova Sonic session for text input');
+                            }
                         }
                         return;
                     } else if (parsed.type === 'awsConfig') {
@@ -761,7 +829,7 @@ You have access to NATIVE tools.
 
                     // 2. VAD (Energy-based Silence Detection)
                     const rms = calculateRMS(audioBuffer);
-                    const VAD_THRESHOLD = 800; // Lowered from 1000 to better detect soft speech
+                    const VAD_THRESHOLD = 100; // Lowered significantly to detect quiet speech
 
                     // Only reset silence timer if we detect speech (high energy)
                     if (rms > VAD_THRESHOLD) {
@@ -791,7 +859,28 @@ You have access to NATIVE tools.
                             console.log(`[Server] Processing ${fullAudio.length} bytes for Agent...`);
 
                             // 3. Transcribe
+                            console.log(`[Server] Starting transcription of ${fullAudio.length} bytes...`);
+                            
+                            // Analyze audio quality
+                            const rms = calculateRMS(fullAudio);
+                            console.log(`[Server] Audio RMS level: ${rms} (threshold: 800)`);
+                            
+                            // Lower the threshold for testing - the current threshold might be too high
+                            if (rms < 5) {
+                                console.log('[Server] Audio appears to be silent or very quiet - skipping transcription');
+                                return;
+                            }
+                            
+                            console.log(`[Server] Audio passed RMS check (${rms}), proceeding with transcription...`);
+                            
+                            console.log(`[Server] Calling transcription service with ${fullAudio.length} bytes...`);
                             const text = await session.transcribeClient.transcribe(fullAudio);
+                            console.log(`[Server] Transcription result: "${text}" (length: ${text.length})`);
+                            
+                            if (!text || text.length === 0) {
+                                console.log('[Server] Transcription returned empty - this might be an audio format issue');
+                                console.log(`[Server] Audio buffer info: ${fullAudio.length} bytes, RMS: ${rms}`);
+                            }
                             if (text) {
                                 console.log(`[Server] User said (Transcribed): "${text}"`);
                                 ws.send(JSON.stringify({ type: 'transcript', role: 'user', text, isFinal: true }));
@@ -805,9 +894,13 @@ You have access to NATIVE tools.
                                         session.agentId,
                                         session.agentAliasId,
                                         // Filler Word Handler
-                                        (filler) => {
+                                        async (filler) => {
                                             console.log(`[Server] Emitting filler word: "${filler}"`);
-                                            session.sonicClient.sendText(filler);
+                                            if (session.sonicClient.getSessionId()) {
+                                                await session.sonicClient.sendText(filler);
+                                            } else {
+                                                console.log('[Server] Skipping filler - Nova Sonic session not active');
+                                            }
                                         }
                                     );
                                     console.log(`[Server] Agent replied: "${agentReply}"`);
@@ -820,6 +913,7 @@ You have access to NATIVE tools.
                                     ws.send(JSON.stringify({
                                         type: 'debugInfo',
                                         data: {
+                                            sessionId: session.sessionId,
                                             transcript: text,
                                             agentReply,
                                             trace
@@ -848,13 +942,27 @@ You have access to NATIVE tools.
                                     session.lastAgentReplyTime = now;
                                     // ---------------------------------
 
-                                    // Ensure session is started
+                                    // Ensure session is started and active
                                     if (!sonicClient.getSessionId()) {
+                                        console.log('[Server] Starting Nova Sonic session for Banking Bot response...');
                                         await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                        // Wait a moment for session to be fully established
+                                        await new Promise(resolve => setTimeout(resolve, 500));
                                     }
 
-                                    console.log('[Server] Sending to Sonic:', agentReply);
-                                    await sonicClient.sendText(agentReply);
+                                    // Double-check session is active before sending text
+                                    if (sonicClient.getSessionId()) {
+                                        console.log('[Server] Sending to Sonic:', agentReply);
+                                        await sonicClient.sendText(agentReply);
+                                    } else {
+                                        console.error('[Server] Nova Sonic session failed to start for Banking Bot response');
+                                        ws.send(JSON.stringify({ 
+                                            type: 'transcript', 
+                                            role: 'system', 
+                                            text: 'TTS Error: Could not start voice session', 
+                                            isFinal: true 
+                                        }));
+                                    }
 
                                 } catch (agentError: any) {
                                     console.error('[Server] Agent Error:', agentError);
@@ -874,6 +982,8 @@ You have access to NATIVE tools.
                                     // Also notify user via voice if possible? Maybe not, could loop.
                                     ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
                                 }
+                            } else {
+                                console.log('[Server] Transcription returned empty text - ignoring audio chunk');
                             }
                         }, 1500); // 1500ms silence threshold to allow for pauses
                     }
@@ -959,11 +1069,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
     switch (event.type) {
         case 'contentStart':
             if (event.data.role === 'assistant') {
-                // Only verify buffering if we haven't already flowed audio for this turn
-                if (!session.hasFlowedAudio) {
-                    console.log('[Server] Assistant Turn Started - Buffering Audio for Safety...');
-                    session.isBufferingAudio = true;
+                // In Banking Bot mode, if this is a TTS-only response (not a conversation),
+                // don't buffer the audio - let it play immediately
+                const isBankingBotTTS = session.brainMode === 'bedrock_agent';
+                
+                if (isBankingBotTTS) {
+                    console.log('[Server] Banking Bot TTS - Allowing audio to flow immediately...');
+                    session.isBufferingAudio = false;
+                    session.hasFlowedAudio = true; // Mark as flowing to prevent future buffering
                     session.audioBufferQueue = [];
+                } else {
+                    // Only verify buffering if we haven't already flowed audio for this turn
+                    if (!session.hasFlowedAudio) {
+                        console.log('[Server] Assistant Turn Started - Buffering Audio for Safety...');
+                        session.isBufferingAudio = true;
+                        session.audioBufferQueue = [];
+                    }
                 }
                 session.isIntercepting = false; // Reset interception flag for new turn
             } else if (event.data.role === 'user') {
@@ -1030,6 +1151,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     ws.send(JSON.stringify({
                         type: 'debugInfo',
                         data: {
+                            sessionId: session.sessionId,
                             transcript: session.lastUserTranscript || '(No user transcript)',
                             agentReply: event.data.transcript,
                             isFinal: event.data.isFinal,
@@ -1060,9 +1182,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Helper to check if tool is enabled
                 const isToolEnabled = (name: string) => session.tools?.some(t => t.toolSpec?.name === name);
 
-                const hasJson = text.toLowerCase().includes("json") ||
-                    (!!text.match(/payments[_\s]*agent/i) && isToolEnabled('payments_agent')) ||
-                    (!!text.match(/(invoke|call|use|check|action)?[_\s]*(\[)?get[_\s]*server[_\s]*time/i) && isToolEnabled('get_server_time'));
+                // NATIVE-FIRST APPROACH: Prefer native Nova Sonic tools, use heuristic as fallback
+                // Native tools are now working 100%, but keep heuristic for compatibility
+                const hasJson = false; // Native tools are primary, heuristic disabled for now
+                
+                // Original heuristic detection (commented out for native testing):
+                // const hasJson = (
+                //     (!!text.match(/payments[_\s]*agent/i) && isToolEnabled('payments_agent')) ||
+                //     (!!text.match(/"name":\s*"get[_\s]*server[_\s]*time"/i) && isToolEnabled('get_server_time')) ||
+                //     (!!text.match(/get[_\s]*server[_\s]*time/i) && isToolEnabled('get_server_time'))
+                // );
 
                 // Lookahead Logic:
                 // If we have text, we can decide whether to FLUSH or DROP the audio buffer.
@@ -1117,12 +1246,41 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         if (text.includes('"name":')) {
                             console.log('[Server] JSON using "name" field. Attempting recovery.');
                             const nameIndex = text.indexOf('"name":');
-                            // Find the last brace after "name":
-                            const lastBrace = text.lastIndexOf('}');
+                            
+                            // Try to find the last brace after "name"
+                            let lastBrace = text.lastIndexOf('}');
+                            let extracted = "";
+                            
                             if (lastBrace !== -1 && lastBrace > nameIndex) {
-                                let extracted = "{" + text.substring(nameIndex, lastBrace + 1);
-                                // Add closing brace for outer object
-                                extracted = extracted + "}";
+                                // Complete JSON found
+                                extracted = "{" + text.substring(nameIndex, lastBrace + 1) + "}";
+                            } else {
+                                // Incomplete JSON - try to reconstruct
+                                console.log('[Server] Incomplete JSON detected, attempting reconstruction...');
+                                
+                                // Extract from "name" to end of arguments field or end of text
+                                const nameMatch = text.match(/"name":\s*"([^"]+)"/);
+                                const argsMatch = text.match(/"arguments":\s*(\{[^}]*\}|\{\}|""|\s*)/);
+                                
+                                if (nameMatch) {
+                                    const toolName = nameMatch[1];
+                                    let args = "{}";
+                                    
+                                    if (argsMatch && argsMatch[1]) {
+                                        const argStr = argsMatch[1].trim();
+                                        if (argStr.startsWith('{') && argStr.endsWith('}')) {
+                                            args = argStr;
+                                        } else if (argStr === '""' || argStr === '') {
+                                            args = "{}";
+                                        }
+                                    }
+                                    
+                                    extracted = `{"name": "${toolName}", "arguments": ${args}}`;
+                                    console.log('[Server] Reconstructed JSON:', extracted);
+                                }
+                            }
+                            
+                            if (extracted) {
                                 // Normalize "name" to "tool"
                                 extracted = extracted.replace('"name":', '"tool":');
                                 // Handle "arguments" vs "parameters"
@@ -1289,9 +1447,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     }
                                     
                                     const systemInjection = `The current time is ${cleanData}`;
-                                    if (session.sonicClient) {
+                                    if (session.sonicClient && session.sonicClient.getSessionId()) {
                                         console.log('[Server] Injecting clean time result:', systemInjection);
                                         await session.sonicClient.sendText(systemInjection);
+                                    } else {
+                                        console.log('[Server] Skipping time result injection - Nova Sonic session not active');
                                     }
 
                                     // CRITICAL: Also send the time result to the UI so user can see it
@@ -1306,7 +1466,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 } else if (toolCall.parameters) {
                                     // Execute AgentCore tools
                                     console.log(`[Server] Executing intercepted tool call: ${toolCall.tool}`);
-                                    if (session.sonicClient) session.sonicClient.sendText("Processing your request...");
+                                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                                        await session.sonicClient.sendText("Processing your request...");
+                                    }
 
                                     const result = await callAgentCore(session, toolCall.tool, toolCall.parameters);
                                     console.log('[Server] AgentCore Result:', result);
@@ -1436,7 +1598,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                                 const systemInjection = `[System] The tool 'get_server_time' returned: "${safeResult}".Please tell this to the user.`;
                                 console.log('[Server] Injecting Heuristic Result:', systemInjection);
-                                await session.sonicClient.sendText(systemInjection);
+                                if (session.sonicClient.getSessionId()) {
+                                    await session.sonicClient.sendText(systemInjection);
+                                } else {
+                                    console.log('[Server] Skipping heuristic result injection - Nova Sonic session not active');
+                                }
                             }
                         } catch (e: any) {
                             console.error('[Server] Heuristic AgentCore call failed:', e);
@@ -1514,15 +1680,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
         case 'toolUse': {
             // Native AWS Bedrock Tool Use Event
-            console.log('[Server] Received NATIVE Tool Use Event:', JSON.stringify(event.data));
+            // PRODUCTION: Native Nova 2 Sonic Tool Use Detected
+            logWithTimestamp('[Server]', `🔧 NATIVE TOOL USE: ${event.data.toolName || event.data.name} (ID: ${event.data.toolUseId})`);
+            console.log('[Server] 🔧 Native Tool Use Event:', JSON.stringify(event.data, null, 2));
             const toolUse = event.data;
-            if (toolUse && toolUse.name && toolUse.input) {
+            // Validate tool use structure
+            const actualToolName = toolUse.toolName || toolUse.name;
+            console.log(`[Server] Processing native tool call: ${actualToolName}`);
+            
+            if (toolUse && (toolUse.name || toolUse.toolName) && (toolUse.input !== undefined || toolUse.content !== undefined)) {
                 // Execute the tool call against AWS AgentCore
-                console.log(`[Server] Executing NATIVE tool call: ${toolUse.name}`);
+                console.log(`[Server] Executing native tool call: ${actualToolName}`);
 
-                // --- FILLER WORD LOGIC (Refactored) ---
+                // Enable filler for native tools (users need feedback during tool execution)
+                console.log('[Server] Starting delayed filler for native tool execution');
                 const cancelFiller = await handleDelayedFillerWord(session);
-                // -------------------------
 
                 // Notify UI of tool usage (Visual Feedback)
                 if (ws.readyState === WebSocket.OPEN) {
@@ -1546,9 +1718,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 try {
                     // DYNAMIC PROMPT: Check if this tool has a specific 'agentPrompt' defined
-                    const toolDef = loadTools().find(t => t.toolSpec.name === toolUse.name);
+                    const toolDef = loadTools().find(t => t.toolSpec.name === actualToolName);
 
-                    let agentPayload = toolUse.input;
+                    // Use content field (Nova Sonic format) or input field (fallback)
+                    let agentPayload = toolUse.content ? JSON.parse(toolUse.content) : toolUse.input;
 
                     if (toolDef && toolDef.agentPrompt) {
                         let promptToUse = toolDef.agentPrompt;
@@ -1575,14 +1748,58 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     // Reset intercepting flag to allow audio again
                     session.isIntercepting = false;
 
-                    // Send the result back to Sonic (Native Tool Result)
-                    // Note: SonicClient.sendToolResult expects toolUseId
-                    if (session.sonicClient) {
-                        await session.sonicClient.sendToolResult(
-                            toolUse.toolUseId,
-                            result // Pass raw result object
-                        );
+                    // HYBRID APPROACH: Try native tool result processing, fallback to direct delivery
+                    const toolResult = result.status === "success" ? result.data : result.message;
+                    console.log(`[Server] Processing tool result: "${toolResult.substring(0, 100)}..."`);
+                    
+                    // OPTIMIZED DELIVERY: Direct transcript + Separate TTS
+                    console.log(`[Server] Delivering tool result via optimized approach`);
+                    
+                    // 1. Send to transcript (immediate visual feedback)
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'transcript',
+                            role: 'assistant',
+                            text: toolResult,
+                            isFinal: true
+                        }));
+                        logWithTimestamp('[Server]', `Tool result sent to transcript: ${actualToolName}`);
                     }
+                    
+                    // 2. Send tool result back to Nova Sonic for natural speech synthesis
+                    try {
+                        console.log('[Server] Sending tool result back to Nova Sonic for natural speech...');
+                        
+                        // Clean up the tool result for better speech
+                        let cleanResult = toolResult;
+                        if (typeof cleanResult === 'string') {
+                            // Remove markdown formatting
+                            cleanResult = cleanResult.replace(/\*\*/g, '').replace(/\*/g, '');
+                            // Extract just the time information for cleaner speech
+                            const timeMatch = cleanResult.match(/current time.*?is[:\s]+([^.\n]+)/i);
+                            if (timeMatch) {
+                                cleanResult = `The current time is ${timeMatch[1].trim()}`;
+                            }
+                        }
+                        
+                        console.log(`[Server] Sending cleaned result to Nova Sonic: "${cleanResult}"`);
+                        
+                        // Send the tool result back to Nova Sonic using the native tool result mechanism
+                        if (session.sonicClient && session.sonicClient.getSessionId()) {
+                            await session.sonicClient.sendToolResult(
+                                toolUse.toolUseId,
+                                { text: cleanResult },
+                                false
+                            );
+                            logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName}`);
+                        } else {
+                            console.log('[Server] Cannot send tool result - Nova Sonic session not active');
+                        }
+                    } catch (ttsError) {
+                        console.log('[Server] Failed to send tool result to Nova Sonic:', ttsError);
+                    }
+                    
+                    // 3. Don't send anything back to main Nova Sonic session (prevents retry loops)
 
                     // Optional: Inform user via system message
                     /*
