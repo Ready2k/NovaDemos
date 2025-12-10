@@ -28,6 +28,7 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Voice Selection**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
 - **Session Stats**: Real-time tracking of latency, token usage, and session duration
 - **Configuration Persistence**: Settings are automatically saved to `localStorage`
+- **Dynamic AWS Configuration**: Set AWS credentials and Agent Core Runtime ARN via GUI without server restart
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
 - **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
 - **🎵 Progressive Filler System**: 
@@ -104,10 +105,12 @@ NOVA_AWS_REGION=us-east-1
 NOVA_AWS_ACCESS_KEY_ID=your_access_key_here
 NOVA_AWS_SECRET_ACCESS_KEY=your_secret_key_here
 NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
+AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/YourRuntimeName
 ```
 
 **Required IAM Permissions:**
 - `bedrock:InvokeModelWithBidirectionalStream`
+- `bedrock-agentcore:InvokeAgentRuntime` (for Agent Core Runtime)
 - Access to the `amazon.nova-2-sonic-v1:0` model in your region
 
 **Alternative:** If running on AWS infrastructure (EC2/ECS), you can use IAM roles instead of explicit credentials.
@@ -162,7 +165,10 @@ Open your browser and navigate to:
 7. **Persona**: Select different system prompts (Coding Assistant, Pirate, French Tutor)
 8. **Voice**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
 9. **Tools**: Enable/disable specific tools in the configuration panel
-10. **AWS Configuration** (Optional): Use your own AWS credentials for the session
+10. **AWS Configuration**: Configure AWS credentials and Agent Core Runtime ARN via the GUI
+    - Credentials are stored securely in session storage
+    - Agent Core Runtime ARN can be set per session
+    - Settings are applied automatically when connecting
 
 **Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
 

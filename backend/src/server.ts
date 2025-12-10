@@ -87,7 +87,8 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
     try {
         console.log(`[AgentCore] Invoking agent for session ${session.sessionId}`);
 
-        let runtimeArn = process.env.AGENT_CORE_RUNTIME_ARN;
+        // Use session-specific Agent Core Runtime ARN if available, otherwise fall back to environment variable
+        let runtimeArn = session.sonicClient?.config?.agentCoreRuntimeArn || process.env.AGENT_CORE_RUNTIME_ARN;
         if (!runtimeArn) return { status: "error", message: "Missing AGENT_CORE_RUNTIME_ARN" };
         if (runtimeArn.includes('/runtime-endpoint/')) runtimeArn = runtimeArn.split('/runtime-endpoint/')[0];
 
@@ -993,9 +994,9 @@ You do not have access to any tools. Answer questions directly based on your kno
                         return;
                     } else if (parsed.type === 'awsConfig') {
                         console.log('[Server] Received AWS Configuration update');
-                        const { accessKeyId, secretAccessKey, region } = parsed.config;
+                        const { accessKeyId, secretAccessKey, region, agentCoreRuntimeArn } = parsed.config;
                         if (accessKeyId && secretAccessKey && region) {
-                            sonicClient.updateCredentials(accessKeyId, secretAccessKey, region);
+                            sonicClient.updateCredentials(accessKeyId, secretAccessKey, region, agentCoreRuntimeArn);
                             ws.send(JSON.stringify({ type: 'status', message: 'AWS Credentials Updated' }));
                         } else {
                             ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));

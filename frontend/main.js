@@ -70,8 +70,10 @@ class VoiceAssistant {
         this.awsAccessKey = document.getElementById('awsAccessKey');
         this.awsSecretKey = document.getElementById('awsSecretKey');
         this.awsRegion = document.getElementById('awsRegion');
+        this.agentCoreRuntimeArn = document.getElementById('agentCoreRuntimeArn');
         this.saveAwsBtn = document.getElementById('saveAwsBtn');
         this.cancelAwsBtn = document.getElementById('cancelAwsBtn');
+        this.clearAwsBtn = document.getElementById('clearAwsBtn');
 
         // Prompt Preset Change
         if (this.promptPresetSelect) {
@@ -172,12 +174,17 @@ class VoiceAssistant {
 
         // AWS Config Events
         this.awsConfigBtn.addEventListener('click', () => {
+            this.loadStoredAwsCredentials();
             this.awsModal.style.display = 'flex';
         });
         this.cancelAwsBtn.addEventListener('click', () => {
             this.awsModal.style.display = 'none';
+            // Clear form fields
+            this.awsAccessKey.value = '';
+            this.awsSecretKey.value = '';
         });
         this.saveAwsBtn.addEventListener('click', () => this.saveAwsCredentials());
+        this.clearAwsBtn.addEventListener('click', () => this.clearStoredAwsCredentials());
 
         // Agent Config Events
         this.agentConfigBtn.addEventListener('click', () => {
@@ -478,6 +485,23 @@ class VoiceAssistant {
 
                 // Send ping to verify connection
                 this.ws.send(JSON.stringify({ type: 'ping' }));
+
+                // Send AWS credentials if available
+                const storedCredentials = sessionStorage.getItem('aws_credentials');
+                if (storedCredentials) {
+                    try {
+                        const awsCredentials = JSON.parse(storedCredentials);
+                        const awsConfig = {
+                            type: 'awsConfig',
+                            config: awsCredentials
+                        };
+                        this.ws.send(JSON.stringify(awsConfig));
+                        this.log('Sent stored AWS credentials to server');
+                    } catch (e) {
+                        console.error('[Frontend] Failed to send AWS credentials:', e);
+                        this.log('Failed to send AWS credentials', 'error');
+                    }
+                }
 
                 // Send session configuration immediately
                 try {
@@ -1074,23 +1098,93 @@ class VoiceAssistant {
     }
 
     /**
-     * Send AWS Credentials to server
+     * Load stored AWS credentials into the form
+     */
+    loadStoredAwsCredentials() {
+        const storedCredentials = sessionStorage.getItem('aws_credentials');
+        if (storedCredentials) {
+            try {
+                const awsCredentials = JSON.parse(storedCredentials);
+                // Don't populate sensitive fields for security, but show region and ARN
+                this.awsRegion.value = awsCredentials.region || 'us-east-1';
+                this.agentCoreRuntimeArn.value = awsCredentials.agentCoreRuntimeArn || '';
+                
+                // Show placeholder text to indicate credentials are stored
+                this.awsAccessKey.placeholder = 'Stored (enter new to update)';
+                this.awsSecretKey.placeholder = 'Stored (enter new to update)';
+            } catch (e) {
+                console.error('[Frontend] Failed to parse stored AWS credentials:', e);
+            }
+        } else {
+            // Reset placeholders if no credentials stored
+            this.awsAccessKey.placeholder = 'AKIA...';
+            this.awsSecretKey.placeholder = 'wJalrX...';
+        }
+    }
+
+    /**
+     * Save AWS Credentials locally for connection
      */
     async saveAwsCredentials() {
         const accessKeyId = this.awsAccessKey.value.trim();
         const secretAccessKey = this.awsSecretKey.value.trim();
         const region = this.awsRegion.value.trim();
+        const agentCoreRuntimeArn = this.agentCoreRuntimeArn.value.trim();
 
         if (!accessKeyId || !secretAccessKey || !region) {
-            alert('Please fill in all AWS fields.');
+            alert('Please fill in all required AWS fields (Access Key, Secret Key, and Region).');
             return;
-            // Hide modal and clear sensitive inputs
-            this.awsModal.style.display = 'none';
+        }
+
+        // Store credentials in sessionStorage (not localStorage for security)
+        const awsCredentials = {
+            accessKeyId,
+            secretAccessKey,
+            region,
+            agentCoreRuntimeArn: agentCoreRuntimeArn || undefined
+        };
+
+        sessionStorage.setItem('aws_credentials', JSON.stringify(awsCredentials));
+
+        // If already connected, send update to server
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const awsConfig = {
+                type: 'awsConfig',
+                config: awsCredentials
+            };
+            this.ws.send(JSON.stringify(awsConfig));
+            this.log('Updated AWS credentials on server');
+            this.showToast('AWS Credentials Updated', 'success');
+        } else {
+            this.log('AWS credentials saved for next connection');
+            this.showToast('AWS Credentials Saved - Connect to apply', 'success');
+        }
+
+        // Hide modal and clear sensitive inputs
+        this.awsModal.style.display = 'none';
+        this.awsAccessKey.value = '';
+        this.awsSecretKey.value = '';
+        // Keep region and ARN for convenience
+    }
+
+    /**
+     * Clear stored AWS credentials
+     */
+    clearStoredAwsCredentials() {
+        if (confirm('Are you sure you want to clear stored AWS credentials?')) {
+            sessionStorage.removeItem('aws_credentials');
+            this.showToast('AWS Credentials Cleared', 'info');
+            this.log('Cleared stored AWS credentials');
+            
+            // Reset form
             this.awsAccessKey.value = '';
             this.awsSecretKey.value = '';
-
-            this.log('Sent AWS credentials to server');
-            this.showToast('AWS Credentials Updated', 'success');
+            this.awsRegion.value = 'us-east-1';
+            this.agentCoreRuntimeArn.value = '';
+            this.awsAccessKey.placeholder = 'AKIA...';
+            this.awsSecretKey.placeholder = 'wJalrX...';
+            
+            this.awsModal.style.display = 'none';
         }
     }
 

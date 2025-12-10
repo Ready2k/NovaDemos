@@ -21,6 +21,7 @@ export interface SonicConfig {
     secretAccessKey?: string;
     sessionToken?: string;
     bearerToken?: string;
+    agentCoreRuntimeArn?: string;
 }
 
 /**
@@ -45,7 +46,7 @@ export interface SonicEvent {
 export class SonicClient {
     private client: BedrockRuntimeClient;
     private id: string;
-    private config: Required<SonicConfig> & { bearerToken?: string; sessionToken?: string };
+    public config: Required<SonicConfig> & { bearerToken?: string; sessionToken?: string };
     private sessionId: string | null = null;
     private eventCallback?: (event: SonicEvent) => void;
     private currentPromptName?: string;
@@ -76,6 +77,7 @@ export class SonicClient {
             secretAccessKey: config.secretAccessKey || process.env.NOVA_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || '',
             sessionToken: config.sessionToken || process.env.AWS_SESSION_TOKEN || '',
             bearerToken: config.bearerToken || process.env.AWS_BEARER_TOKEN_BEDROCK || '',
+            agentCoreRuntimeArn: config.agentCoreRuntimeArn || process.env.AGENT_CORE_RUNTIME_ARN || '',
         };
 
         // Initialize AWS Bedrock Runtime client
@@ -693,7 +695,7 @@ export class SonicClient {
     /**
      * Update AWS Credentials for this session
      */
-    updateCredentials(accessKeyId: string, secretAccessKey: string, region: string) {
+    updateCredentials(accessKeyId: string, secretAccessKey: string, region: string, agentCoreRuntimeArn?: string) {
         console.log('[SonicClient] Updating AWS credentials for session');
 
         const clientConfig: any = {
@@ -706,6 +708,12 @@ export class SonicClient {
 
         this.client = new BedrockRuntimeClient(clientConfig);
         this.config.region = region;
+
+        // Store Agent Core Runtime ARN if provided
+        if (agentCoreRuntimeArn) {
+            this.config.agentCoreRuntimeArn = agentCoreRuntimeArn;
+            console.log(`[SonicClient] Updated Agent Core Runtime ARN: ${agentCoreRuntimeArn}`);
+        }
 
         console.log(`[SonicClient] Re-initialized client with new credentials in region: ${region}`);
     }

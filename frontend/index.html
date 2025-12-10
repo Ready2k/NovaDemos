@@ -208,15 +208,24 @@
           style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
       </div>
 
-      <div class="input-group" style="margin-bottom: 20px;">
+      <div class="input-group" style="margin-bottom: 15px;">
         <label for="awsRegion">Region</label>
         <input type="text" id="awsRegion" value="us-east-1" placeholder="us-east-1"
           style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
       </div>
 
-      <div class="modal-actions" style="display: flex; gap: 10px; justify-content: flex-end;">
-        <button id="cancelAwsBtn" class="secondary-btn">Cancel</button>
-        <button id="saveAwsBtn" class="primary-btn">Update Credentials</button>
+      <div class="input-group" style="margin-bottom: 20px;">
+        <label for="agentCoreRuntimeArn">Agent Core Runtime ARN (Optional)</label>
+        <input type="text" id="agentCoreRuntimeArn" placeholder="arn:aws:bedrock-agentcore:..."
+          style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+      </div>
+
+      <div class="modal-actions" style="display: flex; gap: 10px; justify-content: space-between;">
+        <button id="clearAwsBtn" class="danger-btn" style="font-size: 0.85rem;">Clear Stored</button>
+        <div style="display: flex; gap: 10px;">
+          <button id="cancelAwsBtn" class="secondary-btn">Cancel</button>
+          <button id="saveAwsBtn" class="primary-btn">Update Credentials</button>
+        </div>
       </div>
     </div>
   </div>
