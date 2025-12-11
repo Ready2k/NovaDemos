@@ -15,6 +15,12 @@ All notable changes to this project will be documented in this file.
   - **Tool Integration**: Banking tools now work correctly without duplication or protocol errors
   - **Session Memory**: Account details properly remembered within conversation sessions
 
+- **Bedrock Agent Mode Selection**: Fixed frontend bug preventing "Banking Bot (Agent)" dropdown selection
+  - **Root Cause**: Frontend `getSessionConfig()` function only handled custom agents (starting with `agent:`), ignoring built-in `bedrock_agent` option
+  - **Solution**: Updated frontend logic to properly handle built-in `bedrock_agent` mode selection
+  - **Impact**: Users can now select "Banking Bot (Agent)" from dropdown and server correctly receives `brainMode: 'bedrock_agent'`
+  - **Verification**: Server logs show "Switched Brain Mode to: bedrock_agent" and "Sending Banking Bot greeting to TTS..."
+
 ### Added
 - **Dynamic AWS Configuration GUI**: Added Agent Core Runtime ARN field to AWS Configuration panel
   - New input field for Agent Core Runtime ARN in the AWS Configuration modal

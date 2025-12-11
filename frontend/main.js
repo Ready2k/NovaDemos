@@ -400,6 +400,12 @@ class VoiceAssistant {
                 brainMode = 'raw_nova';
             }
         }
+        // If user selected the built-in "Banking Bot (Agent)" option, use default agent
+        else if (brainMode === 'bedrock_agent') {
+            // Use default agent configuration from server
+            agentId = undefined; // Server will use default agent
+            agentAliasId = undefined; // Server will use default agent
+        }
 
         // Get selected tools
         const selectedTools = [];

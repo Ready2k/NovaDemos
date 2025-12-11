@@ -12,6 +12,10 @@ This directory contains all test files, scripts, and logs for the Voice S2S proj
 - `test-chat-duplication.js` - Chat response deduplication test
 - `test-balance-duplication.js` - Banking balance request duplication test
 - `test-internal-duplication.js` - Internal response duplication test
+- `test-bedrock-agent-mode.js` - Bedrock Agent mode configuration test
+- `test-bedrock-agent-simple.js` - Simple Bedrock Agent mode test
+- `test-brain-mode-switching.js` - Brain mode switching verification test
+- `verify-bedrock-agent-fix.js` - Bedrock Agent frontend fix verification
 - `debug-test.js` - Debug mode test
 - `simple-config-test.js` - Simple configuration test
 - `tool-config-test.js` - Tool configuration test

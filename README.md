@@ -48,6 +48,19 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ## Recent Updates (December 2025)
 
+### ✅ Latest: Bedrock Agent Mode Fixed (Dec 11, 2025)
+- **Fixed**: "Banking Bot (Agent)" dropdown selection now works correctly
+- **Issue**: Frontend was ignoring built-in `bedrock_agent` option, only handling custom agents
+- **Solution**: Updated `getSessionConfig()` to properly handle built-in bedrock_agent mode
+- **Impact**: Users can now access banking workflows via the dropdown menu
+- **Verification**: Server logs show proper brain mode switching and Banking Bot activation
+
+### ✅ Chat Duplication Issue Resolved (Dec 11, 2025)
+- **Fixed**: Nova Sonic conversation context accumulation causing duplicate responses
+- **Root Cause**: Cross-modal text inputs were accumulating in Nova's conversation memory
+- **Solution**: Enhanced response processing with dual deduplication system
+- **Impact**: Clean, non-repetitive chat responses while preserving voice functionality
+
 ### 🔧 Chat Duplication Fix (Latest)
 - **Resolved Nova Sonic cross-modal conversation accumulation**: Fixed issue where chat responses would repeat previous messages
 - **Internal deduplication**: Eliminated duplicate sentences within single responses (e.g., "Hello!Hello!")
