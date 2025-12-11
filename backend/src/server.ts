@@ -14,6 +14,20 @@ import * as dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Version and build info
+let VERSION_INFO;
+try {
+    VERSION_INFO = JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8'));
+} catch (error) {
+    // Fallback if build-info.json doesn't exist
+    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    VERSION_INFO = {
+        version: packageJson.version,
+        buildTime: new Date().toISOString(),
+        name: packageJson.name
+    };
+}
+
 // Utility function to add timestamps to logs
 function logWithTimestamp(level: string, message: string) {
     const timestamp = new Date().toISOString();
@@ -813,6 +827,12 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    if (req.url === '/api/version') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(VERSION_INFO));
+        return;
+    }
+
     // Serve static files
     let filePath = req.url === '/' ? '/index.html' : req.url || '/index.html';
     // Remove query parameters
@@ -919,7 +939,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     ws.send(JSON.stringify({
         type: 'connected',
         sessionId,
-        message: 'Connected to Nova 2 Sonic'
+        message: 'Connected to Nova 2 Sonic',
+        version: VERSION_INFO
     }));
 
     // Handle incoming messages (JSON config or binary audio)

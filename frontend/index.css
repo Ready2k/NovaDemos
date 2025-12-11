@@ -184,6 +184,13 @@ header {
     border-bottom: var(--glass-border);
 }
 
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
 h1 {
     font-size: 1.8rem;
     margin: 0;
@@ -222,6 +229,17 @@ h1 {
     background: rgba(99, 102, 241, 0.1);
     color: #6366f1;
     animation: pulse 2s infinite;
+}
+
+.version-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(148, 163, 184, 0.1);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    font-family: 'Monaco', 'Menlo', monospace;
 }
 
 /* Transcript Area */

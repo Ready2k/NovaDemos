@@ -557,6 +557,12 @@ class VoiceAssistant {
                             case 'connected':
                                 this.sessionId = message.sessionId;
                                 this.log(`Connected: ${message.sessionId}`, 'success');
+                                
+                                // Display version information
+                                if (message.version) {
+                                    this.updateVersionInfo(message.version);
+                                }
+                                
                                 if (this.debugContent) {
                                     const timestamp = new Date().toISOString();
                                     this.debugContent.innerHTML = `
@@ -566,6 +572,7 @@ class VoiceAssistant {
                                                 <div><strong>Session ID:</strong> ${this.sessionId}</div>
                                                 <div><strong>Connected:</strong> ${timestamp}</div>
                                                 <div><strong>Status:</strong> Active</div>
+                                                ${message.version ? `<div><strong>Version:</strong> ${message.version.version}</div>` : ''}
                                             </div>
                                         </div>
                                     `;
@@ -808,6 +815,49 @@ class VoiceAssistant {
 
         // Apply mode-specific constraints
         this.updateUIMode();
+    }
+
+    /**
+     * Load version information from server
+     */
+    async loadVersionInfo() {
+        try {
+            const response = await fetch('/api/version');
+            if (response.ok) {
+                const versionData = await response.json();
+                this.updateVersionInfo(versionData);
+            } else {
+                // Fallback to default display
+                const versionEl = document.getElementById('version-info');
+                if (versionEl) {
+                    versionEl.textContent = 'Version unavailable';
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load version info:', error);
+            const versionEl = document.getElementById('version-info');
+            if (versionEl) {
+                versionEl.textContent = 'Version unavailable';
+            }
+        }
+    }
+
+    /**
+     * Update version information display
+     */
+    updateVersionInfo(versionData) {
+        const versionEl = document.getElementById('version-info');
+        if (versionEl && versionData) {
+            const buildDate = new Date(versionData.buildTime);
+            const formattedDate = buildDate.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            versionEl.textContent = `v${versionData.version} • Built: ${formattedDate}`;
+        }
     }
 
     /**
@@ -1603,6 +1653,7 @@ class VoiceAssistant {
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new VoiceAssistant();
     window.app.loadPrompts(); // Load prompts immediately
+    window.app.loadVersionInfo(); // Load version info immediately
 });
 
 // Clean up on page unload

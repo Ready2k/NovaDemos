@@ -4,7 +4,7 @@
   "description": "Real-time voice-to-voice assistant backend with Amazon Nova Sonic",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs'); const pkg=require('./package.json'); fs.writeFileSync('dist/build-info.json', JSON.stringify({version:pkg.version,buildTime:new Date().toISOString(),name:pkg.name}, null, 2));\"",
     "start": "node dist/server.js",
     "dev": "tsc && node dist/server.js"
   },
