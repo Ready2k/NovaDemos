@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Chat Duplication Issue**: Resolved Nova Sonic cross-modal conversation context accumulation causing response duplication
+  - **Internal Deduplication**: Fixed duplicate sentences within single responses (e.g., "Hello!Hello!")
+  - **Cross-Response Deduplication**: Prevented entire previous responses from being repeated in new messages
+  - **Smart Response Parsing**: Enhanced `extractNewContent()` with exact and fuzzy matching algorithms
+  - **Dual Storage System**: Store both original and processed responses for accurate comparison
+  - **Processing Pipeline**: Internal deduplication → Cross-response deduplication → Clean output
+  - **Preserved Voice Mode**: All fixes apply only to chat mode, voice-to-voice remains unaffected
+  - **Tool Integration**: Banking tools now work correctly without duplication or protocol errors
+  - **Session Memory**: Account details properly remembered within conversation sessions
+
 ### Added
 - **Dynamic AWS Configuration GUI**: Added Agent Core Runtime ARN field to AWS Configuration panel
   - New input field for Agent Core Runtime ARN in the AWS Configuration modal

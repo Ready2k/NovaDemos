@@ -495,6 +495,12 @@ export class SonicClient {
             if (this.textQueue.length > 0) {
                 const text = this.textQueue.shift()!;
                 console.log('[SonicClient] Processing text input:', text);
+                
+                // SIMPLE FIX: Just reset transcript state - let Nova Sonic handle conversation naturally
+                // The deduplication system in server.ts will filter out any duplicates
+                console.log('[SonicClient] User text input received. Resetting transcript state.');
+                this.currentTurnTranscript = '';
+                this.isTurnComplete = true;
 
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
@@ -550,7 +556,6 @@ export class SonicClient {
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textEndEvent)) } };
 
                 // 3. Send Silent Audio (Required by Nova Sonic if no other audio is present)
-                // The API requires at least one audio content per prompt.
                 if (!this.currentContentName) {
                     const silenceContentName = `audio-silence-${Date.now()}`;
 
@@ -561,7 +566,7 @@ export class SonicClient {
                                 promptName: promptName,
                                 contentName: silenceContentName,
                                 type: "AUDIO",
-                                interactive: true, // Must be true for cross-modal
+                                interactive: true,
                                 role: "USER",
                                 audioInputConfiguration: {
                                     mediaType: "audio/lpcm",
@@ -878,8 +883,8 @@ export class SonicClient {
                         
                         // Reset transcript if:
                         // 1. Role changes (USER -> ASSISTANT or vice versa)
-                        // 2. Previous turn completed (isTurnComplete flag)
-                        // 3. It's a TEXT content start for ASSISTANT after a turn completed
+                        // 2. Previous turn completed (isTurnComplete flag) AND it's a TEXT content start
+                        // 3. FIXED: Only reset on actual role changes or completed turns, not every content chunk
                         const roleChanged = normalizedRole !== currentRoleNormalized;
                         const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
                         

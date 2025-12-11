@@ -90,6 +90,131 @@ function areSimilarMessages(msg1: string, msg2: string): boolean {
 }
 
 /**
+ * Extract new content from accumulated Nova Sonic response
+ * 
+ * Nova Sonic maintains conversation context and accumulates responses like:
+ * "Hello! How can I help you?I am an AI assistant. What do you need?"
+ * 
+ * This function extracts only the new content: "I am an AI assistant. What do you need?"
+ */
+function extractNewContent(fullResponse: string, previousResponses: string[]): string {
+    if (!previousResponses || previousResponses.length === 0) {
+        return fullResponse;
+    }
+    
+    // Find the longest previous response that appears at the start of current response
+    let longestMatch = '';
+    let bestMatchLength = 0;
+    
+    for (const prevResponse of previousResponses) {
+        // First try exact match
+        if (fullResponse.startsWith(prevResponse) && prevResponse.length > longestMatch.length) {
+            longestMatch = prevResponse;
+            bestMatchLength = prevResponse.length;
+            continue;
+        }
+        
+        // Try fuzzy matching - find the longest common prefix
+        let commonLength = 0;
+        const minLength = Math.min(fullResponse.length, prevResponse.length);
+        
+        for (let i = 0; i < minLength; i++) {
+            if (fullResponse[i] === prevResponse[i]) {
+                commonLength = i + 1;
+            } else {
+                break;
+            }
+        }
+        
+        // If we found a substantial common prefix (at least 50 characters)
+        if (commonLength > 50 && commonLength > bestMatchLength) {
+            longestMatch = fullResponse.substring(0, commonLength);
+            bestMatchLength = commonLength;
+        }
+    }
+    
+    // If we found a match, extract only the new content
+    if (bestMatchLength > 0) {
+        const newContent = fullResponse.substring(bestMatchLength).trim();
+        console.log(`[ResponseParser] Extracted new content from accumulated response:`);
+        console.log(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
+        console.log(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
+        console.log(`[ResponseParser] New: "${newContent.substring(0, 50)}..."`);
+        return newContent;
+    }
+    
+    return fullResponse;
+}
+
+/**
+ * Remove internal duplication within a single response
+ * 
+ * Nova Sonic sometimes generates responses like:
+ * "Hello! How can I help you?Hello! How can I help you? I'm here to assist."
+ * 
+ * This function detects and removes such internal duplications.
+ */
+function removeInternalDuplication(text: string): string {
+    if (!text || text.length < 20) {
+        return text;
+    }
+    
+    // Split into sentences for analysis
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 5);
+    
+    if (sentences.length < 2) {
+        return text;
+    }
+    
+    // Check for repeated sentences at the beginning
+    const firstSentence = sentences[0].trim();
+    const secondSentence = sentences[1].trim();
+    
+    // If the first two sentences are very similar or identical
+    if (firstSentence.length > 10 && secondSentence.length > 10) {
+        const similarity = calculateStringSimilarity(firstSentence.toLowerCase(), secondSentence.toLowerCase());
+        
+        if (similarity > 0.8) {
+            console.log(`[InternalDedup] Detected internal duplication (similarity: ${similarity.toFixed(2)})`);
+            console.log(`[InternalDedup] First: "${firstSentence.substring(0, 50)}..."`);
+            console.log(`[InternalDedup] Second: "${secondSentence.substring(0, 50)}..."`);
+            
+            // Remove the first sentence and return the rest
+            const remainingSentences = sentences.slice(1);
+            const cleanedText = remainingSentences.join('. ').trim();
+            
+            // Add proper punctuation if needed
+            if (cleanedText && !cleanedText.match(/[.!?]$/)) {
+                return cleanedText + '.';
+            }
+            
+            console.log(`[InternalDedup] Cleaned: "${cleanedText.substring(0, 50)}..."`);
+            return cleanedText;
+        }
+    }
+    
+    // Check for exact substring duplication (like "Hello!Hello!")
+    const words = text.split(' ');
+    if (words.length >= 4) {
+        const halfLength = Math.floor(words.length / 2);
+        const firstHalf = words.slice(0, halfLength).join(' ');
+        const secondHalf = words.slice(halfLength, halfLength * 2).join(' ');
+        
+        if (firstHalf.length > 10 && firstHalf === secondHalf) {
+            console.log(`[InternalDedup] Detected exact duplication in first half`);
+            console.log(`[InternalDedup] Duplicated part: "${firstHalf.substring(0, 50)}..."`);
+            
+            // Return only the second half plus any remaining content
+            const remaining = words.slice(halfLength).join(' ');
+            console.log(`[InternalDedup] Cleaned: "${remaining.substring(0, 50)}..."`);
+            return remaining;
+        }
+    }
+    
+    return text;
+}
+
+/**
  * Helper to call AWS AgentCore Runtime
  * NOW SUPPORTS: Multi-Turn Loop (The "Orchestrator" Pattern)
  */
@@ -289,6 +414,12 @@ function loadTools(): any[] {
 
 // Progressive filler system for tool execution feedback
 async function startProgressiveFiller(session: ClientSession, toolName: string, toolUseId: string) {
+    // CRITICAL FIX: Prevent duplicate filler calls for the same tool execution
+    if (session.currentToolExecution?.toolUseId === toolUseId) {
+        console.log(`[Server] Progressive filler already active for ${toolName} (ID: ${toolUseId}) - skipping duplicate call`);
+        return;
+    }
+    
     // Clear any existing timers
     clearProgressiveFiller(session);
     
@@ -320,7 +451,7 @@ async function startProgressiveFiller(session: ClientSession, toolName: string, 
         }
     }, 2000); // 2 seconds as requested by user
     
-    // IMMEDIATE AUDIO FILLER: Send audio immediately when tool starts
+    // IMMEDIATE AUDIO FILLER: Send audio immediately when tool starts (but only once per tool execution)
     if (session.sonicClient && session.sonicClient.getSessionId()) {
         try {
             console.log(`[Server] Playing immediate filler audio for ${toolName}`);
@@ -519,6 +650,56 @@ function calculateStringSimilarity(str1: string, str2: string): number {
     return commonWords.length / Math.max(words1.length, words2.length);
 }
 
+/**
+ * Check if a tool execution is a duplicate of a recent execution
+ */
+function isRecentToolExecution(session: ClientSession, toolName: string, parameters: any): { isDuplicate: boolean; result?: any } {
+    if (!session.recentToolExecutions) {
+        session.recentToolExecutions = new Map();
+    }
+    
+    const paramKey = JSON.stringify(parameters);
+    const executionKey = `${toolName}:${paramKey}`;
+    const now = Date.now();
+    
+    // Check for recent execution (within 10 seconds)
+    const recentExecution = session.recentToolExecutions.get(executionKey);
+    if (recentExecution && (now - recentExecution.timestamp) < 10000) {
+        console.log(`[ToolDedup] Found recent execution of ${toolName} within 10 seconds - using cached result`);
+        return { isDuplicate: true, result: recentExecution.result };
+    }
+    
+    // Clean up old executions (older than 30 seconds)
+    for (const [key, execution] of session.recentToolExecutions.entries()) {
+        if (now - execution.timestamp > 30000) {
+            session.recentToolExecutions.delete(key);
+        }
+    }
+    
+    return { isDuplicate: false };
+}
+
+/**
+ * Record a tool execution to prevent duplicates
+ */
+function recordToolExecution(session: ClientSession, toolName: string, parameters: any, result: any) {
+    if (!session.recentToolExecutions) {
+        session.recentToolExecutions = new Map();
+    }
+    
+    const paramKey = JSON.stringify(parameters);
+    const executionKey = `${toolName}:${paramKey}`;
+    
+    session.recentToolExecutions.set(executionKey, {
+        toolName,
+        parameters,
+        timestamp: Date.now(),
+        result
+    });
+    
+    console.log(`[ToolDedup] Recorded execution of ${toolName} for deduplication`);
+}
+
 // generateFillerWithSonic function removed - Nova 2 Sonic handles filler natively
 
 // prewarmFillerCache function removed - Nova 2 Sonic handles filler natively
@@ -559,7 +740,7 @@ interface ClientSession {
     // Deduplication
     lastAgentReply?: string;
     lastAgentReplyTime?: number;
-    recentAgentReplies?: Array<{text: string, time: number}>; // Track multiple recent messages
+    recentAgentReplies?: Array<{text: string, originalText?: string, time: number}>; // Track multiple recent messages
     // Tools
     tools?: Tool[];
     // Audio Buffering (Lookahead)
@@ -590,6 +771,14 @@ interface ClientSession {
         timestamp: number;
         toolName: string;
         query: string;
+    }>;
+    
+    // Tool Execution Deduplication
+    recentToolExecutions?: Map<string, {
+        toolName: string;
+        parameters: any;
+        timestamp: number;
+        result: any;
     }>;
 }
 
@@ -1454,41 +1643,62 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 console.log(`[DEBUG] Transcript received: "${text}"`);
+                
+                // CRITICAL FIX: Apply response parsing immediately for assistant responses
+                let processedText = text;
+                if (role === 'assistant') {
+                    // First, remove internal duplication within the same response
+                    processedText = removeInternalDuplication(text);
+                    console.log(`[InternalDedup] Applied to text: "${processedText.substring(0, 50)}..."`);
+                    
+                    // Then, apply cross-response deduplication if we have previous responses
+                    if (session.recentAgentReplies && session.recentAgentReplies.length > 0) {
+                        const previousResponses = session.recentAgentReplies.map(r => r.text);
+                        const newContent = extractNewContent(processedText, previousResponses);
+                        
+                        // Only use new content if it's substantial
+                        if (newContent.length > 3 && newContent.trim().length > 0) {
+                            processedText = newContent;
+                            console.log(`[ResponseParser] Cross-response parsing applied: "${processedText.substring(0, 50)}..."`);
+                        }
+                    }
+                }
+                
                 console.log(`[DEBUG] hasJson: ${hasJson}, Enabled Tools: ${JSON.stringify(session.tools?.map(t => t.toolSpec.name))}`);
 
                 // VERBOSE DEBUGGING
                 if (hasJson || isFinal) {
-                    console.log(`[Server] Transcript Debug - Final: ${isFinal}, HasJSON: ${hasJson}, Text Preview: ${text.substring(0, 50)}...`);
+                    console.log(`[Server] Transcript Debug - Final: ${isFinal}, HasJSON: ${hasJson}, Text Preview: ${processedText.substring(0, 50)}...`);
                 }
 
                 // Check for COMPLETE JSON object even if not final
                 // This allows eager execution while the model is still streaming silence or padding
-                const hasCompleteJson = hasJson && text.includes('}') && text.indexOf('{') < text.lastIndexOf('}');
+                const hasCompleteJson = hasJson && processedText.includes('}') && processedText.indexOf('{') < processedText.lastIndexOf('}');
 
                 if (hasCompleteJson || (hasJson && isFinal)) {
-                    console.log('[Server] Detected Potential JSON Tool Call (Strategy: Eager/Final):', text);
+                    console.log('[Server] Detected Potential JSON Tool Call (Strategy: Eager/Final):', processedText);
                     try {
                         let jsonStr = "";
 
                         // PRIORITY 1: Check for "name": field (Nova's native format)
-                        if (text.includes('"name":')) {
+                        if (processedText.includes('"name":')) {
                             console.log('[Server] JSON using "name" field. Attempting recovery.');
-                            const nameIndex = text.indexOf('"name":');
+                            const nameIndex = processedText.indexOf('"name":');
                             
                             // Try to find the last brace after "name"
-                            let lastBrace = text.lastIndexOf('}');
+                            let lastBrace = processedText.lastIndexOf('}');
                             let extracted = "";
                             
                             if (lastBrace !== -1 && lastBrace > nameIndex) {
                                 // Complete JSON found
-                                extracted = "{" + text.substring(nameIndex, lastBrace + 1) + "}";
+                                extracted = "{" + processedText.substring(nameIndex, lastBrace + 1) + "}";
                             } else {
                                 // Incomplete JSON - try to reconstruct
                                 console.log('[Server] Incomplete JSON detected, attempting reconstruction...');
                                 
-                                // Extract from "name" to end of arguments field or end of text
-                                const nameMatch = text.match(/"name":\s*"([^"]+)"/);
-                                const argsMatch = text.match(/"arguments":\s*(\{[^}]*\}|\{\}|""|\s*)/);
+                                // Extract from "name" to end of arguments field or end of processedText
+                                const nameMatch = processedText.match(/"name":\s*"([^"]+)"/);
+                                const argsMatch = processedText.match(/"arguments":\s*(\{[^}]*\}|\{\}|""|\s*)/);
                                 
                                 if (nameMatch) {
                                     const toolName = nameMatch[1];
@@ -1760,6 +1970,28 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         return;
                     }
                     
+                    // CRITICAL FIX: Apply response parsing to displayText for assistant responses
+                    if (role === 'assistant') {
+                        // Store the original response before any processing for cross-response comparison
+                        const originalDisplayText = displayText;
+                        
+                        // First, remove internal duplication within the same response
+                        displayText = removeInternalDuplication(displayText);
+                        console.log(`[InternalDedup] Applied to displayText: "${displayText.substring(0, 50)}..."`);
+                        
+                        // Then apply cross-response deduplication if we have previous responses
+                        if (session.recentAgentReplies && session.recentAgentReplies.length > 0) {
+                            const previousResponses = session.recentAgentReplies.map(r => r.originalText || r.text);
+                            const newContent = extractNewContent(originalDisplayText, previousResponses);
+                            
+                            // Only use new content if it's substantial
+                            if (newContent.length > 3 && newContent.trim().length > 0) {
+                                displayText = newContent;
+                                console.log(`[ResponseParser] Applied to displayText: "${displayText.substring(0, 50)}..."`);
+                            }
+                        }
+                    }
+                    
                     // Handle streaming transcripts
                     if (event.data.isStreaming) {
                         // Apply deduplication to streaming transcripts too
@@ -1843,27 +2075,42 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     break;
                                 }
                                 
-                                // Similar content
-                                if (areSimilarMessages(recentMsg.text, displayText)) {
-                                    isDuplicateOrSimilar = true;
-                                    skipReason = 'similar content';
-                                    break;
-                                }
+                                // Similar content - TEMPORARILY DISABLED FOR DEBUGGING
+                                // if (areSimilarMessages(recentMsg.text, displayText)) {
+                                //     isDuplicateOrSimilar = true;
+                                //     skipReason = 'similar content';
+                                //     break;
+                                // }
                             }
                         }
                         
                         if (!isDuplicateOrSimilar) {
+                            // CRITICAL FIX: Extract new content from accumulated Nova Sonic responses
+                            let finalText = displayText;
+                            if (role === 'assistant' && session.recentAgentReplies && session.recentAgentReplies.length > 0) {
+                                const previousResponses = session.recentAgentReplies.map(r => r.text);
+                                const newContent = extractNewContent(displayText, previousResponses);
+                                
+                                // Only use new content if it's substantial (not just punctuation/whitespace)
+                                if (newContent.length > 3 && newContent.trim().length > 0) {
+                                    finalText = newContent;
+                                    console.log(`[ResponseParser] Using extracted content: "${finalText.substring(0, 50)}..."`);
+                                } else {
+                                    console.log(`[ResponseParser] New content too short, using full response`);
+                                }
+                            }
+                            
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
-                                text: displayText,
+                                text: finalText,
                                 isFinal: true,
                                 isStreaming: false
                             }));
                             
-                            // Track message for deduplication
+                            // Track message for deduplication (store original full response)
                             if (role === 'assistant') {
-                                session.lastAgentReply = displayText;
+                                session.lastAgentReply = displayText; // Store full response for context
                                 session.lastAgentReplyTime = now;
                                 
                                 // Add to recent messages list
@@ -1871,11 +2118,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     session.recentAgentReplies = [];
                                 }
                                 session.recentAgentReplies.push({
-                                    text: displayText,
+                                    text: finalText, // Store processed response
+                                    originalText: displayText, // Store original response for cross-response comparison
                                     time: now
                                 });
                             }
-                            console.log(`[Server] Sent final transcript: "${displayText.substring(0, 50)}..."`);
+                            console.log(`[Server] Sent final transcript: "${finalText.substring(0, 50)}..."`);
                         } else {
                             console.log(`[Dedup] SKIPPED transcript (${skipReason}): "${displayText.substring(0, 50)}..."`);
                         }
@@ -1906,6 +2154,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Check cache first for interrupted/repeated queries
                 const userQuery = session.lastUserTranscript || '';
                 const toolInput = toolUse.content || toolUse.input;
+                
+                // CRITICAL FIX: Check for recent duplicate tool executions
+                const recentExecution = isRecentToolExecution(session, actualToolName, toolInput);
+                if (recentExecution.isDuplicate) {
+                    console.log(`[ToolDedup] Skipping duplicate tool execution: ${actualToolName} (ID: ${toolUse.toolUseId})`);
+                    
+                    // Send the cached result immediately without progressive filler
+                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            recentExecution.result,
+                            false
+                        );
+                        logWithTimestamp('[Server]', `Duplicate tool result sent to Nova Sonic: ${actualToolName}`);
+                    }
+                    return;
+                }
                 console.log(`[CACHE DEBUG] ===== CACHE CHECK START =====`);
                 console.log(`[CACHE DEBUG] Tool: ${actualToolName}`);
                 console.log(`[CACHE DEBUG] User Query: "${userQuery}"`);
@@ -2117,6 +2382,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolEndTime = Date.now();
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
+                            
+                            // Record this tool execution to prevent duplicates
+                            recordToolExecution(session, actualToolName, toolInput, { text: cleanResult });
                         } else {
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');
                             // Try to restart the session and send the result

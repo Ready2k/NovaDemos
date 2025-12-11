@@ -48,6 +48,15 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ## Recent Updates (December 2025)
 
+### 🔧 Chat Duplication Fix (Latest)
+- **Resolved Nova Sonic cross-modal conversation accumulation**: Fixed issue where chat responses would repeat previous messages
+- **Internal deduplication**: Eliminated duplicate sentences within single responses (e.g., "Hello!Hello!")
+- **Cross-response deduplication**: Prevented entire previous responses from appearing in new messages
+- **Smart response parsing**: Enhanced algorithms with exact and fuzzy matching for Nova Sonic's conversation context
+- **Dual storage system**: Store both original and processed responses for accurate comparison
+- **Preserved voice functionality**: All fixes apply only to chat mode, voice-to-voice remains unaffected
+- **Improved tool integration**: Banking tools now work correctly without duplication or protocol errors
+
 ### 🎵 Progressive Filler System Enhancement
 - **Fixed tool execution silence**: Eliminated 5-7 second silence periods during tool execution
 - **Immediate audio feedback**: "Let me check that for you" plays instantly when tools are called

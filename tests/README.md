@@ -9,6 +9,9 @@ This directory contains all test files, scripts, and logs for the Voice S2S proj
 - `test-native-client.js` - Native tool capability test client
 - `test-complete-native.js` - Complete native tool test
 - `test-progressive-filler.js` - Progressive filler and caching system test
+- `test-chat-duplication.js` - Chat response deduplication test
+- `test-balance-duplication.js` - Banking balance request duplication test
+- `test-internal-duplication.js` - Internal response duplication test
 - `debug-test.js` - Debug mode test
 - `simple-config-test.js` - Simple configuration test
 - `tool-config-test.js` - Tool configuration test
@@ -24,6 +27,7 @@ This directory contains all test files, scripts, and logs for the Voice S2S proj
 
 - `run-test.sh` - Run the basic Nova Sonic test
 - `run-native-test.sh` - Run the native tool capability test
+- `run-chat-duplication-test.sh` - Run the chat deduplication test
 - `restart.sh` - Restart the Voice S2S service
 
 ## Usage
