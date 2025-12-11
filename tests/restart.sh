@@ -32,4 +32,8 @@ npm run build
 
 # 3. Start Server
 echo "[3/3] Starting server..."
+# Ensure logs directory exists
+mkdir -p "$TESTS_DIR/logs"
+# Create server.log if it doesn't exist
+touch "$TESTS_DIR/logs/server.log"
 npm start > "$TESTS_DIR/logs/server.log" 2>&1
