@@ -1,6 +1,6 @@
 {
-  "name": "agentcore_transactions", 
-  "description": "Get recent transaction history using AgentCore Gateway. Requires both account ID and sort code for verification.",
+  "name": "get_account_transactions",
+  "description": "Returns a list of recent transactions.",
   "input_schema": {
     "type": "object",
     "properties": {
@@ -9,7 +9,7 @@
         "description": "The unique identifier for the customer's bank account (e.g., 10-digit number)."
       },
       "sortCode": {
-        "type": "string",
+        "type": "string", 
         "description": "The 6-digit sort code required alongside the account ID for verification."
       }
     },

@@ -114,42 +114,12 @@ export class AgentCoreGatewayClient {
             if (data.body && data.body.responseBody) {
                 console.log(`[AgentCoreGateway] Found responseBody:`, data.body.responseBody);
                 
+                // The responseBody contains a string with Java object notation
+                // Extract the JSON part from the text field
                 const responseBodyStr = data.body.responseBody;
                 console.log(`[AgentCoreGateway] Raw responseBody string:`, responseBodyStr);
                 
-                // Special handling for transaction data (which comes as concatenated JSON objects)
-                if (toolName === 'get_account_transactions' || actualToolName.includes('TransactionHistory')) {
-                    console.log(`[AgentCoreGateway] Processing transaction data...`);
-                    
-                    // Look for multiple JSON objects in the response
-                    const jsonObjectRegex = /\{[^{}]*\}/g;
-                    const matches = responseBodyStr.match(jsonObjectRegex);
-                    
-                    if (matches && matches.length > 0) {
-                        console.log(`[AgentCoreGateway] Found ${matches.length} JSON objects in transaction response`);
-                        
-                        try {
-                            const transactions = matches.map((match: string) => JSON.parse(match));
-                            console.log(`[AgentCoreGateway] Parsed transactions:`, transactions);
-                            
-                            // Format transactions for display
-                            if (transactions.length > 0) {
-                                const formattedTransactions = transactions.map((t: any, i: number) => {
-                                    const amount = t.amount || t.transactionAmount || '0.00';
-                                    const description = t.description || t.merchant || t.merchantName || 'Transaction';
-                                    const date = t.date || t.transactionDate || 'Unknown date';
-                                    return `${i + 1}. ${description}: £${amount} on ${date}`;
-                                }).join('\n');
-                                
-                                return `Here are your recent transactions:\n${formattedTransactions}`;
-                            }
-                        } catch (parseError) {
-                            console.error(`[AgentCoreGateway] Failed to parse transaction JSON objects:`, parseError);
-                        }
-                    }
-                }
-                
-                // Look for the JSON content in the text field using regex (for other tools)
+                // Look for the JSON content in the text field using regex
                 const textMatch = responseBodyStr.match(/text=\{([^}]+)\}/);
                 if (textMatch) {
                     try {
@@ -166,7 +136,7 @@ export class AgentCoreGatewayClient {
                             if (innerResponse.message) {
                                 return innerResponse.message;
                             } else if (innerResponse.accountId && innerResponse.balance !== undefined) {
-                                return `The balance for account ${innerResponse.accountId} is £${innerResponse.balance}.`;
+                                return `The balance for account ${innerResponse.accountId} is ${innerResponse.currency || '$'}${innerResponse.balance}.`;
                             } else {
                                 return JSON.stringify(innerResponse);
                             }
@@ -200,7 +170,7 @@ export class AgentCoreGatewayClient {
                         if (innerResponse.message) {
                             return innerResponse.message;
                         } else if (innerResponse.accountId && innerResponse.balance !== undefined) {
-                            return `The balance for account ${innerResponse.accountId} is £${innerResponse.balance}.`;
+                            return `The balance for account ${innerResponse.accountId} is ${innerResponse.currency || '$'}${innerResponse.balance}.`;
                         } else {
                             return JSON.stringify(innerResponse);
                         }

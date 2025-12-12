@@ -294,7 +294,12 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             // CHECK FOR TAGS (<search>) - use 's' flag to match newlines
             const searchMatch = agentText.match(/<search>(.*?)<\/search>/s);
 
-            if (searchMatch) {
+            // BANKING TOOL FIX: Skip orchestrator loop for banking tools
+            const isBankingTool = ['agentcore_balance', 'agentcore_transactions', 'perform_idv_check', 
+                                   'create_dispute_case', 'lookup_merchant_alias', 'manage_recent_interactions', 
+                                   'update_dispute_case'].includes(qualifier);
+
+            if (searchMatch && !isBankingTool) {
                 const query = searchMatch[1];
 
                 // Execute actual tool logic based on query
