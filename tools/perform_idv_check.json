@@ -1,0 +1,12 @@
+{
+  "name": "perform_idv_check",
+  "description": "Validates credentials. Returns 'auth_status' (VERIFIED/FAILED), 'account_status' (OPEN/FROZEN), and 'marker_Vunl' (0-10 vulnerability score).",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "accountNumber": { "type": "string", "description": "8-digit account number." },
+      "sortCode": { "type": "string", "description": "6-digit sort code." }
+    },
+    "required": ["accountNumber", "sortCode"]
+  }
+}

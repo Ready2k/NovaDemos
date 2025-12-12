@@ -1,0 +1,11 @@
+{
+  "name": "lookup_merchant_alias",
+  "description": "Searches for a merchant by statement name to find aliases (e.g. ABC Holdings -> Love Coffee).",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "statementName": { "type": "string", "description": "Name on the bank statement." }
+    },
+    "required": ["statementName"]
+  }
+}

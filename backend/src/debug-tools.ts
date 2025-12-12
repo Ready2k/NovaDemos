@@ -12,13 +12,18 @@ function loadTools(): any[] {
                 const toolDef = JSON.parse(content);
 
                 // Transform to Bedrock Tool Spec format
-                // 1. Rename input_schema -> inputSchema
+                // 1. Rename input_schema -> inputSchema (also support 'parameters')
                 // 2. Wrap schema in { json: ... }
+                const schema = toolDef.input_schema || toolDef.inputSchema || toolDef.parameters;
                 const toolSpec: any = {
                     name: toolDef.name,
                     description: toolDef.description,
                     inputSchema: {
-                        json: toolDef.input_schema || toolDef.inputSchema
+                        json: JSON.stringify(schema || {
+                            type: "object",
+                            properties: {},
+                            required: []
+                        })
                     }
                 };
 
