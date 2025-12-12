@@ -8,6 +8,7 @@ import { callBankAgent } from './bedrock-agent-client';
 import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
+import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
 
 import * as dotenv from 'dotenv';
 
@@ -830,6 +831,19 @@ const server = http.createServer((req, res) => {
     if (req.url === '/api/version') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(VERSION_INFO));
+        return;
+    }
+
+    if (req.url === '/api/voices') {
+        try {
+            const voices = formatVoicesForFrontend();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(voices));
+        } catch (error) {
+            console.error('[Server] Error fetching voices:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to fetch voices' }));
+        }
         return;
     }
 

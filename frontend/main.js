@@ -9,7 +9,9 @@
 
 
 
-const VOICE_PRESETS = [
+// Voice presets will be loaded dynamically from the backend
+let VOICE_PRESETS = [
+    // Fallback voices if dynamic loading fails
     { id: "matthew", name: "Matthew (US Male)" },
     { id: "tiffany", name: "Tiffany (US Female)" },
     { id: "amy", name: "Amy (GB Female)" },
@@ -128,7 +130,7 @@ class VoiceAssistant {
 
         // Initialize UI options first
         // this.initializePresets(); // Moved to loadPrompts
-        this.initializeVoices();
+        this.initializeVoices(); // This is now async but we don't need to await it
         this.initializeTabs();
         this.loadAgents(); // Load custom agents
         this.loadTools(); // Load available tools
@@ -249,15 +251,35 @@ class VoiceAssistant {
     }
 
 
-    initializeVoices() {
+    async initializeVoices() {
         if (!this.voiceSelect) return;
 
+        try {
+            // Fetch voices dynamically from backend
+            const response = await fetch('/api/voices');
+            if (response.ok) {
+                const voices = await response.json();
+                VOICE_PRESETS = voices; // Update global array
+                console.log(`[VoiceAssistant] Loaded ${voices.length} voices from backend`);
+            } else {
+                console.warn('[VoiceAssistant] Failed to fetch voices from backend, using fallback');
+            }
+        } catch (error) {
+            console.warn('[VoiceAssistant] Error fetching voices, using fallback:', error);
+        }
+
+        // Clear existing options
+        this.voiceSelect.innerHTML = '';
+
+        // Populate voice options
         VOICE_PRESETS.forEach(voice => {
             const option = document.createElement('option');
             option.value = voice.id;
             option.textContent = voice.name;
             this.voiceSelect.appendChild(option);
         });
+
+        console.log(`[VoiceAssistant] Initialized ${VOICE_PRESETS.length} voice options`);
     }
 
     initializeTabs() {
