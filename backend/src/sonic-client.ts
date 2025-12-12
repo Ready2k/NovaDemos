@@ -384,6 +384,9 @@ export class SonicClient {
 
                 // OPTIMIZED APPROACH: Send tool result as system message to Nova Sonic
                 const resultText = typeof resultData.result === 'string' ? resultData.result : JSON.stringify(resultData.result);
+                console.log(`[SonicClient] Tool result text being sent to Nova Sonic:`, resultText);
+                console.log(`[SonicClient] Tool result text length:`, resultText.length);
+                console.log(`[SonicClient] Tool result text type:`, typeof resultText);
                 
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
