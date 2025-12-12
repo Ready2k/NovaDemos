@@ -438,105 +438,11 @@ function loadTools(): any[] {
 }
 
 // Progressive filler system for tool execution feedback
+// Progressive filler system completely disabled per user request
 async function startProgressiveFiller(session: ClientSession, toolName: string, toolUseId: string) {
-    // CRITICAL FIX: Prevent duplicate filler calls for the same tool execution
-    if (session.currentToolExecution?.toolUseId === toolUseId) {
-        console.log(`[Server] Progressive filler already active for ${toolName} (ID: ${toolUseId}) - skipping duplicate call`);
-        return;
-    }
-
-    // Clear any existing timers
-    clearProgressiveFiller(session);
-
-    session.isToolExecuting = true;
-    session.currentToolExecution = {
-        toolName,
-        startTime: Date.now(),
-        toolUseId
-    };
-
-    console.log(`[Server] Starting progressive filler for ${toolName} (ID: ${toolUseId})`);
-
-    // WAIT 2 SECONDS BEFORE SHOWING FILLER: Only show filler if tool takes longer than 2 seconds
-    session.primaryFillerTimer = setTimeout(() => {
-        if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
-            console.log(`[Server] Tool taking longer than 2 seconds, showing visual filler for ${toolName}`);
-
-            // Send visual filler after 2 seconds
-            if (session.ws.readyState === WebSocket.OPEN) {
-                session.ws.send(JSON.stringify({
-                    type: 'transcript',
-                    role: 'assistant',
-                    text: "Let me check that for you...",
-                    isFinal: false,
-                    isToolFiller: true
-                }));
-                console.log(`[Server] Sent 2-second visual filler for ${toolName}`);
-            }
-        }
-    }, 2000); // 2 seconds as requested by user
-
-    // IMMEDIATE AUDIO FILLER: Send audio immediately when tool starts (but only once per tool execution)
-    if (session.sonicClient && session.sonicClient.getSessionId()) {
-        try {
-            console.log(`[Server] Playing immediate filler audio for ${toolName}`);
-            // Send filler audio immediately - this should play right away
-            await session.sonicClient.sendText("Let me check that for you");
-            console.log(`[Server] Immediate filler audio sent successfully for ${toolName}`);
-        } catch (error) {
-            console.log(`[Server] Failed to play immediate filler audio: ${error}`);
-        }
-    } else {
-        console.log(`[Server] Cannot play filler audio - Nova Sonic session not active`);
-    }
-
-    // SECONDARY FILLER: After 3 seconds if still processing
-    session.secondaryFillerTimer = setTimeout(async () => {
-        if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
-            console.log(`[Server] Tool taking longer than 3 seconds, playing secondary filler`);
-
-            // Send visual feedback
-            if (session.ws.readyState === WebSocket.OPEN) {
-                session.ws.send(JSON.stringify({
-                    type: 'transcript',
-                    role: 'assistant',
-                    text: "I'm still working on that...",
-                    isFinal: false,
-                    isToolFiller: true
-                }));
-            }
-
-            // Send audio filler
-            if (session.sonicClient && session.sonicClient.getSessionId()) {
-                try {
-                    console.log(`[Server] Playing secondary filler audio`);
-                    await session.sonicClient.sendText("I'm still working on that");
-                } catch (error) {
-                    console.log(`[Server] Failed to play secondary filler audio: ${error}`);
-                }
-            }
-
-            // TERTIARY FILLER: After 8 seconds if still processing
-            session.tertiaryFillerTimer = setTimeout(async () => {
-                if (session.isToolExecuting && session.currentToolExecution?.toolUseId === toolUseId) {
-                    console.log(`[Server] Tool taking longer than 8 seconds, showing tertiary filler`);
-
-                    if (session.ws.readyState === WebSocket.OPEN) {
-                        session.ws.send(JSON.stringify({
-                            type: 'transcript',
-                            role: 'assistant',
-                            text: "Just a moment more...",
-                            isFinal: false,
-                            isToolFiller: true
-                        }));
-                    }
-
-                    // Audio filler disabled during tool execution
-                    console.log(`[Server] Tertiary audio filler disabled during tool execution`);
-                }
-            }, 8000); // 8 seconds total
-        }
-    }, 3000); // 3 seconds for secondary filler
+    // Fillers are disabled.
+    // Console log left for debugging purposes only.
+    console.log(`[Server] Progressive filler skipped for ${toolName} (ID: ${toolUseId}) - Disabled by configuration`);
 }
 
 function clearProgressiveFiller(session: ClientSession) {

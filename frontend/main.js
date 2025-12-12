@@ -538,7 +538,7 @@ class VoiceAssistant {
                     this.ws.send(JSON.stringify(config));
                     this.log('Sent persona configuration');
                     console.log('[Frontend] Sent config:', config);
-                    
+
                     // Show that AI is preparing to greet
                     this.showToast('AI is greeting you...', 'info');
                 } catch (e) {
@@ -579,12 +579,12 @@ class VoiceAssistant {
                             case 'connected':
                                 this.sessionId = message.sessionId;
                                 this.log(`Connected: ${message.sessionId}`, 'success');
-                                
+
                                 // Display version information
                                 if (message.version) {
                                     this.updateVersionInfo(message.version);
                                 }
-                                
+
                                 if (this.debugContent) {
                                     const timestamp = new Date().toISOString();
                                     this.debugContent.innerHTML = `
@@ -628,12 +628,12 @@ class VoiceAssistant {
                                 if (message.data.toolUse) {
                                     const toolName = message.data.toolUse.name || 'Unknown Tool';
                                     const toolUseId = message.data.toolUse.toolUseId;
-                                    
+
                                     // Prevent duplicate toasts for the same tool execution
                                     if (!this.recentToolNotifications) {
                                         this.recentToolNotifications = new Set();
                                     }
-                                    
+
                                     if (!this.recentToolNotifications.has(toolUseId)) {
                                         this.recentToolNotifications.add(toolUseId);
                                         this.showToast(`🛠️ Processing: ${toolName}`, 'info');
@@ -651,7 +651,7 @@ class VoiceAssistant {
                                                 if (this.state === 'recording') this.statusEl.classList.add('recording');
                                             }
                                         }, 4000);
-                                        
+
                                         // Clean up old notifications after 30 seconds
                                         setTimeout(() => {
                                             this.recentToolNotifications.delete(toolUseId);
@@ -871,13 +871,13 @@ class VoiceAssistant {
         const versionEl = document.getElementById('version-info');
         if (versionEl && versionData) {
             const buildDate = new Date(versionData.buildTime);
-            const formattedDate = buildDate.toLocaleDateString('en-US', { 
-                month: 'short', 
+            const formattedDate = buildDate.toLocaleDateString('en-US', {
+                month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit'
             });
-            
+
             versionEl.textContent = `v${versionData.version} • Built: ${formattedDate}`;
         }
     }
@@ -1187,7 +1187,7 @@ class VoiceAssistant {
                 // Don't populate sensitive fields for security, but show region and ARN
                 this.awsRegion.value = awsCredentials.region || 'us-east-1';
                 this.agentCoreRuntimeArn.value = awsCredentials.agentCoreRuntimeArn || '';
-                
+
                 // Show placeholder text to indicate credentials are stored
                 this.awsAccessKey.placeholder = 'Stored (enter new to update)';
                 this.awsSecretKey.placeholder = 'Stored (enter new to update)';
@@ -1254,7 +1254,7 @@ class VoiceAssistant {
             sessionStorage.removeItem('aws_credentials');
             this.showToast('AWS Credentials Cleared', 'info');
             this.log('Cleared stored AWS credentials');
-            
+
             // Reset form
             this.awsAccessKey.value = '';
             this.awsSecretKey.value = '';
@@ -1262,7 +1262,7 @@ class VoiceAssistant {
             this.agentCoreRuntimeArn.value = '';
             this.awsAccessKey.placeholder = 'AKIA...';
             this.awsSecretKey.placeholder = 'wJalrX...';
-            
+
             this.awsModal.style.display = 'none';
         }
     }
@@ -1454,14 +1454,14 @@ class VoiceAssistant {
 
         if (data.agentReply) {
             // Show stage indicator for streaming vs final
-            const stageColor = data.stage === 'FINAL' ? '#86efac' : 
-                              data.stage === 'STREAMING' ? '#fbbf24' : 
-                              data.stage === 'USER_INPUT' ? '#60a5fa' : '#94a3b8';
-            const stageIcon = data.stage === 'FINAL' ? '✓' : 
-                             data.stage === 'STREAMING' ? '⋯' : 
-                             data.stage === 'USER_INPUT' ? '👤' : '•';
+            const stageColor = data.stage === 'FINAL' ? '#86efac' :
+                data.stage === 'STREAMING' ? '#fbbf24' :
+                    data.stage === 'USER_INPUT' ? '#60a5fa' : '#94a3b8';
+            const stageIcon = data.stage === 'FINAL' ? '✓' :
+                data.stage === 'STREAMING' ? '⋯' :
+                    data.stage === 'USER_INPUT' ? '👤' : '•';
             const stageLabel = data.stage || (data.isFinal ? 'FINAL' : 'STREAMING');
-            
+
             html += `<div style="color: #94a3b8; font-size: 0.8rem;">
                         Agent Response 
                         <span style="color: ${stageColor}; font-weight: 600; margin-left: 8px;">${stageIcon} ${stageLabel}</span>
@@ -1572,12 +1572,12 @@ class VoiceAssistant {
     updatePromptDropdown(prompts) {
         if (!this.promptPresetSelect) return;
         this.promptPresetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
-        
+
         // Group prompts by category
         const corePrompts = prompts.filter(p => p.id.startsWith('core-'));
         const personaPrompts = prompts.filter(p => p.id.startsWith('persona-'));
         const otherPrompts = prompts.filter(p => !p.id.startsWith('core-') && !p.id.startsWith('persona-'));
-        
+
         // Add Core prompts group
         if (corePrompts.length > 0) {
             const coreGroup = document.createElement('optgroup');
@@ -1591,7 +1591,7 @@ class VoiceAssistant {
             });
             this.promptPresetSelect.appendChild(coreGroup);
         }
-        
+
         // Add Persona prompts group
         if (personaPrompts.length > 0) {
             const personaGroup = document.createElement('optgroup');
@@ -1605,7 +1605,7 @@ class VoiceAssistant {
             });
             this.promptPresetSelect.appendChild(personaGroup);
         }
-        
+
         // Add other prompts if any
         if (otherPrompts.length > 0) {
             const otherGroup = document.createElement('optgroup');
@@ -1646,6 +1646,7 @@ class VoiceAssistant {
                         checkbox.type = 'checkbox';
                         checkbox.id = `tool-${tool.name}`;
                         checkbox.value = tool.name;
+                        checkbox.checked = true; // Default to checked per user request
 
                         const label = document.createElement('label');
                         label.htmlFor = `tool-${tool.name}`;
