@@ -62,11 +62,11 @@ function renderToolList(tools) {
         const item = document.createElement('div');
         item.className = 'tool-item p-3 border-b border-gray-700 hover:bg-gray-800 cursor-pointer flex justify-between items-center';
         item.innerHTML = `
-            <div>
-                <div class="font-bold text-blue-400">${tool.name}</div>
-                <div class="text-sm text-gray-400 truncate w-64">${tool.description || 'No description'}</div>
+            <div class="flex-1 min-w-0 mr-3">
+                <div class="font-bold text-blue-400 truncate" title="${tool.name}">${tool.name}</div>
+                <div class="text-xs text-gray-400 truncate" title="${tool.description || ''}">${tool.description || 'No description'}</div>
             </div>
-            <div class="text-xs ${tool.gatewayTarget ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'} px-2 py-1 rounded">
+            <div class="text-[10px] ${tool.gatewayTarget ? 'bg-purple-900/50 text-purple-300 border border-purple-700' : 'bg-gray-800 text-gray-500 border border-gray-700'} px-2 py-0.5 rounded uppercase font-bold tracking-wider whitespace-nowrap">
                 ${tool.gatewayTarget ? 'Gateway' : 'Local'}
             </div>
         `;

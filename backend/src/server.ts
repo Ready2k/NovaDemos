@@ -972,6 +972,9 @@ const server = http.createServer(async (req, res) => {
         case '.ico':
             contentType = 'image/x-icon';
             break;
+        case '.md':
+            contentType = 'text/markdown';
+            break;
     }
 
     fs.readFile(absolutePath, (err, content) => {
@@ -1095,10 +1098,49 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             }
                         }
 
+
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
                             session.brainMode = parsed.config.brainMode;
                             logWithTimestamp('[Server]', `Switched Brain Mode to: ${session.brainMode}`);
+
+                            // --- WORKFLOW INJECTION START ---
+                            // Try to load a dynamic workflow for this persona/agent
+                            let workflowSystemPrompt = "";
+                            try {
+                                const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
+                                // Determine filename same way as API
+                                let filename = `workflow-${personaId}.json`;
+                                if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
+                                    filename = 'workflow-banking.json';
+                                }
+
+                                const workflowPath = path.join(__dirname, '../src/', filename);
+                                if (fs.existsSync(workflowPath)) {
+                                    const workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                                    workflowSystemPrompt = convertWorkflowToText(workflowData);
+                                    if (workflowSystemPrompt) {
+                                        console.log(`[Server] Injected Dynamic Workflow from ${filename}`);
+                                    }
+                                } else {
+                                    // Check local dir fallback
+                                    const localPath = path.join(__dirname, filename);
+                                    if (fs.existsSync(localPath)) {
+                                        const workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+                                        workflowSystemPrompt = convertWorkflowToText(workflowData);
+                                        console.log(`[Server] Injected Dynamic Workflow from ${filename} (local)`);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("[Server] Failed to load dynamic workflow:", e);
+                            }
+
+                            // Append to System Prompt if we are in RAW NOVA mode (Brain Mode)
+                            if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
+                                const basePrompt = parsed.config.systemPrompt || "";
+                                parsed.config.systemPrompt = basePrompt + "\n\n" + workflowSystemPrompt;
+                            }
+                            // --- WORKFLOW INJECTION END ---
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
@@ -1602,6 +1644,39 @@ server.listen(PORT, () => {
 /**
  * Handle events from Nova Sonic and forward to WebSocket client
  */
+// --- Workflow Injection Helper ---
+function convertWorkflowToText(workflow: any): string {
+    if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
+
+    let text = "### WORKFLOW INSTRUCTIONS\n";
+    text += "You must follow this strictly defined process flow:\n\n";
+
+    // 1. Map Nodes
+    workflow.nodes.forEach((node: any) => {
+        text += `STEP [${node.id}] (${node.type}): "${node.label || ''}"\n`;
+
+        // Tool Config
+        if (node.type === 'tool' && node.toolName) {
+            text += `   -> ACTION: Call Tool "${node.toolName}"\n`;
+        }
+
+        // Transitions
+        const edges = workflow.edges.filter((e: any) => e.from === node.id);
+        if (edges.length > 0) {
+            text += "   TRANSITIONS:\n";
+            edges.forEach((edge: any) => {
+                const condition = edge.label ? `IF "${edge.label}"` : "NEXT";
+                text += `   - ${condition} -> GOTO [${edge.to}]\n`;
+            });
+        } else if (node.type === 'end') {
+            text += "   -> PROCESS ENDS HERE.\n";
+        }
+        text += "\n";
+    });
+
+    return text;
+}
+
 async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: ClientSession) {
     // If interrupted or intercepting, drop audio packets
     if ((session.isInterrupted || session.isIntercepting) && event.type === 'audio') {

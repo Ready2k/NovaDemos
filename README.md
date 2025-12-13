@@ -45,6 +45,13 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
   - Visual feedback for tool processing
   - Deduplication prevents multiple notifications
   - Clean UI with proper cleanup
+- **🕸️ Visual Workflow Creator**: 
+  - Drag-and-drop interface to build complex agent behaviors
+  - Create decision trees, tool calls, and branching logic
+  - Instantly testable via Dynamic Prompt Injection
+- **🧠 Dynamic Workflow Injection**: 
+  - Backend automatically converts visual graphs into text instructions
+  - Injects logic into the System Prompt based on the active persona
 
 ## Recent Updates (December 2025)
 
@@ -54,6 +61,12 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Solution**: Updated `getSessionConfig()` to properly handle built-in bedrock_agent mode
 - **Impact**: Users can now access banking workflows via the dropdown menu
 - **Verification**: Server logs show proper brain mode switching and Banking Bot activation
+
+### ✅ Latest: Visual Workflow Editor & Dynamic Injection (Dec 13, 2025)
+- **New Feature**: Added a full visual editor for building agent flows (`/workflow-editor.html`)
+- **Backend Logic**: Implemented `workflow-{persona}.json` detection and automatic prompt injection
+- **UI Integration**: Added "Guide" button to the editor for in-app tutorials
+- **Use Case**: Demonstrated with "Sci-Fi Bot" — create a flow that changes persona based on user input (Star Trek vs Star Wars)
 
 ### ✅ Chat Duplication Issue Resolved (Dec 11, 2025)
 - **Fixed**: Nova Sonic conversation context accumulation causing duplicate responses
