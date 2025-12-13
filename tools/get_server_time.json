@@ -1,15 +1,11 @@
 {
-    "toolSpec": {
-        "name": "get_server_time",
-        "description": "Returns the current server time and stardate.",
-        "inputSchema": {
-            "json": {
-                "type": "object",
-                "properties": {}
-            }
-        }
+    "name": "get_server_time",
+    "description": "Returns the current server time in ISO 8601 format.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
     },
-    "instruction": "Use this tool when the user asks for the current time or stardate. It returns the time in ISO format.",
-    "agentPrompt": "You are a time-keeping assistant. Return the current server time.",
-    "gatewayTarget": "LOCAL"
+    "instruction": "Use this tool to get the current server time when asked.",
+    "gatewayTarget": "get-Time___get_current_time"
 }

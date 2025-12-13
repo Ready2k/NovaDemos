@@ -451,7 +451,25 @@ class VoiceAssistant {
 
             if (foundPersonaId) {
                 agentId = foundPersonaId.replace('.txt', '');
-                console.log('[Frontend] Selected Persona ID:', agentId);
+                console.log('[Frontend] Selected Persona ID (from Preset):', agentId);
+            } else {
+                // Fallback: Check if current system prompt matches any known persona content
+                // This handles cases where the dropdown selection might not be visually updated yet
+                // or if the user refreshed the page with a stored prompt
+                const currentPrompt = this.systemPromptInput.value.trim();
+                const options = this.presetSelect ? Array.from(this.presetSelect.options) : [];
+                const matchingOption = options.find(opt => {
+                    const dataId = opt.getAttribute('data-id');
+                    // Check if content matches AND it's a persona file
+                    // Note: option.value holds the content
+                    return dataId && dataId.startsWith('persona-') && opt.value.trim() === currentPrompt;
+                });
+
+                if (matchingOption) {
+                    const dataId = matchingOption.getAttribute('data-id');
+                    agentId = dataId.replace('.txt', '');
+                    console.log('[Frontend] Selected Persona ID (from Content Match):', agentId);
+                }
             }
         }
 
@@ -525,7 +543,7 @@ class VoiceAssistant {
             this.ws = new WebSocket(wsUrl);
             this.ws.binaryType = 'arraybuffer';
 
-            this.ws.onopen = () => {
+            this.ws.onopen = async () => {
                 this.log('Connected to server', 'success');
                 this.updateState('connected');
                 this.reconnectAttempts = 0; // Reset attempts
@@ -535,8 +553,8 @@ class VoiceAssistant {
                 this.startSessionTimer();
                 this.startVisualizer();
 
-                // Request prompts
-                this.loadPrompts();
+                // Request prompts - Await to ensure presets are loaded before config is sent
+                await this.loadPrompts();
 
                 // Send ping to verify connection
                 this.ws.send(JSON.stringify({ type: 'ping' }));

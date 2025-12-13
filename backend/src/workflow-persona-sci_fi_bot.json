@@ -12,7 +12,7 @@
     },
     {
       "id": "ask_question",
-      "label": "Ask the user: \"Are you more of a Star Trek diplomat or a Star Wars rebel?\"",
+      "label": "Depending on the sentiment and what you know about the contact, when appropriate ask the user: \"Are you more of a Star Trek diplomat or a Star Wars rebel?\" or a question to that effect",
       "type": "process"
     },
     {
@@ -81,6 +81,11 @@
       "from": "mode_solo",
       "to": "mode_solo",
       "label": ""
+    },
+    {
+      "from": "mode_neutral",
+      "to": "mode_neutral",
+      "label": "User mentions Empire (IGNORE/Stay Neutral)"
     },
     {
       "from": "mode_neutral",
