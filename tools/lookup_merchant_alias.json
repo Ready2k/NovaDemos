@@ -4,8 +4,14 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "statementName": { "type": "string", "description": "Name on the bank statement." }
+      "statementName": {
+        "type": "string",
+        "description": "Name on the bank statement."
+      }
     },
-    "required": ["statementName"]
-  }
+    "required": [
+      "statementName"
+    ]
+  },
+  "gatewayTarget": "lookup-merchant-alias___lookup_merchant_alias"
 }

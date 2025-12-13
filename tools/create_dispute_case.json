@@ -4,15 +4,42 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "accountNumber": { "type": "string" },
-      "merchantName": { "type": "string" },
-      "transactionDate": { "type": "string", "description": "YYYY-MM-DD" },
-      "transactionAmount": { "type": "number", "description": "The amount actually charged." },
-      "expectedAmount": { "type": "number", "description": "The amount the customer expected to pay (if applicable)." },
-      "disputeReason": { "type": "string" },
-      "merchantContacted": { "type": "boolean" },
-      "isPriorityRefund": { "type": "boolean", "description": "Set to true if Vuln Marker is 1-4 and Amount < 150." }
+      "accountNumber": {
+        "type": "string"
+      },
+      "merchantName": {
+        "type": "string"
+      },
+      "transactionDate": {
+        "type": "string",
+        "description": "YYYY-MM-DD"
+      },
+      "transactionAmount": {
+        "type": "number",
+        "description": "The amount actually charged."
+      },
+      "expectedAmount": {
+        "type": "number",
+        "description": "The amount the customer expected to pay (if applicable)."
+      },
+      "disputeReason": {
+        "type": "string"
+      },
+      "merchantContacted": {
+        "type": "boolean"
+      },
+      "isPriorityRefund": {
+        "type": "boolean",
+        "description": "Set to true if Vuln Marker is 1-4 and Amount < 150."
+      }
     },
-    "required": ["accountNumber", "merchantName", "transactionAmount", "disputeReason", "merchantContacted"]
-  }
+    "required": [
+      "accountNumber",
+      "merchantName",
+      "transactionAmount",
+      "disputeReason",
+      "merchantContacted"
+    ]
+  },
+  "gatewayTarget": "create-dispute-case___create_dispute_case"
 }

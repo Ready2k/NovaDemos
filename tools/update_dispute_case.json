@@ -4,9 +4,19 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "caseId": { "type": "string", "description": "ID of the existing dispute." },
-      "additionalDetails": { "type": "string", "description": "The specific information requested (e.g. Correct Date, Invoice Proof)." }
+      "caseId": {
+        "type": "string",
+        "description": "ID of the existing dispute."
+      },
+      "additionalDetails": {
+        "type": "string",
+        "description": "The specific information requested (e.g. Correct Date, Invoice Proof)."
+      }
     },
-    "required": ["caseId", "additionalDetails"]
-  }
+    "required": [
+      "caseId",
+      "additionalDetails"
+    ]
+  },
+  "gatewayTarget": "Update-Dispute-case___update_dispute_case"
 }

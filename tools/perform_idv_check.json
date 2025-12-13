@@ -4,9 +4,19 @@
   "parameters": {
     "type": "object",
     "properties": {
-      "accountNumber": { "type": "string", "description": "8-digit account number." },
-      "sortCode": { "type": "string", "description": "6-digit sort code." }
+      "accountNumber": {
+        "type": "string",
+        "description": "8-digit account number."
+      },
+      "sortCode": {
+        "type": "string",
+        "description": "6-digit sort code."
+      }
     },
-    "required": ["accountNumber", "sortCode"]
-  }
+    "required": [
+      "accountNumber",
+      "sortCode"
+    ]
+  },
+  "gatewayTarget": "perform-idv-check___perform_idv_check"
 }

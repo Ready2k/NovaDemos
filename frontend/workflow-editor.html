@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Creator - Voice S2S</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: false, theme: 'dark', flowchart: { curve: 'basis' } });
+        window.mermaid = mermaid;
+    </script>
+    <link rel="stylesheet" href="index.css">
+    <style>
+        body {
+            background-color: #111827;
+            color: #e5e7eb;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Layout Structure */
+        .panel {
+            background: #1f2937;
+            border-right: 1px solid #374151;
+            display: flex;
+            flex-direction: column;
+            width: 450px;
+            min-width: 400px;
+            max-width: 50vw;
+            resize: horizontal;
+            overflow: hidden;
+        }
+
+        .preview {
+            background: #111827;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #374151;
+            background: #1f2937;
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 0.75rem;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #e5e7eb;
+            background: #374151;
+        }
+
+        .tab-btn.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+            background: #1f2937;
+        }
+
+        /* Editor Sections fill space */
+        .editor-section {
+            display: none;
+            /* Hidden by default */
+            flex-direction: column;
+            padding: 1rem;
+            height: 100%;
+            /* Full height */
+            overflow: hidden;
+        }
+
+        .editor-section.active {
+            display: flex;
+        }
+
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-shrink: 0;
+        }
+
+        .editor-header h3 {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: #9ca3af;
+            text-transform: uppercase;
+            margin: 0;
+        }
+
+        .item-list {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 5px;
+            border: 1px solid #374151;
+            background: #111827;
+            border-radius: 0.25rem;
+        }
+
+        .list-item:last-child {
+            border-bottom: none;
+        }
+
+        .list-item:hover {
+            background: #1f2937;
+        }
+
+        .list-item.active {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+
+        .list-item.active .details {
+            color: #bfdbfe;
+        }
+
+        .list-item.active .font-bold {
+            color: white;
+        }
+
+        .list-item .details {
+            color: #6b7280;
+            font-size: 0.75rem;
+            margin-top: 2px;
+        }
+
+        /* Forms */
+        .editor-form {
+            margin-top: 1rem;
+            background: #1f2937;
+            /* Match panel bg slightly lighter? no same */
+            border-top: 1px solid #374151;
+            padding-top: 1rem;
+            flex-shrink: 0;
+            max-height: 40%;
+            /* Don't take too much space from list */
+            overflow-y: auto;
+        }
+
+        input,
+        select,
+        textarea {
+            background: #374151;
+            border: 1px solid #4b5563;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            width: 100%;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            ring: 1px solid #3b82f6;
+        }
+
+        label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #9ca3af;
+            margin-bottom: 4px;
+            margin-top: 8px;
+        }
+
+        label:first-child {
+            margin-top: 0;
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header
+        class="bg-gray-900 border-b border-gray-700 px-4 py-3 flex justify-between items-center shadow-md z-10 shrink-0">
+        <div class="flex items-center space-x-4">
+            <a href="/"
+                class="text-gray-400 hover:text-white transition-colors flex items-center gap-1 text-sm font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Back
+            </a>
+            <div class="flex items-center gap-3">
+                <h1 class="text-lg font-bold text-white tracking-tight">Workflow Creator</h1>
+                <span class="text-gray-600 text-xl font-thin">/</span>
+                <select id="persona-select"
+                    class="bg-gray-800 text-sm text-blue-400 font-medium px-3 py-1.5 rounded border border-gray-700 outline-none focus:border-blue-500 cursor-pointer hover:bg-gray-700 transition-colors">
+                    <option value="loading">Loading endpoints...</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex space-x-3">
+            <button id="reset-btn"
+                class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-sm transition-colors border border-gray-600 font-medium">Revert</button>
+            <button id="save-btn"
+                class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-sm transition-colors shadow-lg flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                    </path>
+                </svg>
+                Save
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+
+        <!-- Editor Panel (Left) -->
+        <div class="panel">
+            <!-- Tabs -->
+            <div class="tabs">
+                <div class="tab-btn active" data-tab="nodes">Nodes</div>
+                <div class="tab-btn" data-tab="edges">Connections</div>
+            </div>
+
+            <!-- Nodes Section -->
+            <div id="tab-nodes" class="editor-section active">
+                <div class="editor-header">
+                    <h3>Nodes</h3>
+                    <button id="add-node-btn"
+                        class="text-xs bg-gray-700 hover:bg-blue-600 px-3 py-1.5 rounded text-white transition-colors border border-gray-600 font-medium">+
+                        Add Node</button>
+                </div>
+                <div id="nodes-list" class="item-list">
+                    <!-- Nodes injected here -->
+                </div>
+
+                <!-- Node Editor Form -->
+                <div id="node-editor" class="editor-form hidden">
+                    <div class="flex justify-between items-center mb-3 pb-2 border-b border-gray-700">
+                        <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Edit Node</span>
+                        <button id="delete-node-btn"
+                            class="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                </path>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div>
+                            <label>ID (Unique Identifier)</label>
+                            <input type="text" id="node-id" class="font-mono text-sm" disabled
+                                title="ID cannot be changed securely yet">
+                        </div>
+
+                        <div>
+                            <label>Label</label>
+                            <textarea id="node-label" rows="2"></textarea>
+                        </div>
+
+                        <div>
+                            <label>Type</label>
+                            <select id="node-type">
+                                <option value="process">⏹ Process</option>
+                                <option value="decision">◇ Decision</option>
+                                <option value="tool">⚙️ Tool Call</option>
+                                <option value="start">○ Start</option>
+                                <option value="end">● End</option>
+                            </select>
+                        </div>
+
+                        <div id="node-tool-config" class="hidden p-3 bg-gray-800 rounded border border-gray-700">
+                            <label class="text-purple-400">Tool Name</label>
+                            <input type="text" id="node-tool-name" placeholder="e.g. get_balance" class="font-mono">
+                            <p class="text-xs text-gray-500 mt-1">Must match a registered tool name.</p>
+                        </div>
+
+                        <div id="node-outcome-config" class="hidden p-3 bg-gray-800 rounded border border-gray-700">
+                            <label class="text-green-400">Outcome Code</label>
+                            <input type="text" id="node-outcome" placeholder="e.g. RESOLVED" class="font-mono">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edges Section -->
+            <div id="tab-edges" class="editor-section">
+                <div class="editor-header">
+                    <h3>Connections</h3>
+                    <button id="add-edge-btn"
+                        class="text-xs bg-gray-700 hover:bg-blue-600 px-3 py-1.5 rounded text-white transition-colors border border-gray-600 font-medium">+
+                        Add Link</button>
+                </div>
+                <div id="edges-list" class="item-list">
+                    <!-- Edges injected here -->
+                </div>
+
+                <!-- Edge Editor Form -->
+                <div id="edge-editor" class="editor-form hidden">
+                    <div class="flex justify-between items-center mb-3 pb-2 border-b border-gray-700">
+                        <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Edit Link</span>
+                        <button id="delete-edge-btn" class="text-xs text-red-400 hover:text-red-300">Delete</button>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label>From</label>
+                                <select id="edge-from" class="font-mono text-xs"></select>
+                            </div>
+                            <div>
+                                <label>To</label>
+                                <select id="edge-to" class="font-mono text-xs"></select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label>Label</label>
+                            <input type="text" id="edge-label" placeholder="e.g. Yes">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Panel (Right) -->
+        <div class="preview relative bg-gray-900">
+            <div
+                class="absolute top-4 right-4 z-10 flex space-x-2 bg-gray-800 p-1 rounded border border-gray-700 opacity-80 hover:opacity-100 transition-opacity">
+                <span id="zoom-display" class="px-2 py-1 text-xs text-gray-400 font-mono self-center">100%</span>
+                <button id="preview-fit-btn"
+                    class="px-2 py-1 hover:bg-gray-700 rounded text-gray-300 text-xs">Fit</button>
+            </div>
+
+            <div id="graph-container"
+                class="w-full h-full flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing">
+                <div id="mermaid-graph" class="transition-transform duration-100 ease-out"></div>
+            </div>
+
+            <div id="error-toast"
+                class="absolute bottom-4 left-4 right-4 bg-red-900/90 text-white p-3 rounded border border-red-500 shadow-xl hidden font-mono text-xs">
+            </div>
+            <div id="success-toast"
+                class="absolute bottom-4 left-4 bg-green-900/90 text-white px-4 py-2 rounded border border-green-500 shadow-xl hidden text-sm font-bold">
+                Saved Successfully!</div>
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        let currentWorkflow = { nodes: [], edges: [] };
+        let selectedNodeId = null;
+        let selectedEdgeIndex = null;
+        let currentZoom = 1;
+        let panX = 0, panY = 0;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPersonas();
+            setupPanZoom();
+            setupEditors();
+            setupTabs(); // New: Tab Logic
+
+            document.getElementById('save-btn').addEventListener('click', saveWorkflow);
+            document.getElementById('reset-btn').addEventListener('click', () => loadWorkflow(document.getElementById('persona-select').value));
+        });
+
+        function setupTabs() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    // Remove active from all tabs
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.editor-section').forEach(s => s.classList.remove('active'));
+
+                    // Add active to clicked
+                    btn.classList.add('active');
+                    const tabId = 'tab-' + btn.getAttribute('data-tab');
+                    document.getElementById(tabId).classList.add('active');
+                });
+            });
+        }
+
+        // --- Loading Data ---
+        async function loadPersonas() {
+            try {
+                const res = await fetch('/api/personas');
+                const personas = await res.json();
+                const select = document.getElementById('persona-select');
+                select.innerHTML = '';
+                personas.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name;
+                    if (p.id === 'persona-BankingDisputes') opt.selected = true;
+                    select.appendChild(opt);
+                });
+                select.addEventListener('change', (e) => loadWorkflow(e.target.value));
+                if (personas.length > 0) loadWorkflow(select.value);
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadWorkflow(id) {
+            try {
+                const res = await fetch(`/api/workflow/${id}`);
+                const data = await res.json();
+                currentWorkflow = data;
+                renderEditorLists();
+                renderGraph();
+            } catch (e) { showError("Failed to load workflow: " + e.message); }
+        }
+
+        async function saveWorkflow() {
+            const btn = document.getElementById('save-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span>Saving...</span>';
+            btn.disabled = true;
+
+            try {
+                const id = document.getElementById('persona-select').value;
+                const res = await fetch(`/api/workflow/${id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentWorkflow)
+                });
+                if (!res.ok) throw new Error("Save failed");
+                showSuccess();
+            } catch (e) { showError(e.message); }
+            finally { btn.innerHTML = originalText; btn.disabled = false; }
+        }
+
+        // --- Render Helpers ---
+        function renderGraph() {
+            const container = document.getElementById('mermaid-graph');
+            const def = generateMermaid(currentWorkflow);
+            window.mermaid.render('graphDiv', def).then(({ svg }) => {
+                container.innerHTML = svg;
+                document.getElementById('error-toast').classList.add('hidden');
+            }).catch(e => {
+                showError("Preview Error: " + e.message);
+            });
+        }
+
+        function generateMermaid(data) {
+            let def = 'flowchart TD\n';
+            data.nodes.forEach(n => {
+                const label = (n.label || n.id).replace(/"/g, "'").replace(/\n/g, '<br>');
+                let s = '[', e = ']', style = '';
+
+                if (n.type === 'start' || n.type === 'end') { s = '(['; e = '])'; style = 'fill:#1f2937,stroke:#3b82f6,color:#fff'; }
+                else if (n.type === 'decision') { s = '{'; e = '}'; style = 'fill:#374151,stroke:#f59e0b,color:#fff'; }
+                else if (n.type === 'tool') { s = '[['; e = ']]'; style = 'fill:#111827,stroke:#8b5cf6,color:#fff'; }
+                else { style = 'fill:#1f2937,stroke:#4b5563,color:#9ca3af'; }
+
+                def += `    ${n.id}${s}"${label}"${e}\n`;
+                def += `    style ${n.id} ${style}\n`;
+            });
+            data.edges.forEach(edge => {
+                const label = edge.label ? `|"${edge.label.replace(/"/g, "'")}"|` : '';
+                def += `    ${edge.from} -->${label} ${edge.to}\n`;
+            });
+            return def;
+        }
+
+        function renderEditorLists() {
+            // Render Nodes
+            const nodesList = document.getElementById('nodes-list');
+            nodesList.innerHTML = '';
+            currentWorkflow.nodes.forEach(node => {
+                const el = document.createElement('div');
+                el.className = `list-item ${selectedNodeId === node.id ? 'active' : ''}`;
+                el.innerHTML = `<div class="font-bold text-gray-300">${node.id}</div><div class="details truncate">${node.label}</div>`;
+                el.onclick = () => selectNode(node.id);
+                nodesList.appendChild(el);
+            });
+
+            // Render Edges
+            const edgesList = document.getElementById('edges-list');
+            edgesList.innerHTML = '';
+            currentWorkflow.edges.forEach((edge, idx) => {
+                const el = document.createElement('div');
+                el.className = `list-item ${selectedEdgeIndex === idx ? 'active' : ''}`;
+                el.innerHTML = `<div class="text-xs text-gray-400">${edge.from} → ${edge.to}</div><div class="details text-blue-400">${edge.label || '(no label)'}</div>`;
+                el.onclick = () => selectEdge(idx);
+                edgesList.appendChild(el);
+            });
+
+            // Populate Edge Dropdowns
+            const nodeOptions = currentWorkflow.nodes.map(n => `<option value="${n.id}">${n.id}</option>`).join('');
+            document.getElementById('edge-from').innerHTML = nodeOptions;
+            document.getElementById('edge-to').innerHTML = nodeOptions;
+        }
+
+        // --- Selection & Editing Logic ---
+        function selectNode(id) {
+            selectedNodeId = id;
+            selectedEdgeIndex = null;
+
+            // Switch to Nodes tab if not active
+            if (!document.getElementById('tab-nodes').classList.contains('active')) {
+                document.querySelector('.tab-btn[data-tab="nodes"]').click();
+            }
+
+            document.getElementById('edge-editor').classList.add('hidden');
+            const node = currentWorkflow.nodes.find(n => n.id === id);
+            if (!node) return;
+
+            const form = document.getElementById('node-editor');
+            form.classList.remove('hidden');
+
+            document.getElementById('node-id').value = node.id;
+            document.getElementById('node-label').value = node.label || '';
+            document.getElementById('node-type').value = node.type || 'process';
+            updateNodeFormFields(node.type);
+
+            if (node.toolName) document.getElementById('node-tool-name').value = node.toolName;
+            if (node.outcome) document.getElementById('node-outcome').value = node.outcome;
+
+            renderEditorLists();
+        }
+
+        function selectEdge(index) {
+            selectedEdgeIndex = index;
+            selectedNodeId = null;
+
+            // Switch to Edges tab if not active
+            if (!document.getElementById('tab-edges').classList.contains('active')) {
+                document.querySelector('.tab-btn[data-tab="edges"]').click();
+            }
+
+            document.getElementById('node-editor').classList.add('hidden');
+            const edge = currentWorkflow.edges[index];
+            if (!edge) return;
+
+            const form = document.getElementById('edge-editor');
+            form.classList.remove('hidden');
+
+            document.getElementById('edge-from').value = edge.from;
+            document.getElementById('edge-to').value = edge.to;
+            document.getElementById('edge-label').value = edge.label || '';
+
+            renderEditorLists();
+        }
+
+        function setupEditors() {
+            // Node Inputs
+            const updateNode = () => {
+                if (!selectedNodeId) return;
+                const node = currentWorkflow.nodes.find(n => n.id === selectedNodeId);
+                if (!node) return;
+                node.label = document.getElementById('node-label').value;
+                node.type = document.getElementById('node-type').value;
+                updateNodeFormFields(node.type);
+                if (node.type === 'tool') node.toolName = document.getElementById('node-tool-name').value;
+                else delete node.toolName;
+                if (node.type === 'end') node.outcome = document.getElementById('node-outcome').value;
+                else delete node.outcome;
+                renderEditorLists(); renderGraph();
+            };
+
+            ['node-label', 'node-type', 'node-tool-name', 'node-outcome'].forEach(id => {
+                document.getElementById(id).addEventListener('input', updateNode);
+            });
+
+            // Add/Delete Node
+            document.getElementById('add-node-btn').addEventListener('click', () => {
+                const newId = 'node_' + Math.floor(Math.random() * 1000);
+                currentWorkflow.nodes.push({ id: newId, label: 'New Node', type: 'process' });
+                selectNode(newId);
+                renderGraph();
+            });
+
+            document.getElementById('delete-node-btn').addEventListener('click', () => {
+                if (!selectedNodeId) return;
+                if (!confirm(`Delete node ${selectedNodeId}?`)) return;
+                currentWorkflow.nodes = currentWorkflow.nodes.filter(n => n.id !== selectedNodeId);
+                currentWorkflow.edges = currentWorkflow.edges.filter(e => e.from !== selectedNodeId && e.to !== selectedNodeId);
+                selectedNodeId = null;
+                document.getElementById('node-editor').classList.add('hidden');
+                renderEditorLists(); renderGraph();
+            });
+
+            // Edge Inputs
+            const updateEdge = () => {
+                if (selectedEdgeIndex === null) return;
+                const edge = currentWorkflow.edges[selectedEdgeIndex];
+                edge.from = document.getElementById('edge-from').value;
+                edge.to = document.getElementById('edge-to').value;
+                edge.label = document.getElementById('edge-label').value;
+                renderEditorLists(); renderGraph();
+            };
+
+            ['edge-from', 'edge-to', 'edge-label'].forEach(id => {
+                document.getElementById(id).addEventListener('input', updateEdge);
+            });
+
+            // Add/Delete Edge
+            document.getElementById('add-edge-btn').addEventListener('click', () => {
+                if (currentWorkflow.nodes.length < 2) return alert("Need at least 2 nodes");
+                const from = currentWorkflow.nodes[0].id;
+                const to = currentWorkflow.nodes[1].id;
+                currentWorkflow.edges.push({ from, to, label: '' });
+                selectEdge(currentWorkflow.edges.length - 1);
+                renderGraph();
+            });
+
+            document.getElementById('delete-edge-btn').addEventListener('click', () => {
+                if (selectedEdgeIndex === null) return;
+                currentWorkflow.edges.splice(selectedEdgeIndex, 1);
+                selectedEdgeIndex = null;
+                document.getElementById('edge-editor').classList.add('hidden');
+                renderEditorLists(); renderGraph();
+            });
+        }
+
+        function updateNodeFormFields(type) {
+            if (type === 'tool') document.getElementById('node-tool-config').classList.remove('hidden');
+            else document.getElementById('node-tool-config').classList.add('hidden');
+            if (type === 'end') document.getElementById('node-outcome-config').classList.remove('hidden');
+            else document.getElementById('node-outcome-config').classList.add('hidden');
+        }
+
+        function setupPanZoom() {
+            const container = document.getElementById('graph-container');
+            const graph = document.getElementById('mermaid-graph');
+            let isDragging = false, startX, startY;
+            function updateTransform() { graph.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`; }
+            container.addEventListener('mousedown', e => { isDragging = true; startX = e.clientX - panX; startY = e.clientY - panY; container.style.cursor = 'grabbing'; });
+            window.addEventListener('mousemove', e => { if (!isDragging) return; panX = e.clientX - startX; panY = e.clientY - startY; updateTransform(); });
+            window.addEventListener('mouseup', () => { isDragging = false; container.style.cursor = 'grab'; });
+            container.addEventListener('wheel', e => {
+                e.preventDefault();
+                currentZoom += e.deltaY * -0.001;
+                currentZoom = Math.min(Math.max(0.2, currentZoom), 3);
+                document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
+                updateTransform();
+            });
+            document.getElementById('preview-fit-btn').addEventListener('click', () => { currentZoom = 1; panX = 0; panY = 0; updateTransform(); });
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error-toast');
+            el.textContent = msg; el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
+        }
+
+        function showSuccess() {
+            const el = document.getElementById('success-toast');
+            el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2000);
+        }
+    </script>
+</body>
+
+</html>

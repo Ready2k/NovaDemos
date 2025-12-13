@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tool Manager - Voice S2S</title>
+    <!-- Use Tailwind CSS for consistency -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="index.css">
+    <style>
+        body {
+            background-color: #111827;
+            color: #e5e7eb;
+        }
+
+        .editor-input {
+            @apply w-full bg-gray-800 border border-gray-600 rounded p-2 mb-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors;
+        }
+
+        textarea.editor-input {
+            min-height: 100px;
+            font-family: monospace;
+        }
+
+        label {
+            @apply block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider;
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-4">
+            <a href="/" class="text-gray-400 hover:text-white transition-colors">← Back to Agent</a>
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400">
+                Tool & Gateway Manager
+            </h1>
+        </div>
+        <div class="flex space-x-2">
+            <button id="import-gateway-btn"
+                class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-sm font-semibold transition-colors flex items-center shadow-lg">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                    </path>
+                </svg>
+                Import from Gateway
+            </button>
+            <button id="new-tool-btn"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-semibold transition-colors flex items-center shadow-lg">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                New Tool
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Sidebar: Tool List -->
+        <div class="w-1/3 border-r border-gray-700 bg-gray-900 flex flex-col">
+            <div class="p-3 border-b border-gray-700 bg-gray-800 text-xs font-bold text-gray-400 uppercase">
+                Available Tools
+            </div>
+            <div id="tool-list" class="flex-1 overflow-y-auto">
+                <!-- Tool items injected here by JS -->
+                <div class="p-4 text-center text-gray-500">Loading tools...</div>
+            </div>
+        </div>
+
+        <!-- Main Area -->
+        <div class="flex-1 bg-gray-900 overflow-y-auto p-8 relative">
+
+            <!-- Placeholder State -->
+            <div id="tool-list-container"
+                class="h-full flex flex-col justify-center items-center text-gray-500 opacity-50 select-none">
+                <svg class="w-24 h-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                    </path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <div class="text-xl font-light">Select a tool to edit or create a new one</div>
+            </div>
+
+            <!-- Editor Form -->
+            <div id="tool-editor" class="hidden max-w-4xl mx-auto">
+                <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+                    <h2 id="editor-title" class="text-2xl font-bold text-white">New Tool</h2>
+                    <div class="flex space-x-2">
+                        <button id="delete-tool-btn"
+                            class="px-3 py-1 bg-red-900/50 hover:bg-red-800 text-red-300 rounded border border-red-800 text-sm transition-colors hidden">Delete</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="col-span-1">
+                        <label for="tool-name">Tool Name (Unique ID)</label>
+                        <input type="text" id="tool-name"
+                            class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-4 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            placeholder="e.g. get_weather">
+
+                        <label for="tool-description">Description</label>
+                        <textarea id="tool-description"
+                            class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-4 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            placeholder="What does this tool do?"></textarea>
+
+                        <label for="tool-gateway-target">Gateway Target (Optional)</label>
+                        <div class="relative">
+                            <input type="text" id="tool-gateway-target"
+                                class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-1 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                                placeholder="e.g. func-name___alias">
+                            <div class="text-[10px] text-gray-500 mb-4">Required only if routing to AgentCore Gateway
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1">
+                        <label for="tool-instruction">LLM Instruction</label>
+                        <textarea id="tool-instruction"
+                            class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-4 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            placeholder="- Use this tool when..." style="min-height: 80px;"></textarea>
+
+                        <label for="tool-agent-prompt">AgentCore Prompt (Optional)</label>
+                        <textarea id="tool-agent-prompt"
+                            class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-4 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            placeholder="Override prompt for AgentCore execution..."
+                            style="min-height: 80px;"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-4 border-t border-gray-700 pt-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="mb-0">Input Parameters</label>
+                        <div class="flex bg-gray-800 rounded p-1">
+                            <button id="mode-visual-btn"
+                                class="px-3 py-1 text-xs rounded bg-blue-600 text-white font-bold transition-colors">Visual</button>
+                            <button id="mode-json-btn"
+                                class="px-3 py-1 text-xs rounded text-gray-400 hover:text-white transition-colors">Raw
+                                JSON</button>
+                        </div>
+                    </div>
+
+                    <!-- Visual Editor -->
+                    <div id="schema-visual-editor">
+                        <div id="param-list" class="space-y-3 mb-4">
+                            <!-- Params injected here -->
+                        </div>
+                        <button id="add-param-btn"
+                            class="text-blue-400 hover:text-white text-sm flex items-center mb-4">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Add Parameter
+                        </button>
+                    </div>
+
+                    <!-- JSON Editor (Hidden by default) -->
+                    <div id="schema-json-editor" class="hidden">
+                        <textarea id="tool-schema"
+                            class="editor-input bg-gray-800 border border-gray-600 rounded w-full p-2 mb-4 text-white font-mono text-sm placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            style="min-height: 200px;"></textarea>
+                        <div class="text-xs text-yellow-500 mb-4">* Modifying JSON directly may break the visual editor
+                            if the structure is complex.</div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-700">
+                    <button id="cancel-edit-btn"
+                        class="px-6 py-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">Cancel</button>
+                    <button id="save-tool-btn"
+                        class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow-lg transform hover:scale-105 transition-all">Save
+                        Changes</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Gateway Import Modal -->
+    <div id="gateway-modal"
+        class="fixed inset-0 bg-black bg-opacity-80 backdrop-blur-sm z-50 hidden flex justify-center items-center">
+        <div
+            class="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-lg font-bold text-white">Import from AgentCore Gateway</h3>
+                <button id="gateway-modal-close" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div id="gateway-tool-list" class="flex-1 overflow-y-auto p-2 bg-gray-900">
+                <!-- Gateway items injected here -->
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-800 flex justify-end">
+                <button id="gateway-import-confirm-btn"
+                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">Import
+                    Selected</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="tool-manager.js"></script>
+</body>
+
+</html>

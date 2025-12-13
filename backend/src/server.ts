@@ -8,6 +8,7 @@ import { callBankAgent } from './bedrock-agent-client';
 import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
+import { ToolManager } from './tool-manager';
 import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
 
 import * as dotenv from 'dotenv';
@@ -358,6 +359,9 @@ const FRONTEND_DIR = path.join(__dirname, '../../frontend');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
 const PROMPTS_DIR = path.join(__dirname, '../prompts');
 
+// Initialize Tool Manager
+const toolManager = new ToolManager(TOOLS_DIR);
+
 function loadPrompt(filename: string): string {
     try {
         return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
@@ -424,7 +428,8 @@ function loadTools(): any[] {
                 return {
                     toolSpec: toolSpec,
                     instruction: toolDef.instruction, // Pass instruction to frontend
-                    agentPrompt: toolDef.agentPrompt // New: AgentCore prompt override
+                    agentPrompt: toolDef.agentPrompt, // New: AgentCore prompt override
+                    gatewayTarget: toolDef.gatewayTarget // New: Gateway target
                 };
             } catch (e) {
                 console.error(`[Server] Failed to load tool ${f}:`, e);
@@ -716,7 +721,7 @@ interface ClientSession {
 const activeSessions = new Map<WebSocket, ClientSession>();
 
 // Create HTTP server
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
     console.log(`[HTTP] Request: ${req.url}`);
 
     if (req.url === '/health') {
@@ -733,14 +738,183 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.url === '/api/tools') {
-        const tools = loadTools();
-        // Return simplified list for UI
-        const simpleTools = tools.map(t => ({
-            name: t.toolSpec.name,
-            description: t.toolSpec.description
+        if (req.method === 'GET') {
+            const tools = toolManager.listTools();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(tools));
+            return;
+        }
+
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => {
+                body += chunk.toString();
+            });
+            req.on('end', () => {
+                try {
+                    const toolDef = JSON.parse(body);
+                    const success = toolManager.saveTool(toolDef);
+                    if (success) {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 'success', message: 'Tool saved' }));
+                    } else {
+                        res.writeHead(500, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 'error', message: 'Failed to save tool' }));
+                    }
+                } catch (e: any) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'error', message: 'Invalid JSON: ' + e.message }));
+                }
+            });
+            return;
+        }
+    }
+
+    if (req.url?.startsWith('/api/tools/')) {
+        const toolName = req.url.substring(11); // Remove /api/tools/
+
+        if (req.method === 'DELETE') {
+            const success = toolManager.deleteTool(toolName);
+            if (success) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'success', message: 'Tool deleted' }));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'error', message: 'Tool not found or failed to delete' }));
+            }
+            return;
+        }
+    }
+
+    if (req.url === '/api/gateway/tools') {
+        if (agentCoreGatewayClient) {
+            try {
+                const tools = await agentCoreGatewayClient.listTools();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(tools));
+            } catch (error: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        } else {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Gateway client not initialized' }));
+        }
+        return;
+    }
+
+    // List available personas (files in prompts directory)
+    if (req.url === '/api/personas') {
+        const prompts = listPrompts();
+        // Filter mainly for persona-* but allow generic files if they map to flows
+        // For visualizer, we want simple IDs
+        const personas = prompts.map(p => ({
+            id: p.id.replace('.txt', ''),
+            name: p.name
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(simpleTools));
+        res.end(JSON.stringify(personas));
+        return;
+    }
+
+    // Dynamic Workflow Graph API
+    if (req.method === 'GET' && req.url?.startsWith('/api/workflow/')) {
+        const id = req.url.substring(14); // Remove /api/workflow/
+
+        let filename = 'workflow-banking.json'; // Default
+
+        // Map persona ID to workflow JSON file
+        // Ideally these should be auto-generated or strictly mapped.
+        // For this demo, we map 'persona-BankingDisputes' to the existing file.
+        // Others will get a default 'Not Available' placeholder or generic flow.
+
+        if (id === 'persona-BankingDisputes' || id === 'banking') {
+            filename = 'workflow-banking.json';
+        } else {
+            // For now, return a generic placeholder graph for unsupported personas
+            // or we could check if a specific json exists.
+            const potentialFile = `workflow-${id}.json`;
+            // Check existence in src/ or current dir logic below...
+            filename = potentialFile;
+        }
+
+        // Path resolution (dist/ vs src/)
+        let workflowPath = path.join(__dirname, '../src/', filename);
+        if (!fs.existsSync(workflowPath)) {
+            workflowPath = path.join(__dirname, filename);
+        }
+
+        if (fs.existsSync(workflowPath)) {
+            const workflow = fs.readFileSync(workflowPath, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(workflow);
+        } else {
+            // Return a default "Empty/Placeholder" graph if specific file not found
+            const placeholder = {
+                nodes: [
+                    { id: "start", label: "Start", type: "start" },
+                    { id: "note", label: "No workflow defined\nfor this persona yet.", type: "process" },
+                    { id: "end_placeholder", label: "End", type: "end" }
+                ],
+                edges: [
+                    { from: "start", to: "note" },
+                    { from: "note", to: "end_placeholder" }
+                ]
+            };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(placeholder));
+        }
+        return;
+    }
+
+
+    // Save Workflow Graph API
+    if (req.method === 'POST' && req.url?.startsWith('/api/workflow/')) {
+        const id = req.url.substring(14); // Remove /api/workflow/
+
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const workflowData = JSON.parse(body);
+
+                // validate minimal structure
+                if (!workflowData.nodes || !Array.isArray(workflowData.nodes)) {
+                    throw new Error('Invalid workflow data: missing nodes array');
+                }
+
+                // Determine filename
+                let filename = `workflow-${id}.json`;
+                if (id === 'persona-BankingDisputes' || id === 'banking') {
+                    filename = 'workflow-banking.json';
+                }
+
+                // Default save to src directory so it persists across builds
+                // Fallback to current dir if src not reachable
+                let savePath = path.join(__dirname, '../src/', filename);
+
+                // Verify directory exists (src should exist)
+                const srcDir = path.dirname(savePath);
+                if (!fs.existsSync(srcDir)) {
+                    // Fallback to local dir
+                    savePath = path.join(__dirname, filename);
+                }
+
+                fs.writeFileSync(savePath, JSON.stringify(workflowData, null, 2));
+                console.log(`[Server] Saved workflow to ${savePath}`);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'success', path: savePath }));
+
+            } catch (error: any) {
+                console.error('[Server] Failed to save workflow:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
         return;
     }
 
@@ -2225,7 +2399,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     let result: any;
 
                     // Check if this is an AgentCore Gateway tool
-                    const isAgentCoreGatewayTool = actualToolName === 'agentcore_balance' ||
+                    // DYNAMIC TOOL ROUTING: Check if tool has gatewayTarget
+                    const toolDef = loadTools().find(t => t.toolSpec.name === actualToolName);
+                    const isAgentCoreGatewayTool = (toolDef && toolDef.gatewayTarget) ||
+                        // Legacy Fallback checks
+                        actualToolName === 'agentcore_balance' ||
                         actualToolName === 'agentcore_transactions' ||
                         actualToolName === 'get_account_transactions' ||
                         actualToolName === 'perform_idv_check' ||
@@ -2244,7 +2422,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         console.log(`[Server] Tool parameters:`, toolParams);
 
                         try {
-                            const gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams);
+                            const gatewayTarget = toolDef ? toolDef.gatewayTarget : undefined;
+                            const gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
                             result = {
                                 status: "success",
                                 data: gatewayResult

@@ -1,0 +1,285 @@
+{
+    "title": "Secure Transaction Assistance Agent Workflow",
+    "nodes": [
+        {
+            "id": "start",
+            "label": "Customer Contact\n(Start)",
+            "type": "start"
+        },
+        {
+            "id": "check_auth",
+            "label": "Is 'auth_status' VERIFIED?",
+            "type": "decision"
+        },
+        {
+            "id": "request_details",
+            "label": "Request Details & Call\n'perform_idv_check'",
+            "type": "tool",
+            "toolName": "perform_idv_check"
+        },
+        {
+            "id": "triage",
+            "label": "Account & Vulnerability Triage\n(Check 'marker_Vunl' & 'account_status')",
+            "type": "process"
+        },
+        {
+            "id": "handoff_vuln",
+            "label": "Inform & Handoff to\nSpecialist Agent",
+            "type": "end",
+            "outcome": "VULNERABILITY_HANDOFF"
+        },
+        {
+            "id": "handoff_frozen",
+            "label": "Inform & Handoff to\nSecurity Team",
+            "type": "end",
+            "outcome": "ACCOUNT_FROZEN_HANDOFF"
+        },
+        {
+            "id": "retrieve_history",
+            "label": "Call 'manage_recent_interactions'\n(RETRIEVE History & Disputes)",
+            "type": "tool",
+            "toolName": "manage_recent_interactions"
+        },
+        {
+            "id": "check_dispute",
+            "label": "Has Open Dispute?",
+            "type": "decision"
+        },
+        {
+            "id": "manage_dispute",
+            "label": "Manage Existing Dispute\n(Check Cooling-Off & Status)",
+            "type": "process"
+        },
+        {
+            "id": "check_cooling",
+            "label": "Cooling Off < 15 Days?",
+            "type": "decision"
+        },
+        {
+            "id": "dispute_handoff",
+            "label": "Handoff to Dispute Agent",
+            "type": "end",
+            "outcome": "DISPUTE_HANDOFF"
+        },
+        {
+            "id": "update_case",
+            "label": "Request Info & Call\n'update_dispute_case'",
+            "type": "tool",
+            "toolName": "update_dispute_case"
+        },
+        {
+            "id": "query_txn",
+            "label": "Customer Queries Transaction",
+            "type": "process"
+        },
+        {
+            "id": "lookup_alias",
+            "label": "Call 'lookup_merchant_alias'\n(Identify Alias)",
+            "type": "tool",
+            "toolName": "lookup_merchant_alias"
+        },
+        {
+            "id": "recognise_txn",
+            "label": "Customer Recognises Transaction?",
+            "type": "decision"
+        },
+        {
+            "id": "resolved",
+            "label": "Issue Resolved",
+            "type": "end",
+            "outcome": "RESOLVED_QUERY"
+        },
+        {
+            "id": "classify",
+            "label": "Classify Issue Type",
+            "type": "decision"
+        },
+        {
+            "id": "handoff_gambling",
+            "label": "Inform & Prepare Handoff\n(Gambling Route)",
+            "type": "end",
+            "outcome": "GAMBLING_HANDOFF"
+        },
+        {
+            "id": "handoff_fraud",
+            "label": "Inform & Prepare Handoff\n(Fraud Route)",
+            "type": "end",
+            "outcome": "FRAUD_HANDOFF"
+        },
+        {
+            "id": "contacted_merch",
+            "label": "Contacted Merchant?",
+            "type": "decision"
+        },
+        {
+            "id": "advise_contact",
+            "label": "Advise Customer to\nContact Merchant",
+            "type": "process"
+        },
+        {
+            "id": "create_dispute",
+            "label": "Call 'create_dispute_case'\n(Apply Vuln Promise if eligible)",
+            "type": "tool",
+            "toolName": "create_dispute_case"
+        },
+        {
+            "id": "publish_summary",
+            "label": "Call 'manage_recent_interactions'\n(PUBLISH Summary)",
+            "type": "tool",
+            "toolName": "manage_recent_interactions"
+        },
+        {
+            "id": "end_interaction",
+            "label": "End Interaction",
+            "type": "end"
+        }
+    ],
+    "edges": [
+        {
+            "from": "start",
+            "to": "check_auth"
+        },
+        {
+            "from": "check_auth",
+            "to": "request_details",
+            "label": "No (UNVERIFIED)"
+        },
+        {
+            "from": "request_details",
+            "to": "check_auth",
+            "label": "Retry"
+        },
+        {
+            "from": "check_auth",
+            "to": "triage",
+            "label": "Yes (VERIFIED)"
+        },
+        {
+            "from": "triage",
+            "to": "handoff_vuln",
+            "label": "High Vuln Score (>5)"
+        },
+        {
+            "from": "triage",
+            "to": "handoff_frozen",
+            "label": "Account Frozen"
+        },
+        {
+            "from": "triage",
+            "to": "retrieve_history",
+            "label": "Safe (Open & Low Vuln)"
+        },
+        {
+            "from": "retrieve_history",
+            "to": "check_dispute"
+        },
+        {
+            "from": "check_dispute",
+            "to": "manage_dispute",
+            "label": "Yes"
+        },
+        {
+            "from": "check_dispute",
+            "to": "query_txn",
+            "label": "No"
+        },
+        {
+            "from": "manage_dispute",
+            "to": "check_cooling"
+        },
+        {
+            "from": "check_cooling",
+            "to": "resolved",
+            "label": "Within Cooling Off"
+        },
+        {
+            "from": "check_cooling",
+            "to": "dispute_handoff",
+            "label": "Expired (Status OPEN)"
+        },
+        {
+            "from": "check_cooling",
+            "to": "update_case",
+            "label": "Expired (Status MORE_INFO)"
+        },
+        {
+            "from": "query_txn",
+            "to": "lookup_alias"
+        },
+        {
+            "from": "lookup_alias",
+            "to": "recognise_txn"
+        },
+        {
+            "from": "recognise_txn",
+            "to": "resolved",
+            "label": "Yes"
+        },
+        {
+            "from": "recognise_txn",
+            "to": "classify",
+            "label": "No"
+        },
+        {
+            "from": "classify",
+            "to": "handoff_gambling",
+            "label": "Gambling"
+        },
+        {
+            "from": "classify",
+            "to": "handoff_fraud",
+            "label": "Fraud (Unauthorised)"
+        },
+        {
+            "from": "classify",
+            "to": "contacted_merch",
+            "label": "Dispute (Authorised)"
+        },
+        {
+            "from": "contacted_merch",
+            "to": "advise_contact",
+            "label": "No"
+        },
+        {
+            "from": "contacted_merch",
+            "to": "create_dispute",
+            "label": "Yes"
+        },
+        {
+            "from": "create_dispute",
+            "to": "publish_summary"
+        },
+        {
+            "from": "update_case",
+            "to": "publish_summary"
+        },
+        {
+            "from": "handoff_vuln",
+            "to": "publish_summary"
+        },
+        {
+            "from": "handoff_frozen",
+            "to": "publish_summary"
+        },
+        {
+            "from": "handoff_gambling",
+            "to": "publish_summary"
+        },
+        {
+            "from": "handoff_fraud",
+            "to": "publish_summary"
+        },
+        {
+            "from": "dispute_handoff",
+            "to": "publish_summary"
+        },
+        {
+            "from": "resolved",
+            "to": "publish_summary"
+        },
+        {
+            "from": "publish_summary",
+            "to": "end_interaction"
+        }
+    ]
+}

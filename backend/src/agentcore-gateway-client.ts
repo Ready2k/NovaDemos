@@ -36,24 +36,29 @@ export class AgentCoreGatewayClient {
         }
     }
 
-    async callTool(toolName: string, args: any): Promise<string> {
+    async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
         console.log(`[AgentCoreGateway] Calling tool: ${toolName} with args:`, args);
 
-        // Map our tool names to AgentCore Gateway tool names
-        const toolMapping: { [key: string]: string } = {
-            'agentcore_balance': 'get-Balance___get_Balance',
-            'get_account_transactions': 'get-TransactionalHistory___get_TransactionHistory',
-            'agentcore_transactions': 'get-TransactionalHistory___get_TransactionHistory',
-            'get_server_time': 'get-Time___get_current_time',
-            'perform_idv_check': 'perform-idv-check___perform_idv_check',
-            'lookup_merchant_alias': 'lookup-merchant-alias___lookup_merchant_alias',
-            'create_dispute_case': 'create-dispute-case___create_dispute_case',
-            'update_dispute_case': 'Update-Dispute-case___update_dispute_case',
-            'manage_recent_interactions': 'manage-recent-interactions___manage_recent_interactions'
-        };
+        let actualToolName = gatewayTarget;
 
-        const actualToolName = toolMapping[toolName] || toolName;
-        console.log(`[AgentCoreGateway] Mapped tool name: ${actualToolName}`);
+        if (!actualToolName) {
+            // Fallback: Map our tool names to AgentCore Gateway tool names (Legacy Support)
+            const toolMapping: { [key: string]: string } = {
+                'agentcore_balance': 'get-Balance___get_Balance',
+                'get_account_transactions': 'get-TransactionalHistory___get_TransactionHistory',
+                'agentcore_transactions': 'get-TransactionalHistory___get_TransactionHistory',
+                'get_server_time': 'get-Time___get_current_time',
+                'perform_idv_check': 'perform-idv-check___perform_idv_check',
+                'lookup_merchant_alias': 'lookup-merchant-alias___lookup_merchant_alias',
+                'create_dispute_case': 'create-dispute-case___create_dispute_case',
+                'update_dispute_case': 'Update-Dispute-case___update_dispute_case',
+                'manage_recent_interactions': 'manage-recent-interactions___manage_recent_interactions'
+            };
+            actualToolName = toolMapping[toolName] || toolName;
+            console.log(`[AgentCoreGateway] Using legacy mapping for tool name: ${actualToolName}`);
+        } else {
+            console.log(`[AgentCoreGateway] Using provided gateway target: ${actualToolName}`);
+        }
 
         // Create JSON-RPC 2.0 payload
         const payload = {
