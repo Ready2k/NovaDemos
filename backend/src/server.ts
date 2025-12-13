@@ -1104,43 +1104,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             session.brainMode = parsed.config.brainMode;
                             logWithTimestamp('[Server]', `Switched Brain Mode to: ${session.brainMode}`);
 
-                            // --- WORKFLOW INJECTION START ---
-                            // Try to load a dynamic workflow for this persona/agent
-                            let workflowSystemPrompt = "";
-                            try {
-                                const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
-                                // Determine filename same way as API
-                                let filename = `workflow-${personaId}.json`;
-                                if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
-                                    filename = 'workflow-banking.json';
-                                }
-
-                                const workflowPath = path.join(__dirname, '../src/', filename);
-                                if (fs.existsSync(workflowPath)) {
-                                    const workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
-                                    workflowSystemPrompt = convertWorkflowToText(workflowData);
-                                    if (workflowSystemPrompt) {
-                                        console.log(`[Server] Injected Dynamic Workflow from ${filename}`);
-                                    }
-                                } else {
-                                    // Check local dir fallback
-                                    const localPath = path.join(__dirname, filename);
-                                    if (fs.existsSync(localPath)) {
-                                        const workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
-                                        workflowSystemPrompt = convertWorkflowToText(workflowData);
-                                        console.log(`[Server] Injected Dynamic Workflow from ${filename} (local)`);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("[Server] Failed to load dynamic workflow:", e);
-                            }
-
-                            // Append to System Prompt if we are in RAW NOVA mode (Brain Mode)
-                            if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
-                                const basePrompt = parsed.config.systemPrompt || "";
-                                parsed.config.systemPrompt = basePrompt + "\n\n" + workflowSystemPrompt;
-                            }
-                            // --- WORKFLOW INJECTION END ---
+                            // Workflow injection moved to after tool injection
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
@@ -1243,6 +1207,52 @@ You do not have access to any tools. Answer questions directly based on your kno
                             console.log('[Server] Injected tool instructions into System Prompt.');
                         }
 
+                        // --- WORKFLOW INJECTION START (Moved to end for priority) ---
+                        // Try to load a dynamic workflow for this persona/agent
+                        let workflowSystemPrompt = "";
+                        try {
+                            const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
+                            // Determine filename same way as API
+                            let filename = `workflow-${personaId}.json`;
+                            if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
+                                filename = 'workflow-banking.json';
+                            }
+
+                            const workflowPath = path.join(__dirname, '../src/', filename);
+                            console.log(`[WorkflowDebug] checking path: ${workflowPath}`); // DEBUG
+                            if (fs.existsSync(workflowPath)) {
+                                const workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                                workflowSystemPrompt = convertWorkflowToText(workflowData);
+                                if (workflowSystemPrompt) {
+                                    console.log(`[Server] Injected Dynamic Workflow from ${filename}`);
+                                    console.log(`[WorkflowDebug] INJECTED TEXT:\n${workflowSystemPrompt.substring(0, 200)}...`); // DEBUG
+                                }
+                            } else {
+                                // Check local dir fallback
+                                const localPath = path.join(__dirname, filename);
+                                console.log(`[WorkflowDebug] checking local path: ${localPath}`); // DEBUG
+                                if (fs.existsSync(localPath)) {
+                                    const workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+                                    workflowSystemPrompt = convertWorkflowToText(workflowData);
+                                    console.log(`[Server] Injected Dynamic Workflow from ${filename} (local)`);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("[Server] Failed to load dynamic workflow:", e);
+                        }
+
+                        // Append to System Prompt if we are in RAW NOVA mode (Brain Mode)
+                        if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
+                            const basePrompt = parsed.config.systemPrompt || "";
+                            // Stronger header
+                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
+                            parsed.config.systemPrompt = basePrompt + strictHeader + workflowSystemPrompt;
+                            console.log(`[WorkflowDebug] FINAL SYSTEM PROMPT LENGTH: ${parsed.config.systemPrompt.length}`); // DEBUG
+                        } else {
+                            console.log(`[WorkflowDebug] SKIPPED INJECTION. Mode: ${session.brainMode}, HasWorkflow: ${!!workflowSystemPrompt}`); // DEBUG
+                        }
+                        // --- WORKFLOW INJECTION END ---
+
                         // Pass other config to SonicClient
                         // Explicitly include tool definitions in the update (mapped to AWS Tool Interface)
                         // CRITICAL FIX: Nova Sonic expects tools wrapped in toolSpec objects (per AWS sample)
@@ -1298,11 +1308,17 @@ You do not have access to any tools. Answer questions directly based on your kno
                             if (session.brainMode !== 'bedrock_agent') {
                                 console.log('[Server] Triggering initial AI greeting...');
                                 setTimeout(async () => {
-                                    if (sonicClient.getSessionId()) {
-                                        await sonicClient.sendText("Hi");
-                                        console.log('[Server] Initial greeting sent to AI');
+                                    // Check if user has already spoken (Smart Start)
+                                    // Check if user has already spoken (Smart Start)
+                                    if (sonicClient.getSessionId() && !session.lastUserTranscript) {
+                                        // Changed "Hi" to a system instruction to force the Start Node execution
+                                        // This prevents the model from just saying "Hi" back and missing the workflow start.
+                                        await sonicClient.sendText("[SYSTEM: User Connected. Execute the Start Node of the workflow now.]");
+                                        console.log('[Server] Initial greeting trigger sent to AI');
+                                    } else if (session.lastUserTranscript) {
+                                        console.log('[Server] User already spoke, skipping initial greeting (Smart Start active)');
                                     }
-                                }, 500); // Small delay to ensure session is fully ready
+                                }, 1000); // Increased delay slightly to 1000ms to ensure stability
                             } else {
                                 console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
                             }

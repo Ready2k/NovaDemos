@@ -397,8 +397,12 @@
             <div class="graph-wrapper">
                 <div
                     style="position: absolute; top: 20px; right: 20px; z-index: 10; display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 8px; border: var(--glass-border);">
+                    <button id="zoom-out-btn"
+                        style="background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; padding: 4px 10px; font-size: 1rem; cursor: pointer; line-height: 1;">-</button>
                     <span id="zoom-display"
-                        style="padding: 4px 8px; color: #cbd5e1; font-family: monospace; font-size: 0.9rem;">100%</span>
+                        style="padding: 4px 8px; color: #cbd5e1; font-family: monospace; font-size: 0.9rem; display: flex; align-items: center;">100%</span>
+                    <button id="zoom-in-btn"
+                        style="background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; padding: 4px 10px; font-size: 1rem; cursor: pointer; line-height: 1;">+</button>
                     <button id="preview-fit-btn"
                         style="background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; cursor: pointer;">Fit</button>
                 </div>
@@ -406,7 +410,8 @@
                 <div id="graph-container"
                     class="w-full h-full flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing"
                     style="width: 100%; height: 100%;">
-                    <div id="mermaid-graph" class="transition-transform duration-100 ease-out"></div>
+                    <div id="mermaid-graph" class="transition-transform duration-100 ease-out"
+                        style="transform-origin: 0 0;"></div>
                 </div>
 
                 <!-- Toasts -->
@@ -812,11 +817,55 @@
             container.addEventListener('wheel', e => {
                 e.preventDefault();
                 currentZoom += e.deltaY * -0.001;
-                currentZoom = Math.min(Math.max(0.2, currentZoom), 3);
+                currentZoom = Math.min(Math.max(0.2, currentZoom), 10);
                 document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
                 updateTransform();
             });
-            document.getElementById('preview-fit-btn').addEventListener('click', () => { currentZoom = 1; panX = 0; panY = 0; updateTransform(); });
+
+            document.getElementById('zoom-in-btn').addEventListener('click', () => {
+                currentZoom = Math.min(currentZoom + 0.1, 10);
+                document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
+                updateTransform();
+            });
+
+            document.getElementById('zoom-out-btn').addEventListener('click', () => {
+                currentZoom = Math.max(currentZoom - 0.1, 0.2);
+                document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
+                updateTransform();
+            });
+
+            document.getElementById('preview-fit-btn').addEventListener('click', () => {
+                const containerWidth = container.clientWidth;
+                const containerHeight = container.clientHeight;
+
+                // Get natural dimensions by un-applying current zoom
+                const rect = graph.getBoundingClientRect();
+                // Check if rect has valid dimensions (might be 0 if hidden/empty)
+                if (rect.width === 0 || rect.height === 0) return;
+
+                const naturalWidth = rect.width / currentZoom;
+                const naturalHeight = rect.height / currentZoom;
+
+                const padding = 40;
+                const availableWidth = containerWidth - padding;
+                const availableHeight = containerHeight - padding;
+
+                // Calculate scales
+                const scaleX = availableWidth / naturalWidth;
+                const scaleY = availableHeight / naturalHeight;
+
+                // Fit to smallest scale to ensure full visibility
+                let newZoom = Math.min(scaleX, scaleY);
+                newZoom = Math.min(Math.max(0.2, newZoom), 10); // Clamp
+
+                // Center
+                panX = (containerWidth - naturalWidth * newZoom) / 2;
+                panY = (containerHeight - naturalHeight * newZoom) / 2;
+                currentZoom = newZoom;
+
+                updateTransform();
+                document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
+            });
         }
 
         function showError(msg) {

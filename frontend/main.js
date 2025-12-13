@@ -241,6 +241,7 @@ class VoiceAssistant {
             const option = document.createElement('option');
             option.value = prompt.content;
             option.textContent = prompt.name;
+            option.setAttribute('data-id', prompt.id); // Store ID for retrieval
             this.presetSelect.appendChild(option);
 
             // Restore selection if content matches
@@ -427,6 +428,31 @@ class VoiceAssistant {
             // Use default agent configuration from server
             agentId = undefined; // Server will use default agent
             agentAliasId = undefined; // Server will use default agent
+        } else if (brainMode === 'raw_nova') {
+            // For Nova Sonic mode, we repurpose agentId to track the active Persona ID
+            // helping the server load the correct workflow
+            let foundPersonaId = null;
+
+            // Check Persona Preset (main tab)
+            if (this.presetSelect && this.presetSelect.selectedIndex > 0) {
+                const selectedOption = this.presetSelect.options[this.presetSelect.selectedIndex];
+                const dataId = selectedOption.getAttribute('data-id');
+                if (dataId && dataId.startsWith('persona-')) {
+                    foundPersonaId = dataId;
+                }
+            }
+
+            // Fallback to Prompt Preset (prompts tab) if not found in main preset
+            if (!foundPersonaId && this.promptPresetSelect && this.promptPresetSelect.selectedIndex > 0) {
+                if (this.promptPresetSelect.value && this.promptPresetSelect.value.startsWith('persona-')) {
+                    foundPersonaId = this.promptPresetSelect.value;
+                }
+            }
+
+            if (foundPersonaId) {
+                agentId = foundPersonaId.replace('.txt', '');
+                console.log('[Frontend] Selected Persona ID:', agentId);
+            }
         }
 
         // Get selected tools
