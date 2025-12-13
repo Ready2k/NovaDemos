@@ -1165,19 +1165,54 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             }
                         }
 
+                        // --- WORKFLOW LOADING (Priority for Tool Selection) ---
+                        let workflowSystemPrompt = "";
+                        let workflowTools: string[] | undefined;
+                        try {
+                            const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
+                            let filename = `workflow-${personaId}.json`;
+                            if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
+                                filename = 'workflow-banking.json';
+                            }
+
+                            const workflowPath = path.join(__dirname, '../src/', filename);
+                            const localPath = path.join(__dirname, filename);
+                            let workflowData;
+
+                            if (fs.existsSync(workflowPath)) {
+                                workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                            } else if (fs.existsSync(localPath)) {
+                                workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+                            }
+
+                            if (workflowData) {
+                                workflowSystemPrompt = convertWorkflowToText(workflowData);
+                                workflowTools = workflowData.tools; // Extract tools from workflow
+                                console.log(`[Server] Loaded Dynamic Workflow from ${filename}`);
+                                if (workflowTools) {
+                                    console.log(`[Server] Workflow specifies tools: ${JSON.stringify(workflowTools)}`);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("[Server] Failed to load dynamic workflow:", e);
+                        }
+
                         // 3. Inject Tools (Dynamic Selection)
                         const allTools = loadTools();
                         let tools = [];
 
-                        // If frontend explicitly sends selectedTools list, use it to filter
-                        if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
-                            // Use the exact selection from frontend (including empty array for no tools)
+                        if (workflowTools && Array.isArray(workflowTools)) {
+                            // PRIORITY 1: Workflow-defined tools (Strict Whitelist)
+                            tools = allTools.filter(t => workflowTools!.includes(t.toolSpec.name));
+                            console.log(`[Server] Using strict workflow tool whitelist. Enabled: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                        } else if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
+                            // PRIORITY 2: Frontend explicit selection
                             tools = allTools.filter(t => parsed.config.selectedTools.includes(t.toolSpec.name));
                             console.log(`[Server] Using frontend tool selection: ${JSON.stringify(parsed.config.selectedTools)}`);
                         } else {
-                            // Default behavior when no selectedTools sent: Load ALL tools for backward compatibility
+                            // PRIORITY 3: Default behavior (Load ALL tools - Backward Compatibility)
                             tools = allTools;
-                            console.log('[Server] No selectedTools sent from frontend, defaulting to ALL tools');
+                            console.log('[Server] No workflow tools or frontend selection found. Defaulting to ALL tools.');
                         }
 
                         parsed.config.tools = tools;
@@ -1194,9 +1229,14 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         // CONDITIONAL NATIVE TOOL INSTRUCTION - only if tools are enabled
                         const nativeToolInstruction = tools.length > 0 ? `
-You have access to helpful tools that can enhance your responses when relevant. Use them naturally when they would be helpful to answer the user's question, but you can have normal conversations about any topic. Available tools: ${tools.map(t => t.toolSpec.name).join(', ')}. 
+You have access to helpful tools. Available tools: ${tools.map(t => t.toolSpec.name).join(', ')}. 
 
-IMPORTANT: When you use a tool, wait patiently for the result - do NOT generate error messages or assume failure. Tools may take a few seconds to respond.
+CRITICAL TOOL USAGE RULE: 
+- ONLY use a tool if the user's request EXPLICITLY requires it or if the current workflow instruction DEMANDS it.
+- DO NOT use tools for general conversation or greetings.
+- If the user did not ask for the information provided by a tool, DO NOT call it.
+
+When you do use a tool, wait patiently for the result.
 ` : `
 You do not have access to any tools. Answer questions directly based on your knowledge and maintain your personality.
 `;
@@ -1207,40 +1247,7 @@ You do not have access to any tools. Answer questions directly based on your kno
                             console.log('[Server] Injected tool instructions into System Prompt.');
                         }
 
-                        // --- WORKFLOW INJECTION START (Moved to end for priority) ---
-                        // Try to load a dynamic workflow for this persona/agent
-                        let workflowSystemPrompt = "";
-                        try {
-                            const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
-                            // Determine filename same way as API
-                            let filename = `workflow-${personaId}.json`;
-                            if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
-                                filename = 'workflow-banking.json';
-                            }
-
-                            const workflowPath = path.join(__dirname, '../src/', filename);
-                            console.log(`[WorkflowDebug] checking path: ${workflowPath}`); // DEBUG
-                            if (fs.existsSync(workflowPath)) {
-                                const workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
-                                workflowSystemPrompt = convertWorkflowToText(workflowData);
-                                if (workflowSystemPrompt) {
-                                    console.log(`[Server] Injected Dynamic Workflow from ${filename}`);
-                                    console.log(`[WorkflowDebug] INJECTED TEXT:\n${workflowSystemPrompt.substring(0, 200)}...`); // DEBUG
-                                }
-                            } else {
-                                // Check local dir fallback
-                                const localPath = path.join(__dirname, filename);
-                                console.log(`[WorkflowDebug] checking local path: ${localPath}`); // DEBUG
-                                if (fs.existsSync(localPath)) {
-                                    const workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
-                                    workflowSystemPrompt = convertWorkflowToText(workflowData);
-                                    console.log(`[Server] Injected Dynamic Workflow from ${filename} (local)`);
-                                }
-                            }
-                        } catch (e) {
-                            console.error("[Server] Failed to load dynamic workflow:", e);
-                        }
-
+                        // --- WORKFLOW INJECTION (System Prompt Append) ---
                         // Append to System Prompt if we are in RAW NOVA mode (Brain Mode)
                         if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
                             const basePrompt = parsed.config.systemPrompt || "";
@@ -1665,11 +1672,12 @@ function convertWorkflowToText(workflow: any): string {
     if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
 
     let text = "### WORKFLOW INSTRUCTIONS\n";
-    text += "You must follow this strictly defined process flow:\n\n";
+    text += "You must follow this strictly defined process flow. \n";
+    text += "CRITICAL: The descriptions below are INSTRUCTIONS for your behavior/persona. DO NOT read them aloud to the user.\n\n";
 
     // 1. Map Nodes
     workflow.nodes.forEach((node: any) => {
-        text += `STEP [${node.id}] (${node.type}): "${node.label || ''}"\n`;
+        text += `STEP [${node.id}] (${node.type}):\n   INSTRUCTION: ${node.label || 'No instruction'}\n`;
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {

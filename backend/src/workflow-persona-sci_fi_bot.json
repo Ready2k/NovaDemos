@@ -92,5 +92,8 @@
       "to": "end_placeholder",
       "label": ""
     }
+  ],
+  "tools": [
+    "get_server_time"
   ]
 }
