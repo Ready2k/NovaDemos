@@ -55,7 +55,13 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ## Recent Updates (December 2025)
 
-### ✅ Latest: Bedrock Agent Mode Fixed (Dec 11, 2025)
+### ✅ Latest: Enhanced Tool Management & Dynamic Categories (Dec 14, 2025)
+- **Feature**: Full UI for managing tool categories (Banking, Mortgage, System, Custom).
+- **Tool Manager**: Updated to support creating dynamic categories via "Smart Input".
+- **Metadata**: Migrated categorization to tool JSON definitions for scalability.
+- **Tabs**: Main UI now renders tools in tabbed views for better organization.
+
+### ✅ Bedrock Agent Mode Fixed (Dec 11, 2025)
 - **Fixed**: "Banking Bot (Agent)" dropdown selection now works correctly
 - **Issue**: Frontend was ignoring built-in `bedrock_agent` option, only handling custom agents
 - **Solution**: Updated `getSessionConfig()` to properly handle built-in bedrock_agent mode
@@ -140,6 +146,14 @@ Voice_S2S/
 ├── NATIVE_TOOL_SOLUTION.md     # Complete implementation guide
 └── README.md
 ```
+
+## Documentation
+
+- **[Getting Started](./docs/getting_started.md)**: Setup and installation guide.
+- **[Tool Management](./docs/tool_management.md)**: How to configure, categorize, and create new tools.
+- **[Knowledge Bases](./docs/knowledge_bases.md)**: Integrating RAG and external knowledge sources.
+- **[Workflow Editor](./docs/workflows.md)**: Designing complex agent behaviors visually.
+- **[Native Tool Implementation](./NATIVE_TOOL_SOLUTION.md)**: Deep dive into the tool execution architecture.
 
 ## Setup Instructions
 

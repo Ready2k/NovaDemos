@@ -1,0 +1,18 @@
+{
+    "name": "search_knowledge_base",
+    "description": "Useful for answering questions about mortgage rates, policies, and products using the official Knowledge Base.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The question or search query to run against the knowledge base."
+            }
+        },
+        "required": [
+            "query"
+        ]
+    },
+    "instruction": "- Use search_knowledge_base to answer questions about mortgages or defined products.",
+    "category": "Mortgage"
+}

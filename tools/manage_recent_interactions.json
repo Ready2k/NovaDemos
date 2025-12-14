@@ -43,5 +43,6 @@
       "sortCode"
     ]
   },
-  "gatewayTarget": "manage-recent-interactions___manage_recent_interactions"
+  "gatewayTarget": "manage-recent-interactions___manage_recent_interactions",
+  "category": "Banking"
 }

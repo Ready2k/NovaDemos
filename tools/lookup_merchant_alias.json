@@ -13,5 +13,6 @@
       "statementName"
     ]
   },
-  "gatewayTarget": "lookup-merchant-alias___lookup_merchant_alias"
+  "gatewayTarget": "lookup-merchant-alias___lookup_merchant_alias",
+  "category": "Banking"
 }

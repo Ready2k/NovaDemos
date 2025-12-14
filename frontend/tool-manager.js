@@ -35,6 +35,16 @@ function setupEventListeners() {
     document.getElementById('tool-schema').addEventListener('input', () => {
         // Optional: validate JSON real-time
     });
+    // Category Select Change
+    document.getElementById('tool-category-select').addEventListener('change', (e) => {
+        const customInput = document.getElementById('tool-category-custom');
+        if (e.target.value === '__NEW__') {
+            customInput.classList.remove('hidden');
+            customInput.focus();
+        } else {
+            customInput.classList.add('hidden');
+        }
+    });
 }
 
 async function loadTools() {
@@ -52,6 +62,31 @@ async function loadTools() {
 function renderToolList(tools) {
     const listContainer = document.getElementById('tool-list');
     listContainer.innerHTML = '';
+
+    // --- Populate Categories Select ---
+    const categories = new Set(['Banking', 'Mortgage', 'System', 'Other']);
+    tools.forEach(t => {
+        if (t.category) categories.add(t.category);
+    });
+
+    const select = document.getElementById('tool-category-select');
+    if (select) {
+        select.innerHTML = '';
+        Array.from(categories).sort().forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat;
+            select.appendChild(option);
+        });
+
+        // Add "Create New" option
+        const newOpt = document.createElement('option');
+        newOpt.value = '__NEW__';
+        newOpt.textContent = '[+] Create New Category...';
+        newOpt.style.color = '#a78bfa'; // light purple
+        newOpt.style.fontWeight = 'bold';
+        select.appendChild(newOpt);
+    }
 
     if (tools.length === 0) {
         listContainer.innerHTML = '<div class="text-gray-500 italic p-4">No tools found. Create one or import from Gateway.</div>';
@@ -82,6 +117,28 @@ function loadToolIntoEditor(tool) {
     document.getElementById('tool-instruction').value = tool.instruction || '';
     document.getElementById('tool-agent-prompt').value = tool.agentPrompt || '';
     document.getElementById('tool-gateway-target').value = tool.gatewayTarget || '';
+    document.getElementById('tool-gateway-target').value = tool.gatewayTarget || '';
+
+    // Category Handling
+    const catSelect = document.getElementById('tool-category-select');
+    const customInput = document.getElementById('tool-category-custom');
+
+    // If checking existence in current options
+    let found = false;
+    for (let i = 0; i < catSelect.options.length; i++) {
+        if (catSelect.options[i].value === tool.category) {
+            catSelect.value = tool.category;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        // Should have been found via renderToolList logic, but if not (edge case), default to Other
+        catSelect.value = 'Other';
+    }
+    customInput.classList.add('hidden');
+    customInput.value = '';
 
     // Handle schema (prefer input_schema, fallback to parameters)
     const schema = tool.input_schema || tool.inputSchema || tool.parameters || {};
@@ -108,6 +165,11 @@ function openNewTool() {
     document.getElementById('tool-instruction').value = '';
     document.getElementById('tool-agent-prompt').value = '';
     document.getElementById('tool-gateway-target').value = '';
+    document.getElementById('tool-gateway-target').value = '';
+
+    document.getElementById('tool-category-select').value = 'Other';
+    document.getElementById('tool-category-custom').classList.add('hidden');
+    document.getElementById('tool-category-custom').value = '';
     document.getElementById('tool-schema').value = '{\n  "type": "object",\n  "properties": {},\n  "required": []\n}';
 
     document.getElementById('tool-list-container').classList.add('hidden');
@@ -140,7 +202,11 @@ async function saveTool() {
             input_schema: schema,
             instruction: document.getElementById('tool-instruction').value,
             agentPrompt: document.getElementById('tool-agent-prompt').value,
-            gatewayTarget: document.getElementById('tool-gateway-target').value
+            gatewayTarget: document.getElementById('tool-gateway-target').value,
+            gatewayTarget: document.getElementById('tool-gateway-target').value,
+            category: (document.getElementById('tool-category-select').value === '__NEW__')
+                ? document.getElementById('tool-category-custom').value.trim()
+                : document.getElementById('tool-category-select').value
         };
 
         const response = await fetch('/api/tools', {

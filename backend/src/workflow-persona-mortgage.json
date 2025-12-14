@@ -1,0 +1,157 @@
+{
+    "title": "Mortgage Application Assistant Workflow",
+    "nodes": [
+        {
+            "id": "start",
+            "label": "Welcome & Purpose\n(New Purchase or Remortgage?)",
+            "type": "start"
+        },
+        {
+            "id": "check_eligibility_age",
+            "label": "Check Age\n(Must be > 18)",
+            "type": "decision"
+        },
+        {
+            "id": "check_eligibility_residency",
+            "label": "Check Residency\n(UK Resident?)",
+            "type": "decision"
+        },
+        {
+            "id": "collect_financials",
+            "label": "Collect Employment & Income\n(Salary + Bonuses)",
+            "type": "process"
+        },
+        {
+            "id": "run_credit_check",
+            "label": "Call 'check_credit_score'\n(Mock Check)",
+            "type": "tool",
+            "toolName": "check_credit_score"
+        },
+        {
+            "id": "credit_gate",
+            "label": "Credit Score Pass?\n(Score > 600)",
+            "type": "decision"
+        },
+        {
+            "id": "collect_property",
+            "label": "Collect Property Details\n(Address & Price)",
+            "type": "process"
+        },
+        {
+            "id": "value_property",
+            "label": "Call 'value_property'\n(Verify LTV)",
+            "type": "tool",
+            "toolName": "value_property"
+        },
+        {
+            "id": "calc_loan_amt",
+            "label": "Call 'calculate_max_loan'\n(Affordability Check)",
+            "type": "tool",
+            "toolName": "calculate_max_loan"
+        },
+        {
+            "id": "decision_point",
+            "label": "Final Decision\n(LTV < 90% & Affordability OK?)",
+            "type": "decision"
+        },
+        {
+            "id": "get_rates",
+            "label": "Call 'get_mortgage_rates'\n(Generate Quote)",
+            "type": "tool",
+            "toolName": "get_mortgage_rates"
+        },
+        {
+            "id": "end_approved",
+            "label": "Approved - Issue DIP\n(Success)",
+            "type": "end",
+            "outcome": "APPROVED"
+        },
+        {
+            "id": "end_referral",
+            "label": "Referral to Human Advisor\n(Complex Case)",
+            "type": "end",
+            "outcome": "REFERRAL"
+        },
+        {
+            "id": "end_rejected",
+            "label": "Application Declined\n(Eligibility/Credit failure)",
+            "type": "end",
+            "outcome": "DECLINED"
+        }
+    ],
+    "edges": [
+        {
+            "from": "start",
+            "to": "check_eligibility_age"
+        },
+        {
+            "from": "check_eligibility_age",
+            "to": "check_eligibility_residency",
+            "label": "Yes"
+        },
+        {
+            "from": "check_eligibility_age",
+            "to": "end_rejected",
+            "label": "No"
+        },
+        {
+            "from": "check_eligibility_residency",
+            "to": "collect_financials",
+            "label": "Yes"
+        },
+        {
+            "from": "check_eligibility_residency",
+            "to": "end_rejected",
+            "label": "No"
+        },
+        {
+            "from": "collect_financials",
+            "to": "run_credit_check"
+        },
+        {
+            "from": "run_credit_check",
+            "to": "credit_gate"
+        },
+        {
+            "from": "credit_gate",
+            "to": "collect_property",
+            "label": "Pass"
+        },
+        {
+            "from": "credit_gate",
+            "to": "end_rejected",
+            "label": "Fail"
+        },
+        {
+            "from": "collect_property",
+            "to": "value_property"
+        },
+        {
+            "from": "value_property",
+            "to": "calc_loan_amt"
+        },
+        {
+            "from": "calc_loan_amt",
+            "to": "decision_point"
+        },
+        {
+            "from": "decision_point",
+            "to": "get_rates",
+            "label": "Approved"
+        },
+        {
+            "from": "decision_point",
+            "to": "end_referral",
+            "label": "Borderline"
+        },
+        {
+            "from": "decision_point",
+            "to": "end_rejected",
+            "label": "Declined"
+        },
+        {
+            "from": "get_rates",
+            "to": "end_approved"
+        }
+    ]
+}

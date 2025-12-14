@@ -41,5 +41,6 @@
       "merchantContacted"
     ]
   },
-  "gatewayTarget": "create-dispute-case___create_dispute_case"
+  "gatewayTarget": "create-dispute-case___create_dispute_case",
+  "category": "Banking"
 }

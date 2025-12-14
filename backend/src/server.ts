@@ -11,6 +11,8 @@ import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
 import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
 
+import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
+import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
 import * as dotenv from 'dotenv';
 
 // Load environment variables
@@ -57,6 +59,13 @@ if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY
 
 const agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
 
+// Initialize Bedrock Client for listing models
+const bedrockClient = new BedrockClient(agentCoreConfig);
+
+// Initialize Bedrock Agent Runtime Client for KB retrieval
+const bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(agentCoreConfig);
+
+
 // Initialize AgentCore Gateway Client
 let agentCoreGatewayClient: AgentCoreGatewayClient | null = null;
 try {
@@ -65,6 +74,27 @@ try {
 } catch (error) {
     console.warn('[Server] AgentCore Gateway Client initialization failed:', error);
 }
+
+
+
+// Knowledge Base Storage - Hoisted
+const KB_FILE = path.join(__dirname, '../../knowledge_bases.json');
+
+function loadKnowledgeBases() {
+    try {
+        if (!fs.existsSync(KB_FILE)) return [];
+        return JSON.parse(fs.readFileSync(KB_FILE, 'utf-8'));
+    } catch (e) {
+        console.error("Failed to load KBs:", e);
+        return [];
+    }
+}
+
+function saveKnowledgeBases(kbs: any[]) {
+    fs.writeFileSync(KB_FILE, JSON.stringify(kbs, null, 2));
+}
+
+
 
 /**
  * Check if two messages are similar enough to be considered duplicates
@@ -241,7 +271,134 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
         // Use session-specific Agent Core Runtime ARN if available, otherwise fall back to environment variable
         let runtimeArn = session.sonicClient?.config?.agentCoreRuntimeArn || process.env.AGENT_CORE_RUNTIME_ARN;
         if (!runtimeArn) return { status: "error", message: "Missing AGENT_CORE_RUNTIME_ARN" };
-        if (runtimeArn.includes('/runtime-endpoint/')) runtimeArn = runtimeArn.split('/runtime-endpoint/')[0];
+        if (runtimeArn && runtimeArn.includes('/runtime-endpoint/')) runtimeArn = runtimeArn.split('/runtime-endpoint/')[0];
+
+        // --- MORTGAGE TOOL HANDLERS (MOCK) ---
+        if (qualifier === 'check_credit_score') {
+            console.log(`[Tool] Executing check_credit_score with payload:`, initialPayload);
+            // Deterministic mock based on name length to allow testing both paths
+            const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
+            const name = params.name || "Unknown";
+            // If name has "Fail", give low score
+            let score = 750;
+            if (name.toLowerCase().includes('fail') || name.toLowerCase().includes('reject')) {
+                score = 450;
+            } else {
+                score = 800 + Math.floor(Math.random() * 100);
+            }
+            return {
+                status: "success",
+                data: JSON.stringify({
+                    score: score,
+                    rating: score > 700 ? "Excellent" : "Poor",
+                    status: score > 600 ? "PASS" : "FAIL"
+                })
+            };
+        }
+
+        if (qualifier === 'value_property') {
+            console.log(`[Tool] Executing value_property with payload:`, initialPayload);
+            const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
+            const estimated = Number(params.estimated_value) || 300000;
+            // Valuate at +/- 5% of estimate
+            const variance = 0.95 + (Math.random() * 0.1);
+            const valuation = Math.round(estimated * variance);
+            return {
+                status: "success",
+                data: JSON.stringify({
+                    valuation: valuation,
+                    confidence: "High",
+                    source: "Hometrack Mock"
+                })
+            };
+        }
+
+        if (qualifier === 'search_knowledge_base') {
+            console.log(`[Tool] Executing search_knowledge_base with payload:`, initialPayload);
+            const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
+            const query = params.query;
+
+            // Load KBs to find the configured one (supporting multiple for future, but using first enabled or specific ID for now)
+            // For now, we'll try to find a KB ID passed in env or look up from our local storage if we had session context
+            // Since the tool definition doesn't pass KB ID, we might need to hardcode or lookup.
+            // The User Request mentioned KB ID: KCDO7ZUFA1.
+            // Ideally, we should pick the KB associated with the current configuration.
+
+            // Let's check if we can get the active KB from session (not currently stored) or fall back to the task's ID.
+            // We'll read the KB_FILE to find available KBs.
+            let kbId = "KCDO7ZUFA1"; // Default from task
+            let modelArn = "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0";
+
+            try {
+                if (fs.existsSync(KB_FILE)) {
+                    const kbs = JSON.parse(fs.readFileSync(KB_FILE, 'utf-8'));
+                    if (kbs.length > 0) {
+                        kbId = kbs[0].id; // Use the first one
+                        if (kbs[0].modelArn) modelArn = kbs[0].modelArn;
+                    }
+                }
+            } catch (e) {
+                console.warn("[Tool] Failed to load KB config, using default", e);
+            }
+
+            try {
+                const command = new RetrieveAndGenerateCommand({
+                    input: { text: query },
+                    retrieveAndGenerateConfiguration: {
+                        type: 'KNOWLEDGE_BASE',
+                        knowledgeBaseConfiguration: {
+                            knowledgeBaseId: kbId,
+                            modelArn: modelArn
+                        }
+                    }
+                });
+
+                const response = await bedrockAgentRuntimeClient.send(command);
+                const resultText = response.output?.text || "No information found in the knowledge base.";
+
+                return {
+                    status: "success",
+                    data: resultText
+                };
+            } catch (error: any) {
+                console.error("[Tool] Knowledge Base search failed:", error);
+                return {
+                    status: "error",
+                    data: `Failed to search knowledge base: ${error.message}`
+                };
+            }
+        }
+
+        if (qualifier === 'calculate_max_loan') {
+            console.log(`[Tool] Executing calculate_max_loan with payload:`, initialPayload);
+            const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
+            const income = Number(params.total_annual_income) || 0;
+            const multiplier = 4.5;
+            const maxLoan = income * multiplier;
+            return {
+                status: "success",
+                data: JSON.stringify({
+                    max_loan_amount: maxLoan,
+                    multiplier_used: multiplier,
+                    risk_factor: "Standard"
+                })
+            };
+        }
+
+        if (qualifier === 'get_mortgage_rates') {
+            console.log(`[Tool] Executing get_mortgage_rates with payload:`, initialPayload);
+            return {
+                status: "success",
+                data: JSON.stringify({
+                    products: [
+                        { name: "2 Year Fixed", rate: "4.5%", fee: "£999", monthly_payment: "Calculated at application" },
+                        { name: "5 Year Fixed", rate: "4.1%", fee: "£0", monthly_payment: "Calculated at application" },
+                        { name: "Tracker", rate: "Base + 0.5%", fee: "£499" }
+                    ]
+                })
+            };
+        }
+        // --------------------------------------
 
         // Session ID Logic
         let rSessionId = session.sessionId;
@@ -353,7 +510,10 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
     }
 }
 
+
+
 const PORT = 8080;
+
 const SONIC_PATH = '/sonic';
 const FRONTEND_DIR = path.join(__dirname, '../../frontend');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
@@ -368,6 +528,8 @@ function ensureHistoryDir() {
     }
 }
 ensureHistoryDir();
+
+
 
 // Save transcript to file
 function saveTranscript(session: ClientSession) {
@@ -960,6 +1122,135 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+
+    // Knowledge Base APIs
+    if (req.url === '/api/knowledge-bases') {
+        if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(loadKnowledgeBases()));
+            return;
+        }
+
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk.toString(); });
+            req.on('end', () => {
+                try {
+                    const newKb = JSON.parse(body);
+                    const kbs = loadKnowledgeBases();
+                    kbs.push(newKb);
+                    saveKnowledgeBases(kbs);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'success' }));
+                } catch (e: any) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+            });
+            return;
+        }
+    }
+
+
+
+    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'PUT') {
+        const idToUpdate = req.url.split('/').pop();
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const updatedFields = JSON.parse(body);
+                const kbs = loadKnowledgeBases();
+                const index = kbs.findIndex((kb: any) => kb.id === idToUpdate);
+
+                if (index !== -1) {
+                    kbs[index] = { ...kbs[index], ...updatedFields, id: idToUpdate };
+                    saveKnowledgeBases(kbs);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ status: 'success' }));
+                } else {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'KB not found' }));
+                }
+            } catch (e: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+
+
+    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
+        const idToDelete = req.url.split('/').pop();
+        const kbs = loadKnowledgeBases();
+        const newKbs = kbs.filter((kb: any) => kb.id !== idToDelete);
+        saveKnowledgeBases(newKbs);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'success' }));
+        return;
+    }
+
+    // List Bedrock Models Endpoint
+    if (req.url === '/api/bedrock-models') {
+        console.log('[Server] Received request for /api/bedrock-models');
+        try {
+            console.log('[Server] Listing Foundation Models...');
+            const command = new ListFoundationModelsCommand({});
+            const response = await bedrockClient.send(command);
+            console.log('[Server] Received response from Bedrock:', response.modelSummaries?.length || 0, 'models');
+
+            const uniqueModels = new Map();
+
+            response.modelSummaries?.forEach(m => {
+                if (m.modelLifecycle?.status !== 'ACTIVE') return;
+                // Filter for TEXT output only (excludes embeddings and image generation)
+                if (!m.outputModalities?.includes('TEXT')) return;
+                // Exclude embedding models explicitly just in case
+                if (!m.modelId || m.modelId.includes('embed')) return;
+
+                // Deduplication logic:
+                // If we already have this model name, we might want to keep the "latest" or "on-demand" version.
+                // Usually, the List API returns multiple variants. 
+                // We'll prefer standard IDs over 'provisioned' ones if identifiable, 
+                // but significantly, we only want one entry per visual name to avoid confusion.
+                // We will overwrite, effectively keeping the last one seen unless we add specific logic.
+                // A better approach is to check if the existing one is "better".
+                // For now, let's just ensure we have unique names.
+                if (!uniqueModels.has(m.modelName)) {
+                    uniqueModels.set(m.modelName, {
+                        id: m.modelId,
+                        arn: m.modelArn,
+                        name: m.modelName,
+                        provider: m.providerName
+                    });
+                } else {
+                    // Optional: Smart selection if duplicates differ significantly?
+                    // For now, first-come (or last-come) unique name is enough to declutter.
+                }
+            });
+
+            const models = Array.from(uniqueModels.values())
+                .sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(models));
+        } catch (error: any) {
+            console.error('[Server] Failed to list models:', error);
+            // Fallback to basic list if permission denied or error
+            const fallbackModels = [
+                { id: 'anthropic.claude-3-haiku-20240307-v1:0', arn: 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0', name: 'Claude 3 Haiku', provider: 'Anthropic' },
+                { id: 'anthropic.claude-3-sonnet-20240229-v1:0', arn: 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0', name: 'Claude 3 Sonnet', provider: 'Anthropic' },
+                { id: 'us.amazon.nova-2-lite-v1:0', arn: 'arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-2-lite-v1:0', name: 'Nova 2 Lite', provider: 'Amazon' },
+                { id: 'us.amazon.nova-2-pro-v1:0', arn: 'arn:aws:bedrock:us-east-1::foundation-model/us.amazon.nova-2-pro-v1:0', name: 'Nova 2 Pro', provider: 'Amazon' }
+            ];
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(fallbackModels));
+        }
+        return;
+    }
+
     if (req.url === '/api/version') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(VERSION_INFO));
@@ -1009,15 +1300,37 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/voices') {
+    if (req.url === '/api/workflows') {
         try {
-            const voices = formatVoicesForFrontend();
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(voices));
+            // List all workflow files in src directory
+            const srcDir = path.join(__dirname, '../src/');
+            if (fs.existsSync(srcDir)) {
+                const files = fs.readdirSync(srcDir)
+                    .filter(f => f.startsWith('workflow-') && f.endsWith('.json'));
+
+                const workflows = files.map(f => {
+                    // Extract ID: workflow-banking.json -> banking
+                    // workflow-persona-mortgage.json -> persona-mortgage
+                    let id = f.replace('workflow-', '').replace('.json', '');
+                    let name = id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+                    // Specific overrides for nicer names
+                    if (id === 'banking') name = 'Banking Disputes';
+                    if (id === 'persona-mortgage') name = 'Mortgage Application';
+
+                    return { id, name, filename: f };
+                });
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(workflows));
+            } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify([]));
+            }
         } catch (error) {
-            console.error('[Server] Error fetching voices:', error);
+            console.error('[Server] Error fetching workflows:', error);
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Failed to fetch voices' }));
+            res.end(JSON.stringify({ error: 'Failed to fetch workflows' }));
         }
         return;
     }
@@ -1257,29 +1570,108 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let workflowSystemPrompt = "";
                         let workflowTools: string[] | undefined;
                         try {
-                            const personaId = parsed.config.agentId || 'persona-banking_bot'; // Default fallback
-                            let filename = `workflow-${personaId}.json`;
-                            if (personaId === 'persona-banking_bot' || personaId === 'banking') {
-                                filename = 'workflow-banking.json';
+                            const availableWorkflows: any = {}; // Map of Prefix -> FilePath
+                            let personaId = parsed.config.agentId || 'persona-banking_bot'; // Default fallback
+                            personaId = personaId.replace('.txt', '');
+
+                            // MULTI-WORKFLOW CONFIGURATION
+                            // Check if client sent explicit linkedWorkflows
+                            if (parsed.config.linkedWorkflows && Array.isArray(parsed.config.linkedWorkflows) && parsed.config.linkedWorkflows.length > 0) {
+                                console.log('[Server] Using User-Linked Workflows:', parsed.config.linkedWorkflows);
+                                parsed.config.linkedWorkflows.forEach((wfId: string) => {
+                                    // Map ID to filename
+                                    let filename = `workflow-${wfId}.json`;
+                                    // Handle legacy/special cases if needed, though robust mapping logic should handle it
+                                    // Use uppercase ID as prefix for collision avoidance (e.g. MORTGAGE, BANKING)
+                                    let prefix = wfId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+                                    // Simplify prefix if it's long (e.g. PERSONA_MORTGAGE -> MORTGAGE)
+                                    if (prefix.includes('PERSONA_')) prefix = prefix.replace('PERSONA_', '');
+
+                                    availableWorkflows[prefix] = filename;
+                                });
+                            }
+                            // Fallback: Hardcoded 'Banking Bot' Logic (Preserve for backward compatibility or default behavior)
+                            else if (personaId === 'persona-banking_bot' || personaId === 'banking') {
+                                // Default Banking Bot behavior = Dispute + Mortgage (until user overrides via UI)
+                                // Actually, per new requirement, default should be NO linked workflow? 
+                                // User said: "default view being no linked workflow" - but that refers to UI.
+                                // For the bot itself, if no linkedWorkflows sent, maybe just load 'banking'?
+                                // Let's keep the single Main workflow fallback if no linked workflows are provided.
+
+                                // Revert to single workflow for 'banking' if no explicit link provided
+                                availableWorkflows['MAIN'] = 'workflow-banking.json';
+                            } else {
+                                // Single workflow fallback for other personas
+                                const filename = `workflow-${personaId}.json`;
+                                availableWorkflows['MAIN'] = filename;
                             }
 
-                            const workflowPath = path.join(__dirname, '../src/', filename);
-                            const localPath = path.join(__dirname, filename);
-                            let workflowData;
+                            // MERGE WORKFLOWS
+                            let mergedNodes: any[] = [];
+                            let mergedEdges: any[] = [];
+                            let validedTools: string[] = [];
 
-                            if (fs.existsSync(workflowPath)) {
-                                workflowData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
-                            } else if (fs.existsSync(localPath)) {
-                                workflowData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
-                            }
+                            for (const [prefix, filename] of Object.entries(availableWorkflows)) {
+                                const workflowPath = path.join(__dirname, '../src/', filename as string);
+                                const localPath = path.join(__dirname, filename as string);
+                                let wfData;
 
-                            if (workflowData) {
-                                workflowSystemPrompt = convertWorkflowToText(workflowData);
-                                workflowTools = workflowData.tools; // Extract tools from workflow
-                                console.log(`[Server] Loaded Dynamic Workflow from ${filename}`);
-                                if (workflowTools) {
-                                    console.log(`[Server] Workflow specifies tools: ${JSON.stringify(workflowTools)}`);
+                                if (fs.existsSync(workflowPath)) {
+                                    wfData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                                } else if (fs.existsSync(localPath)) {
+                                    wfData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
                                 }
+
+                                if (wfData) {
+                                    console.log(`[Server] Merging workflow: ${filename} (Prefix: ${prefix})`);
+
+                                    // Namespace Nodes & Edges
+                                    const namespacedNodes = wfData.nodes.map((node: any) => ({
+                                        ...node,
+                                        id: `${prefix}_${node.id}`
+                                    }));
+
+                                    const namespacedEdges = wfData.edges.map((edge: any) => ({
+                                        ...edge,
+                                        from: `${prefix}_${edge.from}`,
+                                        to: `${prefix}_${edge.to}`
+                                    }));
+
+                                    mergedNodes = [...mergedNodes, ...namespacedNodes];
+                                    mergedEdges = [...mergedEdges, ...namespacedEdges];
+
+                                    if (wfData.tools) {
+                                        validedTools = [...validedTools, ...wfData.tools];
+                                    }
+                                }
+                            }
+
+                            if (mergedNodes.length > 0) {
+                                // Create Virtual Master Workflow
+                                const masterWorkflow = {
+                                    nodes: mergedNodes,
+                                    edges: mergedEdges
+                                };
+
+                                workflowSystemPrompt = convertWorkflowToText(masterWorkflow);
+                                workflowTools = [...new Set(validedTools)]; // Dedupe tools
+
+                                // INJECT MASTER ROUTER
+                                if (Object.keys(availableWorkflows).length > 1) {
+                                    const routerInstruction = `
+### MASTER ROUTER INSTRUCTION
+You are orchestrating multiple workflows.
+1. ASSESS USER INTENT: Determine what the user wants to do.
+2. ROUTE TO START NODE:
+   - If User wants to Query a Transaction or Dispute: GOTO [DISPUTE_start]
+   - If User wants a Mortgage or Home Loan: GOTO [MORTGAGE_start]
+   - If Unclear: Ask clarifying question.
+
+`;
+                                    workflowSystemPrompt = routerInstruction + workflowSystemPrompt;
+                                }
+
+                                console.log(`[Server] Dynamic Workflow Generated. Nodes: ${mergedNodes.length}, Tools: ${workflowTools.length}`);
                             }
                         } catch (e) {
                             console.error("[Server] Failed to load dynamic workflow:", e);

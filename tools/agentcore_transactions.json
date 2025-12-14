@@ -19,5 +19,7 @@
     ]
   },
   "instruction": "- Use 'agentcore_transactions' when the user asks for transaction history, recent transactions, or account activity.\n- Always require both accountId and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
-  "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory"
+  "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory",
+  "category": "Banking"
 }
+```

@@ -112,7 +112,21 @@ class VoiceAssistant {
         this.cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
         this.confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
 
-        // Stats elements
+        // Knowledge Base Elements
+        this.kbList = document.getElementById('kbList');
+        this.newKbName = document.getElementById('newKbName');
+        this.newKbId = document.getElementById('newKbId');
+        this.newKbModel = document.getElementById('newKbModel');
+        this.addKbBtn = document.getElementById('addKbBtn');
+        this.pendingKbDeleteId = null;
+        this.editingKbId = null;
+
+        // Tool Selection Elements
+        this.toolsSelectAllBtn = document.getElementById('tools-select-all');
+        this.toolsDeselectAllBtn = document.getElementById('tools-deselect-all');
+        this.toolsList = document.getElementById('tools-list');
+
+        // Stats Elements
         this.statDuration = document.getElementById('statDuration');
         this.statInputTokens = document.getElementById('statInputTokens');
         this.statOutputTokens = document.getElementById('statOutputTokens');
@@ -123,17 +137,39 @@ class VoiceAssistant {
         this.totalInputTokens = 0;
         this.totalOutputTokens = 0;
 
+        if (this.toolsSelectAllBtn) {
+            this.toolsSelectAllBtn.addEventListener('click', () => {
+                if (this.toolsList) {
+                    const checkboxes = this.toolsList.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(cb => cb.checked = true);
+                }
+            });
+        }
+
+        if (this.toolsDeselectAllBtn) {
+            this.toolsDeselectAllBtn.addEventListener('click', () => {
+                if (this.toolsList) {
+                    const checkboxes = this.toolsList.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(cb => cb.checked = false);
+                }
+            });
+        }
+
         // Visualizer
         this.canvas = document.getElementById('visualizer');
         this.canvasCtx = this.canvas.getContext('2d');
         this.visualizerAnimationId = null;
 
+        // Initialize
         // Initialize UI options first
         // this.initializePresets(); // Moved to loadPrompts
         this.initializeVoices(); // This is now async but we don't need to await it
         this.initializeSidebarNav();
         this.loadAgents(); // Load custom agents
         this.loadTools(); // Load available tools
+        this.loadWorkflows(); // Load available workflows for coupler
+        this.loadKnowledgeBases(); // Load KBs
+        this.loadBedrockModels(); // Load models
 
         // Then load saved settings
         this.loadSettings();
@@ -157,9 +193,18 @@ class VoiceAssistant {
         this.newSessionBtn.addEventListener('click', () => this.startNewSession());
 
         if (this.brainModeSelect) {
-            this.brainModeSelect.addEventListener('change', () => this.saveSettings());
+            this.brainModeSelect.addEventListener('change', () => {
+                this.updateAgentDescription();
+                this.autoSelectWorkflowForPersona(); // Trigger auto-select
+            });
         }
 
+        // Add listener for Persona Preset change
+        if (this.presetSelect) {
+            this.presetSelect.addEventListener('change', () => {
+                this.autoSelectWorkflowForPersona();
+            });
+        }
         if (this.debugModeCheckbox) {
             this.debugModeCheckbox.addEventListener('change', () => {
                 this.debugPanel.style.display = this.debugModeCheckbox.checked ? 'flex' : 'none';
@@ -210,8 +255,18 @@ class VoiceAssistant {
                 this.showToast('Agent deleted', 'info');
                 this.deleteConfirmModal.style.display = 'none';
                 this.pendingDeleteIndex = null;
+            } else if (this.pendingKbDeleteId !== null) {
+                // Handle KB Deletion
+                this.deleteKnowledgeBase(this.pendingKbDeleteId);
+                this.deleteConfirmModal.style.display = 'none';
+                this.pendingKbDeleteId = null;
             }
         });
+
+        // Knowledge Base Events
+        if (this.addKbBtn) {
+            this.addKbBtn.addEventListener('click', () => this.addKnowledgeBase());
+        }
 
         // Chat events
         this.sendBtn.addEventListener('click', () => this.sendTextMessage());
@@ -694,6 +749,13 @@ class VoiceAssistant {
             selectedTools.push(cb.value);
         });
 
+        // Get linked workflows (Coupler)
+        const linkedWorkflows = [];
+        const wfCheckboxes = document.querySelectorAll('#workflow-coupler-list input[type="checkbox"]:checked');
+        wfCheckboxes.forEach(cb => {
+            linkedWorkflows.push(cb.value);
+        });
+
         let finalSystemPrompt = '';
 
         // Prepend Core Guardrails (if loaded)
@@ -729,7 +791,8 @@ class VoiceAssistant {
                 brainMode: brainMode,
                 agentId: agentId,
                 agentAliasId: agentAliasId,
-                selectedTools: selectedTools
+                selectedTools: selectedTools,
+                linkedWorkflows: linkedWorkflows
             }
         };
     }
@@ -1894,31 +1957,110 @@ class VoiceAssistant {
                         return;
                     }
 
+                    // Categorization Logic
+                    const categories = {
+                        'Banking': [],
+                        'Mortgage': [],
+                        'System': [],
+                        'Other': []
+                    };
+
                     tools.forEach(tool => {
-                        const div = document.createElement('div');
-                        div.style.display = 'flex';
-                        div.style.alignItems = 'center';
-                        div.style.gap = '8px';
+                        // Read category from metadata, default to 'Other'
+                        let cat = tool.category || 'Other';
 
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.id = `tool-${tool.name}`;
-                        checkbox.value = tool.name;
-                        checkbox.checked = true; // Default to checked per user request
+                        // Normalize known categories (case-sensitive matching in our UI keys)
+                        if (['Banking', 'Mortgage', 'System'].includes(cat)) {
+                            // Perfect match
+                        } else {
+                            // If it's a new category not in our master list, maybe add it dynamically?
+                            // For now, let's treat unknown categories as keys too!
+                            if (!categories[cat]) {
+                                categories[cat] = [];
+                            }
+                        }
 
-                        const label = document.createElement('label');
-                        label.htmlFor = `tool-${tool.name}`;
-                        label.style.fontSize = '0.9rem';
-                        label.style.cursor = 'pointer';
-                        label.style.color = '#e2e8f0';
-                        label.textContent = tool.name;
+                        if (categories[cat]) {
+                            categories[cat].push(tool);
+                        } else {
+                            // Fallback
+                            categories['Other'].push(tool);
+                        }
+                    });
 
-                        // Tooltip for description
-                        label.title = tool.description || '';
+                    // --- Tab Bar ---
+                    const tabContainer = document.createElement('div');
+                    tabContainer.style.cssText = 'display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; overflow-x: auto;';
 
-                        div.appendChild(checkbox);
-                        div.appendChild(label);
-                        container.appendChild(div);
+                    const activeTabStyle = 'background: rgba(139, 92, 246, 0.3); border: 1px solid rgba(139, 92, 246, 0.5); color: white;';
+                    const inactiveTabStyle = 'background: transparent; border: 1px solid transparent; color: #94a3b8; hover:text-white;';
+                    const baseTabStyle = 'padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; white-space: nowrap;';
+
+                    let activeCategory = 'Banking'; // Default
+
+                    // Create Tabs
+                    Object.keys(categories).forEach(cat => {
+                        if (categories[cat].length === 0) return;
+
+                        const btn = document.createElement('button');
+                        btn.textContent = cat;
+                        btn.id = `tab-btn-${cat}`;
+                        btn.style.cssText = baseTabStyle + (cat === activeCategory ? activeTabStyle : inactiveTabStyle);
+
+                        btn.addEventListener('click', () => {
+                            // Update Tabs
+                            document.querySelectorAll('[id^="tab-btn-"]').forEach(b => {
+                                b.style.cssText = baseTabStyle + inactiveTabStyle;
+                            });
+                            btn.style.cssText = baseTabStyle + activeTabStyle;
+
+                            // Update Content
+                            document.querySelectorAll('[id^="cat-content-"]').forEach(c => {
+                                c.style.display = 'none';
+                            });
+                            const content = document.getElementById(`cat-content-${cat}`);
+                            if (content) content.style.display = 'flex';
+                        });
+
+                        tabContainer.appendChild(btn);
+                    });
+                    container.appendChild(tabContainer);
+
+                    // --- Content Areas ---
+                    Object.entries(categories).forEach(([category, categoryTools]) => {
+                        if (categoryTools.length === 0) return;
+
+                        const catContent = document.createElement('div');
+                        catContent.id = `cat-content-${category}`;
+                        catContent.style.cssText = `display: ${category === activeCategory ? 'flex' : 'none'}; flex-direction: column; gap: 8px;`;
+
+                        categoryTools.forEach(tool => {
+                            const div = document.createElement('div');
+                            div.style.display = 'flex';
+                            div.style.alignItems = 'center';
+                            div.style.gap = '8px';
+                            div.style.marginBottom = '4px';
+
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.id = `tool-${tool.name}`;
+                            checkbox.value = tool.name;
+                            checkbox.checked = true; // Default to checked
+
+                            const label = document.createElement('label');
+                            label.htmlFor = `tool-${tool.name}`;
+                            label.style.fontSize = '0.9rem';
+                            label.style.cursor = 'pointer';
+                            label.style.color = '#e2e8f0';
+                            label.textContent = tool.name;
+                            label.title = tool.description || '';
+
+                            div.appendChild(checkbox);
+                            div.appendChild(label);
+                            catContent.appendChild(div);
+                        });
+
+                        container.appendChild(catContent);
                     });
                 }
             }
@@ -1928,7 +2070,270 @@ class VoiceAssistant {
             if (container) container.innerHTML = '<div style="color: #ef4444; font-size: 0.8rem;">Failed to load tools</div>';
         }
     }
+    async loadWorkflows() {
+        try {
+            console.log('[Frontend] Fetching workflows...');
+            const response = await fetch('/api/workflows');
+            if (response.ok) {
+                const workflows = await response.json();
+                const container = document.getElementById('workflow-coupler-list');
+
+                if (container) {
+                    container.innerHTML = '';
+
+                    if (workflows.length === 0) {
+                        container.innerHTML = '<div style="font-size: 0.8rem; color: #64748b; font-style: italic;">No additional workflows found.</div>';
+                        return;
+                    }
+
+                    workflows.forEach(wf => {
+                        const div = document.createElement('div');
+                        div.style.display = 'flex';
+                        div.style.alignItems = 'center';
+                        div.style.gap = '8px';
+
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = `wf-${wf.id}`;
+                        checkbox.value = wf.id;
+                        checkbox.name = 'linkedWorkflow';
+                        checkbox.style.cursor = 'pointer';
+
+                        const label = document.createElement('label');
+                        label.htmlFor = `wf-${wf.id}`;
+                        label.style.fontSize = '0.9rem';
+                        label.style.color = '#e2e8f0';
+                        label.style.cursor = 'pointer';
+
+                        // Use the pre-formatted name from the API
+                        label.textContent = wf.name;
+
+                        div.appendChild(checkbox);
+                        div.appendChild(label);
+                        container.appendChild(div);
+                    });
+
+                    // Trigger auto-select to ensure defaults are checked
+                    this.autoSelectWorkflowForPersona();
+                }
+
+            } else {
+                console.error('[Frontend] Failed to fetch workflows:', response.status);
+            }
+        } catch (e) {
+            console.error('Failed to load workflows:', e);
+            const container = document.getElementById('workflow-coupler-list');
+            if (container) container.innerHTML = '<div style="color: #ef4444; font-size: 0.8rem;">Failed to load workflows</div>';
+        }
+    }
+
+
+    autoSelectWorkflowForPersona() {
+        const brainMode = this.brainModeSelect ? this.brainModeSelect.value : null;
+
+        // Uncheck all first
+        const checkboxes = document.querySelectorAll('input[name="linkedWorkflow"]');
+        checkboxes.forEach(cb => cb.checked = false);
+
+        let targetId = null;
+
+        // 1. Check Brain Mode (Bot vs Agent) first
+        if (brainMode === 'bedrock_agent') {
+            targetId = 'banking';
+        }
+
+        // 2. If no target yet (likely 'raw_nova'), check the Persona Preset
+        if (!targetId && this.presetSelect) {
+            const selectedOption = this.presetSelect.options[this.presetSelect.selectedIndex];
+            if (selectedOption) {
+                const personaId = selectedOption.getAttribute('data-id');
+                // personaId example: 'core-persona-mortgage.txt'
+                if (personaId) {
+                    // Clean it up: Remove 'core-' and '.txt'
+                    // core-persona-mortgage.txt -> persona-mortgage
+                    targetId = personaId.replace('core-', '').replace('.txt', '');
+                }
+            }
+        }
+
+        if (targetId) {
+            const targetCheckbox = document.getElementById(`wf-${targetId}`);
+            if (targetCheckbox) {
+                targetCheckbox.checked = true;
+            }
+        }
+    }
+
+    async loadKnowledgeBases() {
+        if (!this.kbList) return;
+        try {
+            const response = await fetch('/api/knowledge-bases');
+            if (response.ok) {
+                const kbs = await response.json();
+                this.kbList.innerHTML = '';
+                if (kbs.length === 0) {
+                    this.kbList.innerHTML = '<div style="font-size: 0.8rem; color: #64748b; font-style: italic;">No Knowledge Bases configured.</div>';
+                } else {
+                    kbs.forEach(kb => {
+                        const item = document.createElement('div');
+                        item.style.cssText = 'padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;';
+                        item.innerHTML = `
+                            <div>
+                                <div style="font-weight: 600; color: #e2e8f0; font-size: 0.9rem;">${kb.name}</div>
+                                <div style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">${kb.id}</div>
+                                <div style="font-size: 0.7rem; color: #64748b;">${kb.modelName || 'Unknown Model'}</div>
+                            </div>
+                            <div style="display: flex; gap: 5px;">
+                                <button class="icon-btn edit-kb-btn" data-id="${kb.id}" data-name="${kb.name}" data-model="${kb.modelArn || ''}" style="color: #6366f1; opacity: 0.7;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <button class="icon-btn delete-kb-btn" data-id="${kb.id}" style="color: #ef4444; opacity: 0.7;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                </button>
+                            </div>
+                        `;
+                        this.kbList.appendChild(item);
+                    });
+
+                    // Add edit listeners
+                    const editBtns = this.kbList.querySelectorAll('.edit-kb-btn');
+                    editBtns.forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const id = btn.getAttribute('data-id');
+                            const name = btn.getAttribute('data-name');
+                            const model = btn.getAttribute('data-model');
+                            this.editKnowledgeBase(id, name, model);
+                        });
+                    });
+
+                    // Add delete listeners
+                    const deleteBtns = this.kbList.querySelectorAll('.delete-kb-btn');
+                    deleteBtns.forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            const id = btn.getAttribute('data-id');
+                            this.pendingKbDeleteId = id;
+                            this.deleteConfirmText.textContent = `Are you sure you want to delete KB "${id}"?`;
+                            this.deleteConfirmModal.style.display = 'flex';
+                        });
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load KBs:', e);
+            this.kbList.innerHTML = '<div style="color: #ef4444; font-size: 0.8rem;">Failed to load KBs.</div>';
+        }
+    }
+
+    async loadBedrockModels() {
+        console.log('[Frontend] loadBedrockModels called');
+        if (!this.newKbModel) {
+            console.error('[Frontend] newKbModel element not found');
+            return;
+        }
+        try {
+            console.log('[Frontend] Fetching /api/bedrock-models');
+            const response = await fetch('/api/bedrock-models');
+            console.log('[Frontend] Response status:', response.status);
+            if (response.ok) {
+                const models = await response.json();
+                this.newKbModel.innerHTML = '<option value="">Select a model...</option>';
+                models.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m.arn || m.id;
+                    option.textContent = `${m.name} (${m.provider})`; // e.g. "Nova 2 Lite (Amazon)"
+                    option.setAttribute('data-name', m.name);
+                    this.newKbModel.appendChild(option);
+                });
+            }
+        } catch (e) {
+            console.error('Failed to load models:', e);
+            this.newKbModel.innerHTML = '<option value="">Error loading models</option>';
+        }
+    }
+
+    async addKnowledgeBase() {
+        const name = this.newKbName.value.trim();
+        const id = this.newKbId.value.trim();
+        const modelArn = this.newKbModel.value;
+        const modelName = this.newKbModel.options[this.newKbModel.selectedIndex]?.getAttribute('data-name');
+
+        if (!name || !id || !modelArn) {
+            this.showToast('Please fill all fields', 'warning');
+            return;
+        }
+
+        try {
+            let response;
+            if (this.editingKbId) {
+                // Update Mode
+                response = await fetch(`/api/knowledge-bases/${this.editingKbId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, id, modelArn, modelName })
+                });
+            } else {
+                // Create Mode
+                response = await fetch('/api/knowledge-bases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, id, modelArn, modelName })
+                });
+            }
+
+            if (response.ok) {
+                this.showToast(this.editingKbId ? 'Knowledge Base updated' : 'Knowledge Base added', 'success');
+                this.newKbName.value = '';
+                this.newKbId.value = '';
+                this.newKbModel.value = '';
+                this.editingKbId = null;
+                this.addKbBtn.textContent = 'Add Knowledge Base'; // Restore button text
+
+                this.loadKnowledgeBases();
+            } else {
+                throw new Error('Failed to save KB');
+            }
+        } catch (e) {
+            console.error('Failed to save KB:', e);
+            this.showToast('Error saving Knowledge Base', 'error');
+        }
+    }
+
+    editKnowledgeBase(id, name, modelArn) {
+        this.editingKbId = id;
+        this.newKbName.value = name;
+        this.newKbId.value = id;
+        this.newKbModel.value = modelArn;
+
+        // Update Button Text
+        if (this.addKbBtn) {
+            this.addKbBtn.textContent = 'Update Knowledge Base';
+        }
+
+        // Focus on name field
+        this.newKbName.focus();
+    }
+
+    async deleteKnowledgeBase(id) {
+        try {
+            const response = await fetch(`/api/knowledge-bases/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                this.showToast('Knowledge Base deleted', 'info');
+                this.loadKnowledgeBases();
+            } else {
+                throw new Error('Failed to delete');
+            }
+        } catch (e) {
+            console.error('Failed to delete KB:', e);
+            this.showToast('Error deleting KB', 'error');
+        }
+    }
 }
+
+// Initialize application when DOM is ready
+
 
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -1938,8 +2343,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Clean up on page unload
+
+
+// Global window event listeners
 window.addEventListener('beforeunload', () => {
     if (window.app) {
         window.app.disconnect();
     }
 });
+

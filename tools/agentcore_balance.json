@@ -19,5 +19,6 @@
     ]
   },
   "instruction": "- Use 'agentcore_balance' when the user asks for their account balance or current balance.\n- Always require both accountId and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
-  "gatewayTarget": "get-Balance___get_Balance"
+  "gatewayTarget": "get-Balance___get_Balance",
+  "category": "Banking"
 }

@@ -18,5 +18,6 @@
       "sortCode"
     ]
   },
-  "gatewayTarget": "perform-idv-check___perform_idv_check"
+  "gatewayTarget": "perform-idv-check___perform_idv_check",
+  "category": "Banking"
 }

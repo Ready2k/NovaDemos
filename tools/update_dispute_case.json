@@ -1,6 +1,7 @@
 {
   "name": "update_dispute_case",
   "description": "Updates an existing case when status is 'MORE_INFO'.",
+  "category": "Banking",
   "parameters": {
     "type": "object",
     "properties": {

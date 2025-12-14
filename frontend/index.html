@@ -28,6 +28,9 @@
         <div id="nav-tools" class="nav-item" title="Tools">
           <span style="font-size: 1.2rem;">🛠️</span>
         </div>
+        <div id="nav-knowledge" class="nav-item" title="Knowledge Bases">
+          <span style="font-size: 1.2rem;">📚</span>
+        </div>
         <div id="nav-settings" class="nav-item" style="margin-top: auto;" title="System Settings">
           <span style="font-size: 1.2rem;">⚙️</span>
         </div>
@@ -58,6 +61,8 @@
               <option value="">Custom / Select Preset...</option>
             </select>
           </div>
+
+
 
           <div class="input-group">
             <label for="brain-mode">Assistant</label>
@@ -162,6 +167,19 @@
             Manage and visualize your agent workflows here. Use the Creator to build new flows or the Visualizer to see
             them in action.
           </p>
+
+          <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+
+          <h3>🔗 Workflow Coupler</h3>
+          <div class="input-group">
+            <label>Linked Workflows</label>
+            <div id="workflow-coupler-list"
+              style="display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="font-size: 0.8rem; color: #64748b; font-style: italic;">Loading workflows...</div>
+            </div>
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">Select workflows to link to the active
+              Persona.</div>
+          </div>
         </div>
 
         <!-- View: Tools -->
@@ -174,10 +192,53 @@
           </a>
 
           <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #94a3b8;">Enabled Tools (Global)</h4>
+          <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button id="tools-select-all" class="secondary-btn" style="padding: 4px 8px; font-size: 0.75rem;">Select
+              All</button>
+            <button id="tools-deselect-all" class="secondary-btn" style="padding: 4px 8px; font-size: 0.75rem;">Deselect
+              All</button>
+          </div>
           <div id="tools-list" style="display: flex; flex-direction: column; gap: 8px;">
             <!-- Populated by JS -->
             <div style="font-size: 0.8rem; color: #64748b; font-style: italic;">Loading tools...</div>
           </div>
+        </div>
+
+        <!-- View: Knowledge Bases -->
+        <div id="view-knowledge" class="sidebar-view">
+          <h2>Knowledge Bases</h2>
+
+          <div id="kbList" style="margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px;">
+            <!-- Populated by JS -->
+            <div style="font-size: 0.8rem; color: #64748b; font-style: italic;">Loading KBs...</div>
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
+
+          <h4 style="margin: 0 0 10px 0; font-size: 1rem;">Add Knowledge Base</h4>
+
+          <div class="input-group">
+            <label for="newKbName">Name</label>
+            <input type="text" id="newKbName" placeholder="e.g. Mortgage Policy KB"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+          </div>
+
+          <div class="input-group">
+            <label for="newKbId">Knowledge Base ID</label>
+            <input type="text" id="newKbId" placeholder="e.g. KCDO7ZUFA1"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+          </div>
+
+          <div class="input-group">
+            <label for="newKbModel">Model</label>
+            <select id="newKbModel"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white;">
+              <option value="">Loading models...</option>
+            </select>
+          </div>
+
+          <button id="addKbBtn" class="primary-btn" style="width: 100%; justify-content: center;">Add Knowledge
+            Base</button>
         </div>
 
         <!-- View: Settings (System) -->
