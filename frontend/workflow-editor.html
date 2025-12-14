@@ -551,16 +551,139 @@
         }
 
         // --- Render Helpers ---
-        function renderGraph() {
+        async function renderGraph() {
             const container = document.getElementById('mermaid-graph');
             const def = generateMermaid(currentWorkflow);
 
-            window.mermaid.render('graphDiv', def).then(({ svg }) => {
+            try {
+                const { svg } = await window.mermaid.render('graphDiv', def);
                 container.innerHTML = svg;
                 document.getElementById('error-toast').classList.add('hidden');
-            }).catch(e => {
+
+                // Add interactions after render
+                setupGraphInteractions();
+            } catch (e) {
                 showError("Preview Error: " + e.message);
+            }
+        }
+
+        function setupGraphInteractions() {
+            const graph = document.getElementById('mermaid-graph');
+
+            // 1. Nodes
+            const nodes = graph.querySelectorAll('.node');
+            nodes.forEach(node => {
+                node.style.cursor = 'pointer';
+                node.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent drag/pan start if possible
+                    const id = node.id.replace(/^flowchart-/, '').replace(/-[a-z0-9]+$/, ''); // Mermaid adds prefixes/suffixes
+                    // Try to find the matching node ID from our workflow
+                    // Mermaid IDs are sometimes messy. Let's try to map back.
+                    // A safer way is using the `id` we set in mermaid code.
+                    // In `generateMermaid`, we use `n.id`. Mermaid often keeps this as the ID attribute of the group or internal rect.
+                    // Let's use the 'id' attribute of the group class 'node'.
+
+                    // The element 'node' is a <g class="node .. " id="...">
+                    // The ID usually matches what we passed if unique.
+                    // But Mermaid 10 might prefix it.
+
+                    // Fallback: Check text content or data attributes if we could inject them.
+                    // Actually, let's reverse look up by exact ID match if possible or clean the string.
+
+                    // Let's iterate our nodes and see if the DOM ID contains our Node ID
+                    const matchedNode = currentWorkflow.nodes.find(n => node.id.includes(n.id));
+                    if (matchedNode) {
+                        selectNode(matchedNode.id);
+                        zoomToElement(node);
+                    }
+                });
             });
+
+            // 2. Edges
+            // Mermaid renders edges as paths with class 'edgePath'. 
+            // It allows adding click events if we define interactions in mermaid, but here we do post-processing.
+            // Matching DOM edge to data edge is tricky because they aren't labeled with IDs by default.
+            // Strategy: We can rely on index order IF mermaid preserves it.
+            // Alternatively, click on 'edgeLabel' is easier to map if we adding IDs to labels.
+
+            // 2. Edges
+            // Mermaid renders edges as paths. Selector often depends on version/theme but '.edgePaths path' is standard.
+            const edgePaths = graph.querySelectorAll('.edgePaths path');
+            console.log(`[Interaction] Found ${edgePaths.length} edge paths`);
+
+            edgePaths.forEach((path, index) => {
+                path.style.cursor = 'pointer';
+                // Optional: Make it easier to click by increasing stroke width on hover via JS or CSS class
+                // path.classList.add('clickable-edge'); 
+
+                path.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    console.log(`[Interaction] Edge path ${index} clicked`);
+                    if (index < currentWorkflow.edges.length) {
+                        selectEdge(index);
+                        zoomToElement(path);
+                    }
+                });
+            });
+
+            // Make labels clickable too
+            const edgeLabels = graph.querySelectorAll('.edgeLabels .edgeLabel');
+            edgeLabels.forEach((label, index) => {
+                label.style.cursor = 'pointer';
+                label.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (index < currentWorkflow.edges.length) {
+                        selectEdge(index);
+                        // For label, zoom to the label itself
+                        zoomToElement(label);
+                    }
+                });
+            });
+        }
+
+        function zoomToElement(element) {
+            const container = document.getElementById('graph-container');
+            const graph = document.getElementById('mermaid-graph');
+
+            // 1. Calculate the element's center in "Unscaled Graph Coordinates"
+            const graphRect = graph.getBoundingClientRect(); // Current transformed rect
+            const elRect = element.getBoundingClientRect();   // Current element rect
+
+            // Relative position in current visual pixels
+            const relativeLeft = elRect.left - graphRect.left;
+            const relativeTop = elRect.top - graphRect.top;
+
+            // Unscaled coordinates (relative to graph origin 0,0)
+            const graphX = (relativeLeft + elRect.width / 2) / currentZoom;
+            const graphY = (relativeTop + elRect.height / 2) / currentZoom;
+
+            // 2. Determine Target Zoom
+            // If current zoom is small (<1.5), zoom in. Otherwise keep current to avoid jumping.
+            // Or always zoom to at least 1.5?
+            const targetZoom = Math.max(currentZoom, 1.5);
+
+            // 3. Calculate New Pan to center the point (graphX, graphY) at center of container
+            // formula: pan + (graphCoord * zoom) = centerCoord
+            // => pan = centerCoord - (graphCoord * zoom)
+
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+
+            const newPanX = (containerWidth / 2) - (graphX * targetZoom);
+            const newPanY = (containerHeight / 2) - (graphY * targetZoom);
+
+            // Apply
+            currentZoom = targetZoom;
+            panX = newPanX;
+            panY = newPanY;
+
+            document.getElementById('zoom-display').textContent = Math.round(currentZoom * 100) + '%';
+            updateTransform();
+
+            // Visual Highlight (Optional, simplistic)
+            // Removes focus ring from others
+            // element.style.filter = "brightness(1.5)"; 
+            // setTimeout(() => element.style.filter = "", 1000);
         }
 
         function generateMermaid(data) {
