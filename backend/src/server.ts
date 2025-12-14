@@ -266,7 +266,8 @@ function removeInternalDuplication(text: string): string {
  */
 async function callAgentCore(session: ClientSession, qualifier: string, initialPayload: any) {
     try {
-        console.log(`[AgentCore] Invoking agent for session ${session.sessionId}`);
+        console.log(`[AgentCore] Invoking agent for session ${session.sessionId} with qualifier: '${qualifier}'`);
+        const cleanQualifier = qualifier.trim();
 
         // Use session-specific Agent Core Runtime ARN if available, otherwise fall back to environment variable
         let runtimeArn = session.sonicClient?.config?.agentCoreRuntimeArn || process.env.AGENT_CORE_RUNTIME_ARN;
@@ -274,7 +275,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
         if (runtimeArn && runtimeArn.includes('/runtime-endpoint/')) runtimeArn = runtimeArn.split('/runtime-endpoint/')[0];
 
         // --- MORTGAGE TOOL HANDLERS (MOCK) ---
-        if (qualifier === 'check_credit_score') {
+        if (cleanQualifier === 'check_credit_score') {
             console.log(`[Tool] Executing check_credit_score with payload:`, initialPayload);
             // Deterministic mock based on name length to allow testing both paths
             const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
@@ -296,7 +297,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             };
         }
 
-        if (qualifier === 'value_property') {
+        if (cleanQualifier === 'value_property') {
             console.log(`[Tool] Executing value_property with payload:`, initialPayload);
             const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
             const estimated = Number(params.estimated_value) || 300000;
@@ -313,7 +314,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             };
         }
 
-        if (qualifier === 'search_knowledge_base') {
+        if (cleanQualifier === 'search_knowledge_base') {
             console.log(`[Tool] Executing search_knowledge_base with payload:`, initialPayload);
             const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
             const query = params.query;
@@ -354,6 +355,8 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
                 });
 
                 const response = await bedrockAgentRuntimeClient.send(command);
+                console.log("[Tool] Knowledge Base Response Metadata:", JSON.stringify(response.citations || "No citations", null, 2));
+
                 const resultText = response.output?.text || "No information found in the knowledge base.";
 
                 return {
@@ -369,7 +372,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             }
         }
 
-        if (qualifier === 'calculate_max_loan') {
+        if (cleanQualifier === 'calculate_max_loan') {
             console.log(`[Tool] Executing calculate_max_loan with payload:`, initialPayload);
             const params = typeof initialPayload === 'string' ? JSON.parse(initialPayload) : initialPayload;
             const income = Number(params.total_annual_income) || 0;
@@ -385,7 +388,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
             };
         }
 
-        if (qualifier === 'get_mortgage_rates') {
+        if (cleanQualifier === 'get_mortgage_rates') {
             console.log(`[Tool] Executing get_mortgage_rates with payload:`, initialPayload);
             return {
                 status: "success",
@@ -1643,6 +1646,15 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     if (wfData.tools) {
                                         validedTools = [...validedTools, ...wfData.tools];
                                     }
+
+                                    // AUTO-DETECT TOOLS FROMNODES (Fix for missing 'tools' array)
+                                    if (wfData.nodes) {
+                                        wfData.nodes.forEach((node: any) => {
+                                            if (node.type === 'tool' && node.toolName) {
+                                                validedTools.push(node.toolName);
+                                            }
+                                        });
+                                    }
                                 }
                             }
 
@@ -1682,9 +1694,20 @@ You are orchestrating multiple workflows.
                         let tools = [];
 
                         if (workflowTools && Array.isArray(workflowTools)) {
-                            // PRIORITY 1: Workflow-defined tools (Strict Whitelist for Definition)
-                            tools = allTools.filter(t => workflowTools!.includes(t.toolSpec.name));
-                            console.log(`[Server] Using strict workflow tool whitelist for definition. Enabled: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+                            // Priority 1: User's Explicit Selection (Strict Limit)
+                            // If the user has ticked tools in the UI, we ONLY allow those.
+                            if (parsed.config.selectedTools && Array.isArray(parsed.config.selectedTools) && parsed.config.selectedTools.length > 0) {
+                                console.log('[Server] Using User Selection STRICTLY (Overrides Workflow Defaults):', parsed.config.selectedTools);
+                                const userAllowed = new Set(parsed.config.selectedTools);
+                                tools = allTools.filter(t => userAllowed.has(t.toolSpec.name));
+                            }
+                            // Priority 2: Workflow Definition (Fallback if no user selection)
+                            else {
+                                console.log('[Server] No user selection. Falling back to strict workflow whitelist.');
+                                const allowedNames = new Set(workflowTools);
+                                tools = allTools.filter(t => allowedNames.has(t.toolSpec.name));
+                            }
+                            console.log(`[Server] Using strict workflow tool whitelist (with overrides). Enabled: ${tools.map(t => t.toolSpec.name).join(', ')}`);
 
                             // If user has specific selection, we should respect it for EXECUTION, 
                             // but we still send definition to LLM so it attempts native use (which we can catch).
@@ -2046,8 +2069,11 @@ You do not have access to any tools. Answer questions directly based on your kno
 
                                     // Double-check session is active before sending text
                                     if (sonicClient.getSessionId()) {
-                                        console.log('[Server] Sending to Sonic:', agentReply);
-                                        await sonicClient.sendText(agentReply);
+                                        // CRITICAL FIX: Clean text before sending to Nova Sonic to prevent markdown hangs
+                                        const cleanAgentReply = cleanTextForSonic(agentReply);
+                                        console.log('[Server] Sending clean text to Sonic:', cleanAgentReply);
+
+                                        await sonicClient.sendText(cleanAgentReply);
                                     } else {
                                         console.error('[Server] Nova Sonic session failed to start for Banking Bot response');
                                         ws.send(JSON.stringify({
@@ -2161,6 +2187,25 @@ server.listen(PORT, () => {
 /**
  * Handle events from Nova Sonic and forward to WebSocket client
  */
+// --- Text Cleaning Helper for Nova Sonic ---
+function cleanTextForSonic(text: string): string {
+    if (!text || typeof text !== 'string') return text;
+
+    let clean = text;
+    // Remove markdown formatting (headers, bold, italics, code blocks)
+    clean = clean.replace(/[#*`]/g, '');
+    // Collapse newlines
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+
+    // Extract just the time information for cleaner speech if present
+    const timeMatch = clean.match(/current time.*?is[:\s]+([^.\n]+)/i);
+    if (timeMatch) {
+        return `The current time is ${timeMatch[1].trim()}`;
+    }
+
+    return clean;
+}
+
 // --- Workflow Injection Helper ---
 function convertWorkflowToText(workflow: any): string {
     if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
@@ -3096,7 +3141,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         // Call AgentCore using the existing client
                         result = await callAgentCore(
                             session,
-                            toolUse.name,
+                            actualToolName,
                             agentPayload
                         );
                     }
@@ -3119,31 +3164,27 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     // NATIVE DELIVERY: Let Nova Sonic handle the response naturally
                     console.log(`[Server] Delivering tool result via Nova Sonic native response`);
+                    console.log(`[Server] Full Tool Result Length: ${toolResult.length}`);
+                    console.log(`[Server] Tool Result Preview: "${toolResult.substring(0, 200)}..."`);
 
                     // Send tool result back to Nova Sonic for natural speech synthesis
-                    // Nova Sonic will generate its own natural response which will appear in transcript
                     try {
                         console.log('[Server] Sending tool result back to Nova Sonic for natural speech...');
 
                         // Clean up the tool result for better speech
                         let cleanResult = toolResult;
                         if (typeof cleanResult === 'string') {
-                            // Remove markdown formatting
-                            cleanResult = cleanResult.replace(/\*\*/g, '').replace(/\*/g, '');
-                            // Extract just the time information for cleaner speech
-                            const timeMatch = cleanResult.match(/current time.*?is[:\s]+([^.\n]+)/i);
-                            if (timeMatch) {
-                                cleanResult = `The current time is ${timeMatch[1].trim()}`;
-                            }
+                            cleanResult = cleanTextForSonic(cleanResult);
                         }
 
                         console.log(`[Server] Sending cleaned result to Nova Sonic: "${cleanResult}"`);
 
                         // Send the tool result back to Nova Sonic using the native tool result mechanism
                         if (session.sonicClient && session.sonicClient.getSessionId()) {
+                            // Send RAW STRING to avoid JSON nesting confusion
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,
-                                { text: cleanResult },
+                                cleanResult,
                                 false
                             );
                             const toolEndTime = Date.now();
@@ -3161,7 +3202,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 if (session.sonicClient.getSessionId()) {
                                     await session.sonicClient.sendToolResult(
                                         toolUse.toolUseId,
-                                        { text: cleanResult },
+                                        cleanResult,
                                         false
                                     );
                                     const toolEndTime = Date.now();

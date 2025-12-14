@@ -642,6 +642,10 @@ class VoiceAssistant {
             localStorage.setItem('nova_brain_mode', this.brainModeSelect.value);
         }
 
+        // Save Linked Workflows
+        const linkedWorkflows = Array.from(document.querySelectorAll('#workflow-coupler-list input[type="checkbox"]:checked')).map(cb => cb.value);
+        localStorage.setItem('nova_linked_workflows', JSON.stringify(linkedWorkflows));
+
         const config = this.getSessionConfig();
         const brainMode = config.config.brainMode;
 
@@ -2115,6 +2119,9 @@ class VoiceAssistant {
 
                     // Trigger auto-select to ensure defaults are checked
                     this.autoSelectWorkflowForPersona();
+
+                    // Restore user overrides from persistence
+                    this.restoreLinkedWorkflows();
                 }
 
             } else {
@@ -2157,9 +2164,26 @@ class VoiceAssistant {
         }
 
         if (targetId) {
-            const targetCheckbox = document.getElementById(`wf-${targetId}`);
             if (targetCheckbox) {
                 targetCheckbox.checked = true;
+            }
+        }
+    }
+
+    restoreLinkedWorkflows() {
+        const saved = localStorage.getItem('nova_linked_workflows');
+        if (saved) {
+            try {
+                const ids = JSON.parse(saved);
+                if (Array.isArray(ids)) {
+                    const checkboxes = document.querySelectorAll('#workflow-coupler-list input[type="checkbox"]');
+                    checkboxes.forEach(cb => {
+                        cb.checked = ids.includes(cb.value);
+                    });
+                    console.log('[Frontend] Restored linked workflows:', ids);
+                }
+            } catch (e) {
+                console.error('Failed to restore workflows:', e);
             }
         }
     }

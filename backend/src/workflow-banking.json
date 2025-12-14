@@ -36,13 +36,13 @@
         },
         {
             "id": "retrieve_history",
-            "label": "Call 'manage_recent_interactions'\n(RETRIEVE History & Disputes)",
+            "label": "ENTRY POINT ONLY. Check if you have already retrieved history. IF NOT, Call 'manage_recent_interactions' (action='RETRIEVE'). IF YOU HAVE THE RESULT, GOTO [check_dispute] IMMEDIATELY. DO NOT CALL TWICE. NEVER CALL THIS AFTER [publish_summary].",
             "type": "tool",
             "toolName": "manage_recent_interactions"
         },
         {
             "id": "check_dispute",
-            "label": "Has Open Dispute?",
+            "label": "Evaluate the 'manage_recent_interactions' result. if disputesOpen=true -> Yes. if disputesOpen=false -> No.",
             "type": "decision"
         },
         {
@@ -69,7 +69,7 @@
         },
         {
             "id": "query_txn",
-            "label": "Customer Queries Transaction",
+            "label": "ASK the user what transaction they want to query. WAIT for user response. DO NOT proceed until user responds.",
             "type": "process"
         },
         {
@@ -124,7 +124,7 @@
         },
         {
             "id": "publish_summary",
-            "label": "Call 'manage_recent_interactions'\n(PUBLISH Summary)",
+            "label": "Call 'manage_recent_interactions' with action='PUBLISH' to save the session. This is the FINAL step. After this, STOP. DO NOT LOOP BACK.",
             "type": "tool",
             "toolName": "manage_recent_interactions"
         },

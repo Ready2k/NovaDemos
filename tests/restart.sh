@@ -36,4 +36,12 @@ echo "[3/3] Starting server..."
 mkdir -p "$TESTS_DIR/logs"
 # Create server.log if it doesn't exist
 touch "$TESTS_DIR/logs/server.log"
-npm start > "$TESTS_DIR/logs/server.log" 2>&1
+# Check if running in background mode
+if [ "$BG_MODE" = "true" ]; then
+    echo "Starting server in background..."
+    nohup npm start > "$TESTS_DIR/logs/server.log" 2>&1 &
+    echo $! > "$TESTS_DIR/server.pid"
+    echo "Server started in background with PID $(cat "$TESTS_DIR/server.pid")"
+else
+    npm start > "$TESTS_DIR/logs/server.log" 2>&1
+fi

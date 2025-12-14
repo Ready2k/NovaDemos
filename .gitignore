@@ -8,6 +8,9 @@ backend/dist/
 *.log
 npm-debug.log*
 
+# Session details
+session_*.json
+
 # OS files
 .DS_Store
 Thumbs.db
