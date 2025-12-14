@@ -71,33 +71,35 @@
 
         <!-- SIDEBAR: Controls & Legend -->
         <div class="sidebar">
-            <h2>View Settings</h2>
+            <div class="sidebar-content">
+                <h2>View Settings</h2>
 
-            <div class="input-group">
-                <label for="persona-select">Experience Context</label>
-                <select id="persona-select">
-                    <option value="persona-BankingDisputes">Banking Disputes Analysis</option>
-                    <option value="loading" disabled>Loading...</option>
-                </select>
-            </div>
+                <div class="input-group">
+                    <label for="persona-select">Experience Context</label>
+                    <select id="persona-select">
+                        <option value="persona-BankingDisputes">Banking Disputes Analysis</option>
+                        <option value="loading" disabled>Loading...</option>
+                    </select>
+                </div>
 
-            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
 
-            <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: var(--accent-color);">Legend</h4>
-            <div class="legend-item">
-                <span class="legend-color" style="background:#3b82f6;"></span> Process / Start
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background:#f59e0b;"></span> Decision Point
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background:#8b5cf6;"></span> Tool Call
-            </div>
+                <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: var(--accent-color);">Legend</h4>
+                <div class="legend-item">
+                    <span class="legend-color" style="background:#3b82f6;"></span> Process / Start
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background:#f59e0b;"></span> Decision Point
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background:#8b5cf6;"></span> Tool Call
+                </div>
 
-            <div class="sidebar-actions">
-                <button id="refresh-btn" class="secondary-btn" style="width: 100%; justify-content: center;">
-                    🔄 Refresh Graph
-                </button>
+                <div class="sidebar-actions">
+                    <button id="refresh-btn" class="secondary-btn" style="width: 100%; justify-content: center;">
+                        🔄 Refresh Graph
+                    </button>
+                </div>
             </div>
         </div>
 

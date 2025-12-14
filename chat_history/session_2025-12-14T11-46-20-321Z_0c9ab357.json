@@ -1,0 +1,13 @@
+{
+  "sessionId": "0c9ab357-8af4-4edc-9223-9e79634487df",
+  "startTime": 1765712775730,
+  "endTime": 1765712780322,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Your Bank Transaction Assistance Service. I'm here to help you with any transaction queries, disputes, or fraud concerns you might have.\n\nTo get started,I need to verify your identity for security reasons. Could you please provide your Account Number and Sort Code? This will allow me to access your account details and assist you effectively.",
+      "timestamp": 1765712775730
+    }
+  ]
+}

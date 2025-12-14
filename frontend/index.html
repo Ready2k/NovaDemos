@@ -11,116 +11,204 @@
 <body>
   <div class="app-container">
     <div class="sidebar">
-      <h2>Persona Settings</h2>
-
-      <!-- Tab Navigation -->
-      <div class="tabs-nav">
-        <button class="tab-btn active" data-tab="general">General</button>
-        <button class="tab-btn" data-tab="prompts">Prompts</button>
-        <button class="tab-btn" data-tab="system">System</button>
+      <!-- Navigation Rail -->
+      <div class="sidebar-nav">
+        <div id="nav-voice" class="nav-item active" title="Voice / General">
+          <span style="font-size: 1.2rem;">🎙️</span>
+        </div>
+        <div id="nav-personas" class="nav-item" title="Personas / Prompts">
+          <span style="font-size: 1.2rem;">👤</span>
+        </div>
+        <div id="nav-chat" class="nav-item" title="Chat History">
+          <span style="font-size: 1.2rem;">💬</span>
+        </div>
+        <div id="nav-workflows" class="nav-item" title="Workflows">
+          <span style="font-size: 1.2rem;">📂</span>
+        </div>
+        <div id="nav-tools" class="nav-item" title="Tools">
+          <span style="font-size: 1.2rem;">🛠️</span>
+        </div>
+        <div id="nav-settings" class="nav-item" style="margin-top: auto;" title="System Settings">
+          <span style="font-size: 1.2rem;">⚙️</span>
+        </div>
+        <div id="nav-logout" class="nav-item" title="Logout/Exit">
+          <span style="font-size: 1.2rem;">↪️</span>
+        </div>
       </div>
 
-      <!-- Tab Content: General -->
-      <div id="tab-general" class="tab-content active">
-        <div class="input-group">
-          <label for="interaction-mode">Interaction Mode</label>
-          <select id="interaction-mode">
-            <option value="chat_voice" selected>✨ Chat + Voice</option>
-            <option value="voice_only">🎤 Voice Only</option>
-            <option value="chat_only">💬 Chat Only</option>
-          </select>
+      <!-- Sidebar Content -->
+      <div class="sidebar-content">
+
+        <!-- View: Voice / General Settings -->
+        <div id="view-voice" class="sidebar-view active">
+          <h2>General Settings</h2>
+
+          <div class="input-group">
+            <label for="interaction-mode">Interaction Mode</label>
+            <select id="interaction-mode">
+              <option value="chat_voice" selected>✨ Chat + Voice</option>
+              <option value="voice_only">🎤 Voice Only</option>
+              <option value="chat_only">💬 Chat Only</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="persona-preset">Persona Preset</label>
+            <select id="persona-preset">
+              <option value="">Custom / Select Preset...</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="brain-mode">Assistant</label>
+            <select id="brain-mode">
+              <option value="raw_nova">✨ Nova Sonic (Direct)</option>
+              <option value="bedrock_agent">🏦 Banking Bot (Agent)</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="voice-preset">Voice</label>
+            <select id="voice-preset">
+              <!-- Populated by JS -->
+            </select>
+          </div>
         </div>
 
-        <div class="input-group">
-          <label for="persona-preset">Persona Preset</label>
-          <select id="persona-preset">
-            <option value="">Custom / Select Preset...</option>
-          </select>
+        <!-- View: Personas / Prompts -->
+        <div id="view-personas" class="sidebar-view">
+          <h2>Prompts & Personas</h2>
+
+          <div class="input-group">
+            <label for="prompt-preset">Prompt Preset</label>
+            <select id="prompt-preset">
+              <option value="">Custom / Select Preset...</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="system-prompt">System Prompt</label>
+            <textarea id="systemPrompt"
+              rows="12">You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.</textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="speechPrompt">Speech Prompt (Optional)</label>
+            <textarea id="speechPrompt" rows="4"
+              placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
+          </div>
         </div>
 
-        <div class="input-group">
-          <label for="brain-mode">Assistant</label>
-          <select id="brain-mode">
-            <option value="raw_nova">✨ Nova Sonic (Direct)</option>
-            <option value="bedrock_agent">🏦 Banking Bot (Agent)</option>
-          </select>
+        <!-- View: Chat History -->
+        <div id="view-chat" class="sidebar-view">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 style="margin: 0;">Chat History</h2>
+            <div style="display: flex; align-items: center; font-size: 0.8rem; color: #94a3b8;">
+              <span style="margin-right: 8px;">Mock</span>
+              <label class="switch" style="position: relative; display: inline-block; width: 34px; height: 20px;">
+                <input type="checkbox" id="history-toggle">
+                <span class="slider round"
+                  style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .4s; border-radius: 34px;"></span>
+                <span class="slider-knob"
+                  style="position: absolute; content: ''; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;"></span>
+              </label>
+              <span style="margin-left: 8px;">Real</span>
+            </div>
+          </div>
+          <style>
+            .switch input {
+              opacity: 0;
+              width: 0;
+              height: 0;
+            }
+
+            .switch input:checked+.slider {
+              background-color: #8b5cf6;
+            }
+
+            .switch input:checked+.slider .slider-knob {
+              transform: translateX(14px);
+            }
+          </style>
+          <div id="chat-history-list" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Placeholder for history items -->
+            <div
+              style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #e2e8f0;">Today, 10:42 AM</div>
+              <div
+                style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                User: Hello, how are you?</div>
+            </div>
+            <p style="color: #64748b; font-size: 0.8rem; font-style: italic; text-align: center; margin-top: 20px;">
+              History implementation pending...</p>
+          </div>
         </div>
 
-        <div class="input-group">
-          <label for="voice-preset">Voice</label>
-          <select id="voice-preset">
+        <!-- View: Workflows -->
+        <div id="view-workflows" class="sidebar-view">
+          <h2>Workflows</h2>
+
+          <a href="workflow.html" class="secondary-btn"
+            style="width: 100%; justify-content: center; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); text-decoration: none; display: flex; align-items: center; padding: 16px;">
+            🕸️ Visualize Flow
+          </a>
+
+          <a href="workflow-editor.html" class="secondary-btn"
+            style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); text-decoration: none; display: flex; align-items: center; padding: 16px;">
+            ✍️ Workflow Creator
+          </a>
+
+          <p style="margin-top: 20px; font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+            Manage and visualize your agent workflows here. Use the Creator to build new flows or the Visualizer to see
+            them in action.
+          </p>
+        </div>
+
+        <!-- View: Tools -->
+        <div id="view-tools" class="sidebar-view">
+          <h2>Tools Configuration</h2>
+
+          <a href="tool-manager.html" class="secondary-btn"
+            style="width: 100%; justify-content: center; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); text-decoration: none; display: flex; align-items: center; margin-bottom: 20px;">
+            🛠️ Manage / Create Tools
+          </a>
+
+          <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #94a3b8;">Enabled Tools (Global)</h4>
+          <div id="tools-list" style="display: flex; flex-direction: column; gap: 8px;">
             <!-- Populated by JS -->
-          </select>
-        </div>
-      </div>
-
-      <!-- Tab Content: Prompts -->
-      <div id="tab-prompts" class="tab-content">
-        <div class="input-group">
-          <label for="prompt-preset">Prompt Preset</label>
-          <select id="prompt-preset">
-            <option value="">Custom / Select Preset...</option>
-          </select>
-        </div>
-        <div class="input-group">
-          <label for="system-prompt">System Prompt</label>
-          <textarea id="systemPrompt"
-            rows="10">You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user's question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.</textarea>
-        </div>
-        <div class="form-group">
-          <label for="speechPrompt">Speech Prompt (Optional)</label>
-          <textarea id="speechPrompt" rows="4"
-            placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
-        </div>
-      </div>
-
-      <!-- Tab Content: System -->
-      <div id="tab-system" class="tab-content">
-        <div class="input-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-          <input type="checkbox" id="debug-mode" style="width: auto;">
-          <label for="debug-mode" style="margin: 0; cursor: pointer;">Show Debug Panel</label>
+            <div style="font-size: 0.8rem; color: #64748b; font-style: italic;">Loading tools...</div>
+          </div>
         </div>
 
-        <button id="awsConfigBtn" class="secondary-btn"
-          style="width: 100%; justify-content: center; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); margin-bottom: 10px;">
-          🔐 Configure AWS
-        </button>
+        <!-- View: Settings (System) -->
+        <div id="view-settings" class="sidebar-view">
+          <h2>System Settings</h2>
 
-        <button id="agentConfigBtn" class="secondary-btn"
-          style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4);">
-          🤖 Configure Agents
-        </button>
+          <div class="input-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <input type="checkbox" id="debug-mode" style="width: auto;">
+            <label for="debug-mode" style="margin: 0; cursor: pointer;">Show Debug Panel</label>
+          </div>
 
-        <a href="tool-manager.html" class="secondary-btn"
-          style="width: 100%; justify-content: center; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); text-decoration: none; display: flex; align-items: center; margin-top: 10px;">
-          🛠️ Manage Tools
-        </a>
+          <button id="awsConfigBtn" class="secondary-btn"
+            style="width: 100%; justify-content: center; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); margin-bottom: 10px;">
+            🔐 Configure AWS
+          </button>
 
-        <a href="workflow.html" class="secondary-btn"
-          style="width: 100%; justify-content: center; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); text-decoration: none; display: flex; align-items: center; margin-top: 10px;">
-          🕸️ Visualize Flow
-        </a>
-
-        <a href="workflow-editor.html" class="secondary-btn"
-          style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); text-decoration: none; display: flex; align-items: center; margin-top: 10px;">
-          ✍️ Workflow Creator
-        </a>
-
-        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
-
-        <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #94a3b8;">Enabled Tools (Global)</h4>
-        <div id="tools-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
-          <!-- Populated by JS -->
-          <div style="font-size: 0.8rem; color: #64748b; font-style: italic;">Loading tools...</div>
+          <button id="agentConfigBtn" class="secondary-btn"
+            style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4);">
+            🤖 Configure Custom Agents
+          </button>
         </div>
-      </div>
 
-      <!-- Global Actions (Always Visible) -->
-      <div class="sidebar-actions"
-        style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-        <button id="saveSettingsBtn" class="secondary-btn" style="width: 100%; margin-bottom: 10px;">Save
-          Settings</button>
-        <button id="newSessionBtn" class="danger-btn" style="width: 100%;">New Session</button>
+        <!-- Global Actions -->
+        <div class="sidebar-actions"
+          style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+          <button id="saveSettingsBtn" class="primary-btn"
+            style="width: 100%; margin-bottom: 10px; justify-content: center;">Save Changes</button>
+          <button id="newSessionBtn" class="secondary-btn" style="width: 100%; justify-content: center;">New
+            Session</button>
+        </div>
+
       </div>
     </div>
 

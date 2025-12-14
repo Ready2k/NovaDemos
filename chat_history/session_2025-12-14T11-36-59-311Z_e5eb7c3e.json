@@ -1,0 +1,23 @@
+{
+  "sessionId": "e5eb7c3e-aa7d-481a-b013-6eedcdc147ab",
+  "startTime": 1765712202718,
+  "endTime": 1765712219311,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Your current account balance is £1,200.00. Is there anything else I can help you with today?",
+      "timestamp": 1765712202718
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming that. I can see ABC Holdings is actually trading as Love Coffee, a coffee shop.",
+      "timestamp": 1765712215187
+    },
+    {
+      "role": "assistant",
+      "text": "You're welcome! I'm glad we could clarify that transaction for you. If you have any other questions in the future, don't hesitate to reach out. Have a great day!",
+      "timestamp": 1765712219182
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+    "sessionId": "test-session-123",
+    "startTime": 1734170000000,
+    "endTime": 1734171000000,
+    "brainMode": "raw_nova",
+    "transcript": [
+        {
+            "role": "user",
+            "text": "Hello, this is a test of history.",
+            "timestamp": 1734170005000
+        },
+        {
+            "role": "assistant",
+            "text": "Hello! I can confirm history is loading correctly.",
+            "timestamp": 1734170010000
+        }
+    ]
+}

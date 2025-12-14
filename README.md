@@ -62,6 +62,11 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Impact**: Users can now access banking workflows via the dropdown menu
 - **Verification**: Server logs show proper brain mode switching and Banking Bot activation
 
+### ✅ Graceful Disabled Tool Handling (Dec 14, 2025)
+- **Fixed**: System silence or hallucinations when users request disabled tools
+- **Solution**: Implemented server-side interception. All tools are defined to the model (preventing hallucinations), but execution is guarded by an `allowedTools` list.
+- **Outcome**: If a user requests a disabled tool, the system intercepts the call and instructs the model to politely apologize ("request cannot be fulfilled").
+
 ### ✅ Latest: Visual Workflow Editor & Dynamic Injection (Dec 13, 2025)
 - **New Feature**: Added a full visual editor for building agent flows (`/workflow-editor.html`)
 - **Backend Logic**: Implemented `workflow-{persona}.json` detection and automatic prompt injection

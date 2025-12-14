@@ -131,7 +131,7 @@ class VoiceAssistant {
         // Initialize UI options first
         // this.initializePresets(); // Moved to loadPrompts
         this.initializeVoices(); // This is now async but we don't need to await it
-        this.initializeTabs();
+        this.initializeSidebarNav();
         this.loadAgents(); // Load custom agents
         this.loadTools(); // Load available tools
 
@@ -304,6 +304,220 @@ class VoiceAssistant {
                 }
             });
         });
+    }
+
+    initializeSidebarNav() {
+        const navItems = document.querySelectorAll('.nav-item');
+        const views = document.querySelectorAll('.sidebar-view');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                // Handle Logout separately
+                if (item.id === 'nav-logout') {
+                    if (confirm('Reload application?')) {
+                        location.reload();
+                    }
+                    return;
+                }
+
+                // Identify target view
+                const viewId = item.id.replace('nav-', 'view-');
+                const targetView = document.getElementById(viewId);
+
+                if (targetView) {
+                    // Update Nav Active State
+                    navItems.forEach(n => n.classList.remove('active'));
+                    item.classList.add('active');
+
+                    // Update View Active State
+                    views.forEach(v => v.classList.remove('active'));
+                    targetView.classList.add('active');
+
+                    // console.log(`[Sidebar] Switched to ${viewId}`);
+
+                    // Special handling for Chat History view
+                    if (viewId === 'view-chat') {
+                        this.renderChatHistory();
+                    }
+                }
+            });
+        });
+
+        // History Toggle Listener
+        const historyToggle = document.getElementById('history-toggle');
+        if (historyToggle) {
+            historyToggle.addEventListener('change', () => {
+                if (document.getElementById('view-chat').classList.contains('active')) {
+                    this.renderChatHistory();
+                }
+            });
+        }
+    }
+
+    async renderChatHistory() {
+        const container = document.getElementById('chat-history-list');
+        const historyToggle = document.getElementById('history-toggle');
+        if (!container) return;
+
+        const showReal = historyToggle ? historyToggle.checked : false;
+
+        if (!showReal) {
+            // Mock History Data
+            const historyData = [
+                { id: '1', date: new Date().toISOString(), summary: 'Current Session', active: true },
+                { id: '2', date: new Date(Date.now() - 86400000).toISOString(), summary: 'Booking Assistance', active: false },
+                { id: '3', date: new Date(Date.now() - 172800000).toISOString(), summary: 'Sci-Fi RP Test', active: false },
+            ];
+
+            if (this.sessionId) {
+                historyData[0].id = this.sessionId;
+                historyData[0].summary = `Session ${this.sessionId.substring(0, 6)}...`;
+            }
+
+            container.innerHTML = historyData.map(item => `
+                <div class="history-item ${item.active ? 'active' : ''}" style="padding: 12px; background: ${item.active ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)'}; border-radius: 8px; border: 1px solid ${item.active ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255,255,255,0.1)'}; cursor: pointer; margin-bottom: 8px; transition: all 0.2s ease;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: ${item.active ? '#ddd6fe' : '#e2e8f0'}; display: flex; justify-content: space-between;">
+                        <span>${new Date(item.date).toLocaleDateString()} ${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                         <span style="font-size: 0.7rem; color: #94a3b8; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">MOCK</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${item.summary}
+                    </div>
+                </div>
+            `).join('');
+
+            const items = container.querySelectorAll('.history-item');
+            items.forEach((item, index) => {
+                item.addEventListener('click', () => {
+                    if (index === 0) {
+                        this.showToast('Showing current session', 'info');
+                    } else {
+                        this.showToast('Switch to Real Mode to view actual history', 'warning');
+                    }
+                });
+            });
+            return;
+        }
+
+        // Real History Data
+        try {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">Loading history...</div>';
+
+            const response = await fetch('/api/history');
+            if (!response.ok) throw new Error('Failed to fetch history');
+
+            const historyFiles = await response.json();
+
+            if (historyFiles.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">No history found.</div>';
+                return;
+            }
+
+            container.innerHTML = historyFiles.map(item => `
+                <div class="history-item" data-id="${item.id}" style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin-bottom: 8px; transition: all 0.2s ease;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: #e2e8f0; display: flex; justify-content: space-between;">
+                        <span>${new Date(item.date).toLocaleDateString()} ${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${item.summary}
+                    </div>
+                </div>
+            `).join('');
+
+            // Add Click Listeners for Real items
+            container.querySelectorAll('.history-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const filename = item.getAttribute('data-id');
+                    this.loadHistorySession(filename);
+                });
+            });
+
+        } catch (e) {
+            console.error('Error fetching history:', e);
+            container.innerHTML = '<div style="padding: 10px; color: #ef4444; font-size: 0.8rem;">Failed to load history.</div>';
+        }
+    }
+
+    async loadHistorySession(filename) {
+        if (!filename) return;
+
+        try {
+            const response = await fetch(`/api/history/${filename}`);
+            if (!response.ok) throw new Error('Failed to load transcript');
+            const data = await response.json();
+
+            if (!data.transcript || !Array.isArray(data.transcript)) {
+                this.showToast('Invalid transcript format', 'error');
+                return;
+            }
+
+            // Clear current transcript
+            this.transcriptEl.innerHTML = `
+                <div style="padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">VIEWING HISTORY ARCHIVE</div>
+                    <div style="font-weight: 600;">Session: ${data.sessionId}</div>
+                    <div style="font-size: 0.75rem; color: #64748b;">${new Date(data.startTime).toLocaleString()}</div>
+                    <button id="exit-history-btn" style="margin-top: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                        Return to Live Session
+                    </button>
+                </div>
+            `;
+
+            // Render messages
+            data.transcript.forEach(msg => {
+                this.appendTranscriptMessage(msg.role, msg.text, msg.timestamp);
+            });
+
+            // Add exit handler
+            document.getElementById('exit-history-btn').addEventListener('click', () => {
+                this.startNewSession(); // Simplest way to return to "live" state for now
+            });
+
+            this.showToast('Target session loaded', 'success');
+
+        } catch (e) {
+            console.error('Failed to load session:', e);
+            this.showToast('Failed to load session history', 'error');
+        }
+    }
+
+    appendTranscriptMessage(role, text, timestamp) {
+        const msgDiv = document.createElement('div');
+        const isUser = role === 'user';
+
+        msgDiv.className = `message ${isUser ? 'user-message' : 'agent-message'}`;
+        msgDiv.style.cssText = `
+            margin-bottom: 16px; 
+            max-width: 80%; 
+            align-self: ${isUser ? 'flex-end' : 'flex-start'};
+            background: ${isUser ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)'};
+            border: 1px solid ${isUser ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: #e2e8f0;
+            line-height: 1.5;
+        `;
+
+        if (!isUser) {
+            msgDiv.style.marginRight = 'auto'; // Force left align
+            msgDiv.style.marginLeft = '0';
+        } else {
+            msgDiv.style.marginLeft = 'auto'; // Force right align
+            msgDiv.style.marginRight = '0';
+        }
+
+        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+        msgDiv.innerHTML = `
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                <span>${isUser ? 'You' : 'Assistant'}</span>
+                <span>${timeStr}</span>
+            </div>
+            <div>${text}</div>
+        `;
+
+        this.transcriptEl.appendChild(msgDiv);
+        this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
     }
 
     startNewSession() {

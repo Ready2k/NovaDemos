@@ -358,6 +358,40 @@ const SONIC_PATH = '/sonic';
 const FRONTEND_DIR = path.join(__dirname, '../../frontend');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
 const PROMPTS_DIR = path.join(__dirname, '../prompts');
+const HISTORY_DIR = path.join(__dirname, '../../chat_history');
+
+// Ensure history directory exists
+function ensureHistoryDir() {
+    if (!fs.existsSync(HISTORY_DIR)) {
+        fs.mkdirSync(HISTORY_DIR, { recursive: true });
+        console.log(`[Server] Created chat history directory: ${HISTORY_DIR}`);
+    }
+}
+ensureHistoryDir();
+
+// Save transcript to file
+function saveTranscript(session: ClientSession) {
+    if (!session.transcript || session.transcript.length === 0) return;
+
+    try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `session_${timestamp}_${session.sessionId.substring(0, 8)}.json`;
+        const filePath = path.join(HISTORY_DIR, filename);
+
+        const data = {
+            sessionId: session.sessionId,
+            startTime: session.transcript[0]?.timestamp || Date.now(),
+            endTime: Date.now(),
+            brainMode: session.brainMode,
+            transcript: session.transcript
+        };
+
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        console.log(`[Server] Saved chat history to ${filename}`);
+    } catch (err) {
+        console.error('[Server] Failed to save chat history:', err);
+    }
+}
 
 // Initialize Tool Manager
 const toolManager = new ToolManager(TOOLS_DIR);
@@ -679,6 +713,7 @@ interface ClientSession {
     recentAgentReplies?: Array<{ text: string, originalText?: string, time: number }>; // Track multiple recent messages
     // Tools
     tools?: Tool[];
+    allowedTools?: string[]; // Tools permitted for execution (checked server-side)
     // Audio Buffering (Lookahead)
     isBufferingAudio?: boolean;
     audioBufferQueue?: Buffer[];
@@ -716,6 +751,13 @@ interface ClientSession {
         timestamp: number;
         result: any;
     }>;
+
+    // Chat History
+    transcript: {
+        role: string;
+        text: string;
+        timestamp: number;
+    }[];
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -924,6 +966,49 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Chat History API
+    if (req.url === '/api/history') {
+        try {
+            ensureHistoryDir();
+            const files = fs.readdirSync(HISTORY_DIR)
+                .filter(f => f.endsWith('.json'))
+                .map(f => {
+                    const content = fs.readFileSync(path.join(HISTORY_DIR, f), 'utf-8');
+                    const data = JSON.parse(content);
+                    return {
+                        id: f,
+                        date: data.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
+                        summary: `Session ${data.sessionId?.substring(0, 6) || 'Unknown'} - ${data.transcript?.length || 0} msgs`,
+                        transcript: data.transcript // Optional: don't send full transcript in list if heavy
+                    };
+                })
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Newest first
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(files));
+        } catch (err) {
+            console.error('[Server] Failed to list history:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to list history' }));
+        }
+        return;
+    }
+
+    if (req.url?.startsWith('/api/history/')) {
+        const filename = req.url.substring(13); // Remove /api/history/
+        const safePath = path.join(HISTORY_DIR, path.basename(filename));
+
+        if (fs.existsSync(safePath)) {
+            const content = fs.readFileSync(safePath, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(content);
+        } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'History file not found' }));
+        }
+        return;
+    }
+
     if (req.url === '/api/voices') {
         try {
             const voices = formatVoicesForFrontend();
@@ -1039,6 +1124,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         // Progressive Filler System
         isToolExecuting: false,
         toolResultCache: new Map(),
+
+        // Chat History
+        transcript: []
     };
     activeSessions.set(ws, session);
 
@@ -1169,9 +1257,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let workflowSystemPrompt = "";
                         let workflowTools: string[] | undefined;
                         try {
-                            const personaId = parsed.config.agentId || 'persona-BankingDisputes'; // Default fallback
+                            const personaId = parsed.config.agentId || 'persona-banking_bot'; // Default fallback
                             let filename = `workflow-${personaId}.json`;
-                            if (personaId === 'persona-BankingDisputes' || personaId === 'banking') {
+                            if (personaId === 'persona-banking_bot' || personaId === 'banking') {
                                 filename = 'workflow-banking.json';
                             }
 
@@ -1202,17 +1290,25 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let tools = [];
 
                         if (workflowTools && Array.isArray(workflowTools)) {
-                            // PRIORITY 1: Workflow-defined tools (Strict Whitelist)
+                            // PRIORITY 1: Workflow-defined tools (Strict Whitelist for Definition)
                             tools = allTools.filter(t => workflowTools!.includes(t.toolSpec.name));
-                            console.log(`[Server] Using strict workflow tool whitelist. Enabled: ${tools.map(t => t.toolSpec.name).join(', ')}`);
-                        } else if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
-                            // PRIORITY 2: Frontend explicit selection
-                            tools = allTools.filter(t => parsed.config.selectedTools.includes(t.toolSpec.name));
-                            console.log(`[Server] Using frontend tool selection: ${JSON.stringify(parsed.config.selectedTools)}`);
+                            console.log(`[Server] Using strict workflow tool whitelist for definition. Enabled: ${tools.map(t => t.toolSpec.name).join(', ')}`);
+
+                            // If user has specific selection, we should respect it for EXECUTION, 
+                            // but we still send definition to LLM so it attempts native use (which we can catch).
                         } else {
-                            // PRIORITY 3: Default behavior (Load ALL tools - Backward Compatibility)
+                            // PRIORITY 2: Default (Load ALL tools)
                             tools = allTools;
-                            console.log('[Server] No workflow tools or frontend selection found. Defaulting to ALL tools.');
+                            console.log('[Server] No workflow tools specified. Sending ALL tools to model to encourage native use.');
+                        }
+
+                        // Store user's allowed tools preference
+                        if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
+                            session.allowedTools = parsed.config.selectedTools;
+                            console.log(`[Server] User allowed tools: ${JSON.stringify(session.allowedTools)}`);
+                        } else {
+                            // Default to all tools if no selection
+                            session.allowedTools = tools.map(t => t.toolSpec.name);
                         }
 
                         parsed.config.tools = tools;
@@ -1497,6 +1593,7 @@ You do not have access to any tools. Answer questions directly based on your kno
                             if (text) {
                                 console.log(`[Server] User said (Transcribed): "${text}"`);
                                 ws.send(JSON.stringify({ type: 'transcript', role: 'user', text, isFinal: true }));
+                                session.transcript.push({ role: 'user', text, timestamp: Date.now() });
 
                                 // 4. Invoke Agent
                                 try {
@@ -1525,6 +1622,7 @@ You do not have access to any tools. Answer questions directly based on your kno
                                     }));
 
                                     ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
+                                    session.transcript.push({ role: 'assistant', text: agentReply, timestamp: Date.now() });
 
                                     // 5. Synthesize with Sonic (TTS)
                                     // Reset interruption flag before new turn
@@ -1627,6 +1725,10 @@ You do not have access to any tools. Answer questions directly based on your kno
             if (session.sonicClient.isActive()) {
                 await session.sonicClient.stopSession();
             }
+
+            // Save Chat History
+            saveTranscript(session);
+
             activeSessions.delete(ws);
         }
     });
@@ -1707,7 +1809,19 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         return;
     }
 
+    // Helper to check if tool is enabled - Moved to top scope for access in all handlers
+    const isToolEnabled = (name: string) => {
+        // Check server-side allowed list first
+        if (session.allowedTools) {
+            return session.allowedTools.includes(name);
+        }
+        // Fallback to session.tools (backward compatibility)
+        if (!session.tools) return false;
+        return session.tools.some(t => t.toolSpec?.name === name);
+    };
+
     switch (event.type) {
+
         case 'contentStart':
             if (event.data.role === 'assistant') {
                 // In Banking Bot mode, if this is a TTS-only response (not a conversation),
@@ -1783,6 +1897,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             const role = event.data.role || 'assistant';
             if (role === 'user') {
                 session.lastUserTranscript = event.data.transcript;
+                session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
+            } else if (role === 'assistant' || role === 'model') {
+                if (event.data.isFinal) {
+                    session.transcript.push({ role: 'assistant', text: event.data.transcript, timestamp: Date.now() });
+                }
             }
 
             // Send Debug Info for Raw Nova Mode - Show ALL updates for debugging
@@ -1819,9 +1938,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Detect JSON Intent (relaxed trigger)
                 const text = event.data.transcript || "";
                 const isFinal = event.data.isFinal;
-
-                // Helper to check if tool is enabled
-                const isToolEnabled = (name: string) => session.tools?.some(t => t.toolSpec?.name === name);
 
                 // NATIVE-FIRST APPROACH: Prefer native Nova Sonic tools, use heuristic as fallback
                 // Native tools are now working 100%, but keep heuristic for compatibility
@@ -2375,6 +2491,30 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             console.log(`[DEBUG] - toolUse.content:`, toolUse.content);
 
             if (toolUse && (toolUse.name || toolUse.toolName) && (toolUse.input !== undefined || toolUse.content !== undefined)) {
+
+                // CRITICAL FIX: Graceful handling of Disabled Tools
+                // If a user asks for a tool that is unchecked in the UI, we must NOT fail silently.
+                // We send a tool result instructing the model to apologize.
+                if (!isToolEnabled(actualToolName)) {
+                    console.log(`[Server] 🛑 Blocked execution of DISABLED tool: ${actualToolName}`);
+
+                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                        // Send a "successful" tool result but with content that tells the model it failed/was denied.
+                        // This is better than an error which might cause a crash or generic error voice.
+                        // effectively "Grounding" the refusal.
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            {
+                                text: `[SYSTEM] Tool execution denied: The tool '${actualToolName}' is currently disabled or not available. User's request cannot be fulfilled. You MUST reply exactly with: "I'm sorry, but that request cannot be fulfilled at the moment. Is there anything else I can help with today?"`
+                            },
+                            false // Not an API error, just a logical refusal
+                        );
+                        logWithTimestamp('[Server]', `Sent disabled tool rejection to Nova Sonic for: ${actualToolName}`);
+                    }
+                    return;
+                }
+
+                // Check cache first for interrupted/repeated queries
                 // Check cache first for interrupted/repeated queries
                 const userQuery = session.lastUserTranscript || '';
                 const toolInput = toolUse.content || toolUse.input;

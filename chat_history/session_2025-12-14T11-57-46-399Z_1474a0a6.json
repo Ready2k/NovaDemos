@@ -1,0 +1,43 @@
+{
+  "sessionId": "1474a0a6-c80f-467b-9bce-85cf43072f78",
+  "startTime": 1765713443948,
+  "endTime": 1765713466399,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Your Bank Transaction Assistance Service. I'm here to help you with any transaction queries, disputes, or concerns you might have.\n\nTo get started securely,I need to verify your identity. Could you please provide your Account Number and Sort Code? This will allow me to access your account details and assist you effectively.\n\nOnce you've shared those details, I'll immediately verify them and proceed with your request.",
+      "timestamp": 1765713443948
+    },
+    {
+      "role": "user",
+      "text": "yes, what's my current balance?",
+      "timestamp": 1765713446606
+    },
+    {
+      "role": "assistant",
+      "text": "For security, I need to verify your identity. Please provide your Account Number and Sort Code.",
+      "timestamp": 1765713448346
+    },
+    {
+      "role": "user",
+      "text": "my account is one two three four five six seven eight",
+      "timestamp": 1765713454644
+    },
+    {
+      "role": "user",
+      "text": "my account is one two three four five six seven eightand my sort code is one one two two three three.",
+      "timestamp": 1765713457770
+    },
+    {
+      "role": "assistant",
+      "text": "I'm sorry, but that request cannot be fulfilled at the moment. Is there anything else I can help with today?",
+      "timestamp": 1765713460226
+    },
+    {
+      "role": "assistant",
+      "text": "I'm sorry, but that request cannot be fulfilled at the moment.",
+      "timestamp": 1765713461873
+    }
+  ]
+}

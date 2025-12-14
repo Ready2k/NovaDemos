@@ -90,7 +90,7 @@ class DisputeTestClient {
     }
 
     async sendConfig() {
-        const systemPrompt = await this.loadPrompt('persona-BankingDisputes.txt');
+        const systemPrompt = await this.loadPrompt('persona-banking_bot.txt');
 
         const config = {
             type: 'sessionConfig',

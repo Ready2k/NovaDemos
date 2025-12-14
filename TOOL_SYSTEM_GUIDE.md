@@ -117,22 +117,24 @@ Expected output:
 - Tools appear in configuration panel
 - Enable/disable specific tools
 - Selection sent to backend in `selectedTools` array
-- **Fixed**: Empty array `[]` properly disables all tools
+- **New Behavior**: Defines `allowedTools` list. All tools are still sent to the model definition to prevent hallucinations, but execution is blocked server-side if not allowed.
 
 ### Backend Tool Loading
 ```typescript
 // Load all available tools
 const allTools = loadTools();
+// Default to sending ALL tools to Nova (to prevent hallucinations)
+tools = allTools;
 
-// Filter by frontend selection (fixed to handle empty arrays)
+// Store allowed tools validation list
 if (selectedTools !== undefined && Array.isArray(selectedTools)) {
-    tools = allTools.filter(t => selectedTools.includes(t.toolSpec.name));
+    session.allowedTools = selectedTools;
 } else {
-    tools = allTools; // Default: all tools
+    session.allowedTools = tools.map(t => t.toolSpec.name);
 }
 
-// Pass to Nova Sonic (empty array = no tools)
-sonicClient.updateSessionConfig({ tools: mappedTools });
+// Pass ALL tools to Nova Sonic so it knows they exist
+sonicClient.updateSessionConfig({ tools: tools });
 ```
 
 ### Dynamic Variables
@@ -151,8 +153,8 @@ Use in `agentPrompt` field:
 
 ### Tool Executing When Disabled
 1. Check frontend sends `selectedTools: []` when no tools selected
-2. Verify server logs show "Loaded 0/X tools: NONE"
-3. Check system prompt says "You do not have access to any tools"
+2. Verify server logs show "Blocked execution of DISABLED tool"
+3. Model should receive a "Tool execution denied" result and apologize to the user.
 
 ### Duplicate Audio
 1. Ensure only one delivery method active

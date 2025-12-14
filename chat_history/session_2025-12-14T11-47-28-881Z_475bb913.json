@@ -1,0 +1,48 @@
+{
+  "sessionId": "475bb913-aabb-4856-82c9-b96a14573456",
+  "startTime": 1765712807250,
+  "endTime": 1765712848881,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Your Bank Transaction Assistant service. I'm here to help you with any transaction queries, resolve merchant confusion, and assist with disputes, fraud concerns, or gambling-related issues.\n\nBefore we proceed, for security purposes,I need to verify your identity. Could you please provide your Account Number and Sort Code? This will allow me to access your account details securely and assist you effectively.\n\nOnce you share those details, I'll immediately begin the verification process and thenwe can address any questions or concerns you may have regarding your transactions or account.",
+      "timestamp": 1765712807250
+    },
+    {
+      "role": "user",
+      "text": "hey, what's my current balance?",
+      "timestamp": 1765712813087
+    },
+    {
+      "role": "assistant",
+      "text": "I can help you check your balance, but first I need to verify your identity for security reasons. Please provide your Account Number and Sort Code so I can access your account details.",
+      "timestamp": 1765712815863
+    },
+    {
+      "role": "assistant",
+      "text": "I can help you check your balance, but first I need to verify your identity for security reasons.",
+      "timestamp": 1765712818464
+    },
+    {
+      "role": "user",
+      "text": "account number is one two three four five six seven eight",
+      "timestamp": 1765712824624
+    },
+    {
+      "role": "user",
+      "text": "account number is one two three four five six seven eightsort code is one one two two three three",
+      "timestamp": 1765712827661
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you. I'll perform an identity verification with the details you've provided. \n\nJust a moment while I process this.",
+      "timestamp": 1765712829961
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you. I'll perform an identity verification with the details you've provided.",
+      "timestamp": 1765712833261
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "sessionId": "907bcaf0-fabf-48fe-aabf-35183f00acf7",
+  "startTime": 1765713244787,
+  "endTime": 1765713276676,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Your Bank, your trusted Transaction Assistant. I'm here to help you with any transaction queries, resolve merchant confusion, and assist with disputes, fraud concerns, or gambling-related issues.\n\nBefore we proceed, for security reasons,I need to verify your identity. Could you please provide your Account Number and Sort Code? This will allow me to access your account details securely and assist you effectively.\n\nOnce you share those details, I'll immediately begin the verification process and thenwe can address any questions or concerns you may have.",
+      "timestamp": 1765713244787
+    },
+    {
+      "role": "user",
+      "text": "hey, what's my current balance?",
+      "timestamp": 1765713246007
+    },
+    {
+      "role": "assistant",
+      "text": "For security, I need to verify your identity. Please provide your Account Number and Sort Code.",
+      "timestamp": 1765713247742
+    },
+    {
+      "role": "user",
+      "text": "okay, account number is one two three four five six seven eight.",
+      "timestamp": 1765713254236
+    },
+    {
+      "role": "user",
+      "text": "okay, account number is one two three four five six seven eight.and my sort code is one one two two three three.",
+      "timestamp": 1765713258234
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you. \n\n(perform_ idv_ check)",
+      "timestamp": 1765713259870
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you. \n\n(perform_ idv_ check)",
+      "timestamp": 1765713263150
+    }
+  ]
+}
