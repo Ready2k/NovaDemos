@@ -257,7 +257,7 @@ export class SonicClient {
         };
         console.log('[SonicClient] Prompt Start Payload (with Tools):', JSON.stringify(promptStartEvent, null, 2));
         console.log('[SonicClient] DEBUG TOOLS:', JSON.stringify(this.sessionConfig.tools, null, 2));
-        
+
         // CRITICAL DEBUG: Check if tools structure is valid
         if (this.sessionConfig.tools && this.sessionConfig.tools.length > 0) {
             console.log('[SonicClient] TOOL VALIDATION:');
@@ -274,7 +274,7 @@ export class SonicClient {
                 }
             });
         }
-        
+
         // CRITICAL: Validate JSON before sending
         const promptStartJson = JSON.stringify(promptStartEvent);
         try {
@@ -284,7 +284,7 @@ export class SonicClient {
             console.error('[SonicClient] INVALID JSON:', e);
             console.error('[SonicClient] JSON STRING:', promptStartJson);
         }
-        
+
         yield { chunk: { bytes: Buffer.from(promptStartJson) } };
 
 
@@ -387,7 +387,7 @@ export class SonicClient {
                 console.log(`[SonicClient] Tool result text being sent to Nova Sonic:`, resultText);
                 console.log(`[SonicClient] Tool result text length:`, resultText.length);
                 console.log(`[SonicClient] Tool result text type:`, typeof resultText);
-                
+
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
                     const audioEndEvent = {
@@ -498,7 +498,7 @@ export class SonicClient {
             if (this.textQueue.length > 0) {
                 const text = this.textQueue.shift()!;
                 console.log('[SonicClient] Processing text input:', text);
-                
+
                 // SIMPLE FIX: Just reset transcript state - let Nova Sonic handle conversation naturally
                 // The deduplication system in server.ts will filter out any duplicates
                 console.log('[SonicClient] User text input received. Resetting transcript state.');
@@ -802,8 +802,14 @@ export class SonicClient {
         // --- DEBOUNCE: Prevent duplicate text sending (except for filler messages) --
         const fillerPhrases = ["Let me check that for you", "I'm still working on that", "Just a moment more"];
         const isFiller = fillerPhrases.some(phrase => text.includes(phrase));
-        
+
         if (!isFiller) {
+            // HALLUCINATION BLOCKER: Check for model self-interruption JSON
+            if (text.includes('"interrupted"') && text.includes('true')) {
+                console.warn(`[SonicClient] Ignoring hallucinated interruption signal: "${text}"`);
+                return;
+            }
+
             const now = Date.now();
             const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
             if (lastSent.text === text && (now - lastSent.time) < 2000) {
@@ -848,7 +854,7 @@ export class SonicClient {
                     const rawEvent = JSON.parse(Buffer.from(event.chunk.bytes).toString());
                     const eventType = Object.keys(rawEvent.event || rawEvent)[0];
                     console.log('[SonicClient] Received event type:', eventType);
-                    
+
                     // Special logging for tool-related events
                     if (eventType === 'toolUse' || eventType.includes('tool')) {
                         console.log('[SonicClient] 🔧 TOOL EVENT DETECTED:', JSON.stringify(rawEvent, null, 2));
@@ -883,17 +889,17 @@ export class SonicClient {
                         // Normalize role for comparison (Nova sends uppercase, we use lowercase internally)
                         const normalizedRole = eventData.contentStart.role.toLowerCase();
                         const currentRoleNormalized = this.currentRole.toLowerCase();
-                        
+
                         // Reset transcript if:
                         // 1. Role changes (USER -> ASSISTANT or vice versa)
                         // 2. Previous turn completed (isTurnComplete flag) AND it's a TEXT content start
                         // 3. FIXED: Only reset on actual role changes or completed turns, not every content chunk
                         const roleChanged = normalizedRole !== currentRoleNormalized;
                         const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
-                        
+
                         if (shouldReset) {
                             console.log(`[SonicClient] Resetting transcript. Reason: ${roleChanged ? 'Role changed' : 'New turn starting'}. Old role: ${this.currentRole}, New role: ${eventData.contentStart.role}, Type: ${eventData.contentStart.type}`);
-                            
+
                             // FILLER SYSTEM: Detect tool execution completion
                             if (roleChanged && this.currentRole === 'TOOL' && eventData.contentStart.role === 'ASSISTANT') {
                                 console.log('[SonicClient] Tool execution completed - triggering filler system');
@@ -904,7 +910,7 @@ export class SonicClient {
                                     }
                                 });
                             }
-                            
+
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
                         }
@@ -977,7 +983,7 @@ export class SonicClient {
                                 },
                             });
                         }
-                        
+
                         // If interrupted, mark the current transcript as cancelled
                         if (eventData.contentEnd.stopReason === 'INTERRUPTED' && this.currentTurnTranscript.length > 0) {
                             this.eventCallback?.({
