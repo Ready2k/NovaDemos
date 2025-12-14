@@ -31,11 +31,8 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Dynamic AWS Configuration**: Set AWS credentials and Agent Core Runtime ARN via GUI without server restart
 - **Native Tool Execution**: Time queries, server information, and extensible tool framework
 - **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
-- **🎵 Progressive Filler System**: 
-  - Immediate audio filler ("Let me check that for you") on tool execution
-  - Cascading secondary fillers for longer operations
-  - Works for both fresh executions and cached results
-  - Prevents Nova Sonic error messages during tool delays
+- **Native Tool Execution**: Time queries, server information, and extensible tool framework
+- **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
 - **💾 Smart Tool Result Caching**: 
   - Intelligent caching with tool-specific TTL (time: 30s, account: 60s, weather: 5min)
   - Fuzzy query matching for interrupted/repeated questions
@@ -94,13 +91,10 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Preserved voice functionality**: All fixes apply only to chat mode, voice-to-voice remains unaffected
 - **Improved tool integration**: Banking tools now work correctly without duplication or protocol errors
 
-### 🎵 Progressive Filler System Enhancement
-- **Fixed tool execution silence**: Eliminated 5-7 second silence periods during tool execution
-- **Immediate audio feedback**: "Let me check that for you" plays instantly when tools are called
-- **Duplicate detection bypass**: Filler messages can be sent multiple times without blocking
-- **Timing optimization**: Restored working 3-second secondary filler timing
-- **Error suppression**: Prevents Nova Sonic from generating "fritz" error messages during tool delays
-
+### 🔧 Chat Duplication Fix (Latest)
+- **Resolved Nova Sonic cross-modal conversation accumulation**: Fixed issue where chat responses would repeat previous messages
+- **Internal deduplication**: Eliminated duplicate sentences within single responses (e.g., "Hello!Hello!")
+- **Cross-response deduplication**: Prevented entire previous responses from appearing in new messages
 ### 📁 Project Organization Improvements
 - **Prompt naming convention**: Implemented `core-` prefix for platform prompts, `persona-` prefix for character prompts
 - **Test file organization**: Moved all test files to `/tests/` folder for cleaner main directory
@@ -286,7 +280,6 @@ Open your browser and navigate to:
 - **Clean Separation**: WebSocket layer is independent of Nova Sonic integration layer
 - **Binary Frames**: WebSocket handles binary audio data efficiently
 - **Minimal Dependencies**: Essential packages only (`ws`, `@aws-sdk/client-bedrock-runtime`, `typescript`)
-- **Hybrid Filler System**: Removed complex Gen Filler caching in favor of explicit system prompts + visual feedback
 
 ## Architecture Decisions
 
