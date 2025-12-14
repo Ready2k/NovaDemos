@@ -2,7 +2,7 @@
   "nodes": [
     {
       "id": "start",
-      "label": "",
+      "label": "Start",
       "type": "start"
     },
     {

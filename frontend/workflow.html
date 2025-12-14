@@ -289,7 +289,8 @@
 
             // Define Nodes
             data.nodes.forEach(node => {
-                const safeLabel = node.label.replace(/"/g, "'").replace(/\n/g, '<br>');
+                const labelText = (node.label && node.label.trim() !== '') ? node.label : node.id;
+                const safeLabel = labelText.replace(/"/g, "'").replace(/\n/g, '<br>');
                 let shapeStart = '[', shapeEnd = ']';
                 let styleClass = '';
 
