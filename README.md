@@ -142,6 +142,7 @@ Voice_S2S/
 
 ## Documentation
 
+- **[User Guide](./docs/USER_GUIDE.md)**: Comprehensive user manual with screenshots.
 - **[Getting Started](./docs/getting_started.md)**: Setup and installation guide.
 - **[Tool Management](./docs/tool_management.md)**: How to configure, categorize, and create new tools.
 - **[Knowledge Bases](./docs/knowledge_bases.md)**: Integrating RAG and external knowledge sources.
