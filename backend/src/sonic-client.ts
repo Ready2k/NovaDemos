@@ -55,7 +55,8 @@ export class SonicClient {
     private currentContentName?: string;
     private currentRole: string = 'assistant';
     private recentOutputs: string[] = [];
-    private contentStages: Map<string, string> = new Map(); // Track generation stage
+    private contentStages: Map<string, string> = new Map(); // Track generation stage by ID
+    private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
     private currentTurnTranscript: string = ''; // Accumulate text for the current turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
     private inputStream: AsyncGenerator<any> | null = null;
@@ -885,6 +886,9 @@ export class SonicClient {
                             }
                         }
                         this.contentStages.set(contentId, stage);
+                        if (eventData.contentStart.contentName) {
+                            this.contentNameStages.set(eventData.contentStart.contentName, stage);
+                        }
 
                         // Normalize role for comparison (Nova sends uppercase, we use lowercase internally)
                         const normalizedRole = eventData.contentStart.role.toLowerCase();
@@ -956,7 +960,8 @@ export class SonicClient {
                                     transcript: this.currentTurnTranscript, // Send FULL accumulated turn text
                                     role: this.currentRole === 'USER' ? 'user' : 'assistant',
                                     isFinal: false,  // Always false here - final comes from END_TURN
-                                    isStreaming: true  // Flag for UI to show as streaming
+                                    isStreaming: true,  // Flag for UI to show as streaming
+                                    stage: stage // Pass stage (e.g. SPECULATIVE)
                                 },
                             });
                         }
@@ -973,13 +978,17 @@ export class SonicClient {
 
                         // Send final transcript when turn ends
                         if (eventData.contentEnd.stopReason === 'END_TURN' && this.currentTurnTranscript.length > 0) {
+                            // Determine stage from content name if possible
+                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+
                             this.eventCallback?.({
                                 type: 'transcript',
                                 data: {
                                     transcript: this.currentTurnTranscript,
                                     role: this.currentRole === 'USER' ? 'user' : 'assistant',
                                     isFinal: true,
-                                    isStreaming: false
+                                    isStreaming: false,
+                                    stage: stage
                                 },
                             });
                         }

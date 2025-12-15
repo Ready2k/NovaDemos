@@ -603,7 +603,7 @@ class VoiceAssistant {
 
             // Render messages
             data.transcript.forEach(msg => {
-                this.appendTranscriptMessage(msg.role, msg.text, msg.timestamp);
+                this.appendTranscriptMessage(msg);
             });
 
             // Add exit handler
@@ -619,7 +619,21 @@ class VoiceAssistant {
         }
     }
 
-    appendTranscriptMessage(role, text, timestamp) {
+    appendTranscriptMessage(roleOrMsg, textArg, timestampArg) {
+        let role, text, timestamp, type;
+
+        if (typeof roleOrMsg === 'object' && roleOrMsg !== null) {
+            role = roleOrMsg.role;
+            text = roleOrMsg.text;
+            timestamp = roleOrMsg.timestamp;
+            type = roleOrMsg.type;
+        } else {
+            role = roleOrMsg;
+            text = textArg;
+            timestamp = timestampArg;
+        }
+
+        const isSpeculative = type === 'speculative';
         const msgDiv = document.createElement('div');
         const isUser = role === 'user';
 
@@ -628,12 +642,13 @@ class VoiceAssistant {
             margin-bottom: 16px; 
             max-width: 80%; 
             align-self: ${isUser ? 'flex-end' : 'flex-start'};
-            background: ${isUser ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)'};
-            border: 1px solid ${isUser ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
+            background: ${isUser ? 'rgba(59, 130, 246, 0.2)' : (isSpeculative ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 255, 255, 0.05)')};
+            border: 1px ${isSpeculative ? 'dashed' : 'solid'} ${isUser ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
             border-radius: 12px;
             padding: 12px 16px;
-            color: #e2e8f0;
+            color: ${isSpeculative ? '#94a3b8' : '#e2e8f0'};
             line-height: 1.5;
+            font-style: ${isSpeculative ? 'italic' : 'normal'};
         `;
 
         if (!isUser) {
@@ -648,7 +663,7 @@ class VoiceAssistant {
 
         msgDiv.innerHTML = `
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between;">
-                <span>${isUser ? 'You' : 'Assistant'}</span>
+                <span>${isUser ? 'You' : (isSpeculative ? '🤖 Assistant (Plan)' : '🤖 Assistant')}</span>
                 <span>${timeStr}</span>
             </div>
             <div>${text}</div>

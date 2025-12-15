@@ -733,6 +733,7 @@ interface ClientSession {
         role: string;
         text: string;
         timestamp: number;
+        type?: 'speculative' | 'final'; // New: Track type of transcript
     }[];
 }
 
@@ -1768,15 +1769,22 @@ You do not have access to any tools. Answer questions directly based on your kno
                                 console.log(`[Server] Audio buffer info: ${fullAudio.length} bytes, RMS: ${rms}`);
                             }
                             if (text) {
-                                console.log(`[Server] User said (Transcribed): "${text}"`);
-                                ws.send(JSON.stringify({ type: 'transcript', role: 'user', text, isFinal: true }));
-                                session.transcript.push({ role: 'user', text, timestamp: Date.now() });
+                                let finalText = text;
+                                try {
+                                    finalText = formatUserTranscript(text);
+                                } catch (e) {
+                                    console.warn('[Server] Error formatting transcript:', e);
+                                }
+
+                                console.log(`[Server] User said (Formatted): "${finalText}"`);
+                                ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: finalText, isFinal: true }));
+                                session.transcript.push({ role: 'user', text: finalText, timestamp: Date.now() });
 
                                 // 4. Invoke Agent
                                 try {
                                     console.log('[Server] Calling Agent...');
                                     const { completion: agentReply, trace } = await callBankAgent(
-                                        text,
+                                        finalText,
                                         session.sessionId,
                                         session.agentId,
                                         session.agentAliasId
@@ -1967,6 +1975,55 @@ function cleanTextForSonic(text: string): string {
     return clean;
 }
 
+// --- User Transcript Formatting Helper ---
+function formatUserTranscript(text: string): string {
+    if (!text) return text;
+
+    let formatted = text;
+
+    // Simple textual number to digit mapping
+    const numberMap: { [key: string]: string } = {
+        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+        'eleven': '11', 'twelve': '12', 'twenty': '20', 'thirty': '30',
+        'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
+        'eighty': '80', 'ninety': '90'
+    };
+
+    // Regex to capture "£word point word" pattern
+    // e.g. "£three point fifty" -> "£3.50"
+    formatted = formatted.replace(/£([a-z]+)\s+point\s+([a-z]+)/gi, (match, p1, p2) => {
+        const whole = numberMap[p1.toLowerCase()];
+        const fraction = numberMap[p2.toLowerCase()];
+
+        if (whole && fraction) {
+            // "point fifty" (50) vs "point five" (5)
+            // If fraction is single digit like '5' (from 'five'), it might mean 0.5 or 0.50? 
+            // Usually "point five" = .5, "point fifty" = .50
+            return `£${whole}.${fraction}`;
+        }
+        return match;
+    });
+
+    // Handle "£word" (e.g. "£five")
+    formatted = formatted.replace(/£([a-z]+)/gi, (match, p1) => {
+        const num = numberMap[p1.toLowerCase()];
+        return num ? `£${num}` : match;
+    });
+
+    // Handle "three pounds fifty" -> "£3.50"
+    formatted = formatted.replace(/([a-z]+)\s+pounds?\s+([a-z]+)/gi, (match, p1, p2) => {
+        const whole = numberMap[p1.toLowerCase()];
+        const fraction = numberMap[p2.toLowerCase()];
+        if (whole && fraction) {
+            return `£${whole}.${fraction}`;
+        }
+        return match;
+    });
+
+    return formatted;
+}
+
 // --- Workflow Injection Helper ---
 function convertWorkflowToText(workflow: any): string {
     if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
@@ -2067,8 +2124,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 session.lastUserTranscript = event.data.transcript;
                 session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
             } else if (role === 'assistant' || role === 'model') {
-                if (event.data.isFinal) {
-                    session.transcript.push({ role: 'assistant', text: event.data.transcript, timestamp: Date.now() });
+                const stage = event.data.stage;
+                const isSpeculative = stage === 'SPECULATIVE';
+
+                if (event.data.isFinal || isSpeculative) {
+                    const entry: any = {
+                        role: 'assistant',
+                        text: event.data.transcript,
+                        timestamp: Date.now()
+                    };
+
+                    if (isSpeculative) {
+                        entry.type = 'speculative';
+                    } else if (event.data.isFinal) {
+                        entry.type = 'final';
+                    }
+
+                    session.transcript.push(entry);
                 }
             }
 
