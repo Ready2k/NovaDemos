@@ -14,28 +14,34 @@
     <div class="sidebar">
       <!-- Navigation Rail -->
       <div class="sidebar-nav">
-        <div id="nav-voice" class="nav-item active" title="Voice / General">
+        <div id="nav-voice" class="nav-item active" data-tooltip="Voice / General">
           <span style="font-size: 1.2rem;">🎙️</span>
         </div>
-        <div id="nav-personas" class="nav-item" title="Personas / Prompts">
+        <div id="nav-personas" class="nav-item" data-tooltip="Personas / Prompts">
           <span style="font-size: 1.2rem;">👤</span>
         </div>
-        <div id="nav-chat" class="nav-item" title="Chat History">
+        <div id="nav-chat" class="nav-item" data-tooltip="Chat History">
           <span style="font-size: 1.2rem;">💬</span>
         </div>
-        <div id="nav-workflows" class="nav-item" title="Workflows">
+        <div id="nav-workflows" class="nav-item" data-tooltip="Workflows">
           <span style="font-size: 1.2rem;">📂</span>
         </div>
-        <div id="nav-tools" class="nav-item" title="Tools">
+        <div id="nav-tools" class="nav-item" data-tooltip="Tools">
           <span style="font-size: 1.2rem;">🛠️</span>
         </div>
-        <div id="nav-knowledge" class="nav-item" title="Knowledge Bases">
+        <div id="nav-knowledge" class="nav-item" data-tooltip="Knowledge Bases">
           <span style="font-size: 1.2rem;">📚</span>
         </div>
-        <div id="nav-settings" class="nav-item" style="margin-top: auto;" title="System Settings">
+        <div id="nav-settings" class="nav-item" style="margin-top: auto;" data-tooltip="System Settings">
           <span style="font-size: 1.2rem;">⚙️</span>
         </div>
-        <div id="nav-logout" class="nav-item" title="Logout/Exit">
+        <div id="nav-action-save" class="nav-item action-item" data-tooltip="Save Changes">
+          <span style="font-size: 1.2rem;">💾</span>
+        </div>
+        <div id="nav-action-new" class="nav-item action-item" data-tooltip="New Session">
+          <span style="font-size: 1.2rem;">✨</span>
+        </div>
+        <div id="nav-logout" class="nav-item" data-tooltip="Logout/Exit">
           <span style="font-size: 1.2rem;">↪️</span>
         </div>
       </div>
@@ -108,34 +114,15 @@
         <!-- View: Chat History -->
         <div id="view-chat" class="sidebar-view">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h2 style="margin: 0;">Chat History</h2>
-            <div style="display: flex; align-items: center; font-size: 0.8rem; color: #94a3b8;">
-              <span style="margin-right: 8px;">Mock</span>
-              <label class="switch" style="position: relative; display: inline-block; width: 34px; height: 20px;">
-                <input type="checkbox" id="history-toggle">
-                <span class="slider round"
-                  style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .4s; border-radius: 34px;"></span>
-                <span class="slider-knob"
-                  style="position: absolute; content: ''; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;"></span>
-              </label>
-              <span style="margin-left: 8px;">Real</span>
+            <h2 style="margin: 0; margin-bottom: 10px;">Chat History</h2>
+            <div class="chat-filters" style="display: flex; gap: 8px; margin-bottom: 10px;">
+              <input type="text" id="history-search" placeholder="Search..."
+                style="flex: 1; min-width: 0; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px; color: white; font-size: 0.8rem;">
+              <input type="date" id="history-date-filter"
+                style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px; color: white; font-size: 0.8rem; color-scheme: dark;">
             </div>
           </div>
-          <style>
-            .switch input {
-              opacity: 0;
-              width: 0;
-              height: 0;
-            }
 
-            .switch input:checked+.slider {
-              background-color: #8b5cf6;
-            }
-
-            .switch input:checked+.slider .slider-knob {
-              transform: translateX(14px);
-            }
-          </style>
           <div id="chat-history-list" style="display: flex; flex-direction: column; gap: 10px;">
             <!-- Placeholder for history items -->
             <div
@@ -165,7 +152,8 @@
           </a>
 
           <p style="margin-top: 20px; font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
-            Manage and visualize your agent workflows here. Use the Creator to build new flows or the Visualizer to see
+            Manage and visualize your agent workflows here. Use the Creator to build new flows or the Visualizer to
+            see
             them in action.
           </p>
 
@@ -262,14 +250,7 @@
           </button>
         </div>
 
-        <!-- Global Actions -->
-        <div class="sidebar-actions"
-          style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-          <button id="saveSettingsBtn" class="primary-btn"
-            style="width: 100%; margin-bottom: 10px; justify-content: center;">Save Changes</button>
-          <button id="newSessionBtn" class="secondary-btn" style="width: 100%; justify-content: center;">New
-            Session</button>
-        </div>
+
 
       </div>
     </div>
@@ -363,7 +344,8 @@
     <div class="modal-content"
       style="background: #1e293b; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; border: 1px solid rgba(255,255,255,0.1);">
       <h3 style="margin-top: 0; margin-bottom: 15px;">AWS Configuration</h3>
-      <p style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 20px;">Enter your AWS credentials. These are used only
+      <p style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 20px;">Enter your AWS credentials. These are used
+        only
         for this session and are not saved to the server.</p>
 
       <div class="input-group" style="margin-bottom: 15px;">

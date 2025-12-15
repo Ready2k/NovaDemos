@@ -46,8 +46,8 @@ class VoiceAssistant {
         this.debugModeCheckbox = document.getElementById('debug-mode');
         this.debugPanel = document.getElementById('debug-panel');
         this.debugContent = document.getElementById('debug-content');
-        this.saveSettingsBtn = document.getElementById('saveSettingsBtn');
-        this.newSessionBtn = document.getElementById('newSessionBtn');
+        this.saveSettingsBtn = document.getElementById('nav-action-save'); // Re-bind to nav item
+        this.newSessionBtn = document.getElementById('nav-action-new'); // Re-bind to nav item
         this.modeSelect = document.getElementById('interaction-mode');
         this.brainModeSelect = document.getElementById('brain-mode'); // Correctly bind to the Assistant dropdown
         this.presetSelect = document.getElementById('persona-preset');
@@ -177,9 +177,6 @@ class VoiceAssistant {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectTimeout = null;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectTimeout = null;
         this.corePrompt = ''; // Store core guardrails
         this.availableTools = []; // Store full tool definitions
 
@@ -188,9 +185,6 @@ class VoiceAssistant {
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
-        // Settings listeners
-        this.saveSettingsBtn.addEventListener('click', () => this.saveSettings());
-        this.newSessionBtn.addEventListener('click', () => this.startNewSession());
 
         if (this.brainModeSelect) {
             this.brainModeSelect.addEventListener('change', () => {
@@ -375,6 +369,22 @@ class VoiceAssistant {
                     return;
                 }
 
+                // Handle Save Action
+                if (item.id === 'nav-action-save') {
+                    this.saveSettings();
+                    return;
+                }
+
+                // Handle New Session Action
+                if (item.id === 'nav-action-new') {
+                    if (this.state === 'recording') {
+                        this.showToast('Please stop recording first', 'warning');
+                        return;
+                    }
+                    this.startNewSession();
+                    return;
+                }
+
                 // Identify target view
                 const viewId = item.id.replace('nav-', 'view-');
                 const targetView = document.getElementById(viewId);
@@ -398,62 +408,25 @@ class VoiceAssistant {
             });
         });
 
-        // History Toggle Listener
-        const historyToggle = document.getElementById('history-toggle');
-        if (historyToggle) {
-            historyToggle.addEventListener('change', () => {
-                if (document.getElementById('view-chat').classList.contains('active')) {
-                    this.renderChatHistory();
-                }
+        // Chat History Filter Listeners
+        const historySearch = document.getElementById('history-search');
+        const historyDateFilter = document.getElementById('history-date-filter');
+
+        if (historySearch) {
+            historySearch.addEventListener('input', () => {
+                this.renderChatHistory();
+            });
+        }
+
+        if (historyDateFilter) {
+            historyDateFilter.addEventListener('change', () => {
+                this.renderChatHistory();
             });
         }
     }
 
     async renderChatHistory() {
         const container = document.getElementById('chat-history-list');
-        const historyToggle = document.getElementById('history-toggle');
-        if (!container) return;
-
-        const showReal = historyToggle ? historyToggle.checked : false;
-
-        if (!showReal) {
-            // Mock History Data
-            const historyData = [
-                { id: '1', date: new Date().toISOString(), summary: 'Current Session', active: true },
-                { id: '2', date: new Date(Date.now() - 86400000).toISOString(), summary: 'Booking Assistance', active: false },
-                { id: '3', date: new Date(Date.now() - 172800000).toISOString(), summary: 'Sci-Fi RP Test', active: false },
-            ];
-
-            if (this.sessionId) {
-                historyData[0].id = this.sessionId;
-                historyData[0].summary = `Session ${this.sessionId.substring(0, 6)}...`;
-            }
-
-            container.innerHTML = historyData.map(item => `
-                <div class="history-item ${item.active ? 'active' : ''}" style="padding: 12px; background: ${item.active ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)'}; border-radius: 8px; border: 1px solid ${item.active ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255,255,255,0.1)'}; cursor: pointer; margin-bottom: 8px; transition: all 0.2s ease;">
-                    <div style="font-size: 0.85rem; font-weight: 600; color: ${item.active ? '#ddd6fe' : '#e2e8f0'}; display: flex; justify-content: space-between;">
-                        <span>${new Date(item.date).toLocaleDateString()} ${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                         <span style="font-size: 0.7rem; color: #94a3b8; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">MOCK</span>
-                    </div>
-                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        ${item.summary}
-                    </div>
-                </div>
-            `).join('');
-
-            const items = container.querySelectorAll('.history-item');
-            items.forEach((item, index) => {
-                item.addEventListener('click', () => {
-                    if (index === 0) {
-                        this.showToast('Showing current session', 'info');
-                    } else {
-                        this.showToast('Switch to Real Mode to view actual history', 'warning');
-                    }
-                });
-            });
-            return;
-        }
-
         // Real History Data
         try {
             container.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">Loading history...</div>';
@@ -468,16 +441,126 @@ class VoiceAssistant {
                 return;
             }
 
-            container.innerHTML = historyFiles.map(item => `
-                <div class="history-item" data-id="${item.id}" style="padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin-bottom: 8px; transition: all 0.2s ease;">
-                    <div style="font-size: 0.85rem; font-weight: 600; color: #e2e8f0; display: flex; justify-content: space-between;">
-                        <span>${new Date(item.date).toLocaleDateString()} ${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        ${item.summary}
-                    </div>
-                </div>
-            `).join('');
+            // Apply Filters
+            const searchText = document.getElementById('history-search') ? document.getElementById('history-search').value.toLowerCase() : '';
+            const dateFilter = document.getElementById('history-date-filter') ? document.getElementById('history-date-filter').value : '';
+
+            let filteredFiles = historyFiles;
+
+            if (searchText) {
+                filteredFiles = filteredFiles.filter(item =>
+                    (item.summary && item.summary.toLowerCase().includes(searchText)) ||
+                    (item.id && item.id.toLowerCase().includes(searchText))
+                );
+            }
+
+            if (dateFilter) {
+                const filterDateStr = new Date(dateFilter).toDateString();
+                filteredFiles = filteredFiles.filter(item =>
+                    new Date(item.date).toDateString() === filterDateStr
+                );
+            }
+
+            if (filteredFiles.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">No matches found.</div>';
+                return;
+            }
+
+            // Group by Date
+            const groups = {
+                'Today': [],
+                'Yesterday': [],
+                'Previous 7 Days': [],
+                'Older': []
+            };
+
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const last7Days = new Date(today);
+            last7Days.setDate(last7Days.getDate() - 7);
+
+            filteredFiles.forEach(item => {
+                const itemDate = new Date(item.date);
+                if (itemDate.toDateString() === today.toDateString()) {
+                    groups['Today'].push(item);
+                } else if (itemDate.toDateString() === yesterday.toDateString()) {
+                    groups['Yesterday'].push(item);
+                } else if (itemDate > last7Days) {
+                    groups['Previous 7 Days'].push(item);
+                } else {
+                    groups['Older'].push(item);
+                }
+            });
+
+            // Render Groups
+            let html = '';
+            let groupIndex = 0;
+            for (const [groupName, items] of Object.entries(groups)) {
+                if (items.length > 0) {
+                    const groupId = `history-group-${groupIndex++}`;
+                    const isToday = groupName === 'Today';
+                    // Default to expanded for Today, collapsed for others if desired, or all expanded.
+                    // Let's default 'Today' to expanded, others to collapsed to reduce clutter if requested,
+                    // but usually "collapsible" implies user choice. User asked to "click on Today it collapses".
+                    // So they probably want them expanded by default? Or maybe just toggle capability.
+                    // "allow the dates to be collapsable" implies capability.
+
+                    html += `
+                        <div class="history-group-container" style="margin-bottom: 5px;">
+                            <h5 class="history-group-header" data-target="${groupId}" style="
+                                margin: 10px 0 5px 0; 
+                                color: var(--accent-color); 
+                                font-size: 0.75rem; 
+                                text-transform: uppercase; 
+                                letter-spacing: 0.05em; 
+                                cursor: pointer; 
+                                display: flex; 
+                                justify-content: space-between; 
+                                align-items: center;
+                                padding: 4px 8px;
+                                background: rgba(255,255,255,0.03);
+                                border-radius: 4px;
+                            ">
+                                <span>${groupName}</span>
+                                <span class="group-chevron" style="transition: transform 0.2s; font-size: 0.6rem;">▼</span>
+                            </h5>
+                            <div id="${groupId}" class="history-group-content" style="display: block; overflow: hidden; transition: all 0.3s ease;">
+                                ${items.map(item => `
+                                    <div class="history-item" data-id="${item.id}" style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin-bottom: 6px; transition: all 0.2s ease;">
+                                        <div style="font-size: 0.8rem; font-weight: 600; color: #e2e8f0; display: flex; justify-content: space-between;">
+                                            <span>${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span style="font-size: 0.7rem; color: #64748b;">${new Date(item.date).toLocaleDateString()}</span>
+                                        </div>
+                                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            ${item.summary}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            container.innerHTML = html;
+
+            // Add Collapsible Listeners
+            container.querySelectorAll('.history-group-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const targetId = header.getAttribute('data-target');
+                    const content = document.getElementById(targetId);
+                    const chevron = header.querySelector('.group-chevron');
+
+                    if (content.style.display === 'none') {
+                        content.style.display = 'block';
+                        chevron.style.transform = 'rotate(0deg)';
+                    } else {
+                        content.style.display = 'none';
+                        chevron.style.transform = 'rotate(-90deg)';
+                    }
+                });
+            });
 
             // Add Click Listeners for Real items
             container.querySelectorAll('.history-item').forEach(item => {
@@ -602,7 +685,7 @@ class VoiceAssistant {
         this.resetStats();
 
         // Save the reset settings
-        this.saveSettings();
+        this.saveSettings(false);
 
         // Disconnect if connected
         if (this.state !== 'disconnected') {
@@ -610,6 +693,7 @@ class VoiceAssistant {
         }
 
         this.log('Session reset. Ready to connect.', 'success');
+        this.showToast('New session started', 'success');
     }
 
     loadSettings() {
@@ -632,7 +716,7 @@ class VoiceAssistant {
         }
     }
 
-    saveSettings() {
+    saveSettings(showToast = true) {
         localStorage.setItem('nova_system_prompt', this.systemPromptInput.value);
         localStorage.setItem('nova_speech_prompt', this.speechPromptInput.value);
         if (this.voiceSelect) {
@@ -666,14 +750,18 @@ class VoiceAssistant {
         }
 
         // Visual feedback
-        const originalText = this.saveSettingsBtn.textContent;
-        this.saveSettingsBtn.textContent = 'Saved!';
-        this.saveSettingsBtn.style.background = '#d4edda';
+        // const originalText = this.saveSettingsBtn.textContent;
+        // this.saveSettingsBtn.textContent = 'Saved!';
+        // this.saveSettingsBtn.style.background = '#d4edda';
 
-        setTimeout(() => {
-            this.saveSettingsBtn.textContent = originalText;
-            this.saveSettingsBtn.style.background = '';
-        }, 2000);
+        if (showToast) {
+            this.showToast('Settings saved successfully', 'success');
+        }
+
+        // setTimeout(() => {
+        //     this.saveSettingsBtn.textContent = originalText;
+        //     this.saveSettingsBtn.style.background = '';
+        // }, 2000);
     }
 
     getSessionConfig() {
