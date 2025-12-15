@@ -2102,6 +2102,7 @@ class VoiceAssistant {
                         checkbox.value = wf.id;
                         checkbox.name = 'linkedWorkflow';
                         checkbox.style.cursor = 'pointer';
+                        checkbox.addEventListener('change', () => this.saveSettings());
 
                         const label = document.createElement('label');
                         label.htmlFor = `wf-${wf.id}`;
@@ -2159,11 +2160,17 @@ class VoiceAssistant {
                     // Clean it up: Remove 'core-' and '.txt'
                     // core-persona-mortgage.txt -> persona-mortgage
                     targetId = personaId.replace('core-', '').replace('.txt', '');
+
+                    // Explicit Mapping
+                    if (targetId === 'persona-BankingDisputes') {
+                        targetId = 'banking';
+                    }
                 }
             }
         }
 
         if (targetId) {
+            const targetCheckbox = document.getElementById(`wf-${targetId}`);
             if (targetCheckbox) {
                 targetCheckbox.checked = true;
             }
