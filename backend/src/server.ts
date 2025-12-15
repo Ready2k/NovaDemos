@@ -643,137 +643,7 @@ function loadTools(): any[] {
 
 // Progressive filler system for tool execution feedback
 // Progressive filler system completely disabled per user request
-async function startProgressiveFiller(session: ClientSession, toolName: string, toolUseId: string) {
-    // Fillers are disabled.
-    // Console log left for debugging purposes only.
-    console.log(`[Server] Progressive filler skipped for ${toolName} (ID: ${toolUseId}) - Disabled by configuration`);
-}
 
-function clearProgressiveFiller(session: ClientSession) {
-    if (session.primaryFillerTimer) {
-        clearTimeout(session.primaryFillerTimer);
-        session.primaryFillerTimer = undefined;
-    }
-    if (session.secondaryFillerTimer) {
-        clearTimeout(session.secondaryFillerTimer);
-        session.secondaryFillerTimer = undefined;
-    }
-    if (session.tertiaryFillerTimer) {
-        clearTimeout(session.tertiaryFillerTimer);
-        session.tertiaryFillerTimer = undefined;
-    }
-    session.isToolExecuting = false;
-    session.currentToolExecution = undefined;
-}
-
-// Tool result caching system
-function getCacheKey(toolName: string, query: string, parameters?: any): string {
-    const paramStr = parameters ? JSON.stringify(parameters) : '';
-    return `${toolName}:${query}:${paramStr}`;
-}
-
-function getCachedToolResult(session: ClientSession, toolName: string, query: string, parameters?: any): any | null {
-    if (!session.toolResultCache) {
-        console.log(`[Cache] No cache initialized for session`);
-        return null;
-    }
-
-    const cacheKey = getCacheKey(toolName, query, parameters);
-    console.log(`[Cache] Looking for cache key: ${cacheKey}`);
-    console.log(`[Cache] Available cache keys:`, Array.from(session.toolResultCache.keys()));
-    const cached = session.toolResultCache.get(cacheKey);
-
-    if (!cached) {
-        console.log(`[Cache] No cached result found for key: ${cacheKey}`);
-        return null;
-    }
-
-    const now = Date.now();
-    const age = now - cached.timestamp;
-
-    // Smart cache invalidation based on tool type
-    let maxAge = 30000; // Default 30 seconds
-
-    switch (toolName) {
-        case 'get_server_time':
-            maxAge = 30000; // 30 seconds for time queries (now via AgentCore Gateway)
-            break;
-        case 'get_account_info':
-        case 'payments_agent':
-            maxAge = 60000; // 60 seconds for account info
-            break;
-        case 'get_weather':
-            maxAge = 300000; // 5 minutes for weather
-            break;
-        default:
-            maxAge = 30000; // Default 30 seconds
-    }
-
-    if (age > maxAge) {
-        console.log(`[Cache] Expired cache entry for ${toolName} (age: ${age}ms, max: ${maxAge}ms)`);
-        session.toolResultCache.delete(cacheKey);
-        return null;
-    }
-
-    console.log(`[Cache] Cache hit for ${toolName} (age: ${age}ms)`);
-    return cached.result;
-}
-
-function setCachedToolResult(session: ClientSession, toolName: string, query: string, result: any, parameters?: any) {
-    if (!session.toolResultCache) {
-        session.toolResultCache = new Map();
-    }
-
-    const cacheKey = getCacheKey(toolName, query, parameters);
-    session.toolResultCache.set(cacheKey, {
-        result,
-        timestamp: Date.now(),
-        toolName,
-        query
-    });
-
-    console.log(`[Cache] Cached result for ${toolName}: ${cacheKey}`);
-
-    // Cleanup old entries (keep max 50 entries)
-    if (session.toolResultCache.size > 50) {
-        const entries = Array.from(session.toolResultCache.entries());
-        entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-
-        // Remove oldest 10 entries
-        for (let i = 0; i < 10; i++) {
-            session.toolResultCache.delete(entries[i][0]);
-        }
-    }
-}
-
-function findSimilarCachedQuery(session: ClientSession, query: string, toolName?: string): any | null {
-    if (!session.toolResultCache) return null;
-
-    const normalizedQuery = query.toLowerCase().trim();
-
-    for (const [cacheKey, cached] of session.toolResultCache.entries()) {
-        if (toolName && cached.toolName !== toolName) continue;
-
-        const cachedQuery = cached.query.toLowerCase().trim();
-
-        // Check for similar queries
-        if (normalizedQuery.includes('time') && cachedQuery.includes('time')) {
-            return getCachedToolResult(session, cached.toolName, cached.query);
-        }
-
-        if (normalizedQuery.includes('weather') && cachedQuery.includes('weather')) {
-            return getCachedToolResult(session, cached.toolName, cached.query);
-        }
-
-        // Fuzzy matching for interrupted queries
-        const similarity = calculateStringSimilarity(normalizedQuery, cachedQuery);
-        if (similarity > 0.7) { // 70% similarity threshold
-            return getCachedToolResult(session, cached.toolName, cached.query);
-        }
-    }
-
-    return null;
-}
 
 function calculateStringSimilarity(str1: string, str2: string): number {
     const words1 = str1.split(' ').filter(w => w.length > 2);
@@ -785,55 +655,7 @@ function calculateStringSimilarity(str1: string, str2: string): number {
     return commonWords.length / Math.max(words1.length, words2.length);
 }
 
-/**
- * Check if a tool execution is a duplicate of a recent execution
- */
-function isRecentToolExecution(session: ClientSession, toolName: string, parameters: any): { isDuplicate: boolean; result?: any } {
-    if (!session.recentToolExecutions) {
-        session.recentToolExecutions = new Map();
-    }
 
-    const paramKey = JSON.stringify(parameters);
-    const executionKey = `${toolName}:${paramKey}`;
-    const now = Date.now();
-
-    // Check for recent execution (within 10 seconds)
-    const recentExecution = session.recentToolExecutions.get(executionKey);
-    if (recentExecution && (now - recentExecution.timestamp) < 10000) {
-        console.log(`[ToolDedup] Found recent execution of ${toolName} within 10 seconds - using cached result`);
-        return { isDuplicate: true, result: recentExecution.result };
-    }
-
-    // Clean up old executions (older than 30 seconds)
-    for (const [key, execution] of session.recentToolExecutions.entries()) {
-        if (now - execution.timestamp > 30000) {
-            session.recentToolExecutions.delete(key);
-        }
-    }
-
-    return { isDuplicate: false };
-}
-
-/**
- * Record a tool execution to prevent duplicates
- */
-function recordToolExecution(session: ClientSession, toolName: string, parameters: any, result: any) {
-    if (!session.recentToolExecutions) {
-        session.recentToolExecutions = new Map();
-    }
-
-    const paramKey = JSON.stringify(parameters);
-    const executionKey = `${toolName}:${paramKey}`;
-
-    session.recentToolExecutions.set(executionKey, {
-        toolName,
-        parameters,
-        timestamp: Date.now(),
-        result
-    });
-
-    console.log(`[ToolDedup] Recorded execution of ${toolName} for deduplication`);
-}
 
 // generateFillerWithSonic function removed - Nova 2 Sonic handles filler natively
 
@@ -889,17 +711,6 @@ interface ClientSession {
     // Context Variables
     userLocation?: string;
     userTimezone?: string;
-
-    // Progressive Filler System
-    primaryFillerTimer?: NodeJS.Timeout;
-    secondaryFillerTimer?: NodeJS.Timeout;
-    tertiaryFillerTimer?: NodeJS.Timeout;
-    isToolExecuting?: boolean;
-    currentToolExecution?: {
-        toolName: string;
-        startTime: number;
-        toolUseId: string;
-    };
 
     // Tool Result Caching
     toolResultCache?: Map<string, {
@@ -1433,14 +1244,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         userLocation: "Unknown Location",
         userTimezone: "UTC",
 
-        isBufferingAudio: false,
-        audioBufferQueue: [],
-        hasFlowedAudio: false,
-
-        // Progressive Filler System
-        isToolExecuting: false,
-        toolResultCache: new Map(),
-
         // Chat History
         transcript: []
     };
@@ -1851,48 +1654,7 @@ You do not have access to any tools. Answer questions directly based on your kno
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
 
-                            // Check for similar cached queries (for interrupted/repeated questions)
-                            const similarCachedResult = findSimilarCachedQuery(session, parsed.text);
-                            if (similarCachedResult) {
-                                console.log('[Server] Found similar cached result for interrupted/repeated query');
 
-                                // Send cached result immediately
-                                ws.send(JSON.stringify({
-                                    type: 'transcript',
-                                    role: 'user',
-                                    text: parsed.text,
-                                    isFinal: true
-                                }));
-
-                                // Format cached result for display
-                                let displayResult = similarCachedResult;
-                                if (typeof displayResult === 'string') {
-                                    displayResult = displayResult.replace(/\*\*/g, '').replace(/\*/g, '');
-                                    const timeMatch = displayResult.match(/current time.*?is[:\s]+([^.\n]+)/i);
-                                    if (timeMatch) {
-                                        displayResult = `The current time is ${timeMatch[1].trim()}`;
-                                    }
-                                }
-
-                                ws.send(JSON.stringify({
-                                    type: 'transcript',
-                                    role: 'assistant',
-                                    text: displayResult,
-                                    isFinal: true
-                                }));
-
-                                // Also send to Nova Sonic for speech
-                                if (!sonicClient.getSessionId()) {
-                                    await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
-                                    await new Promise(resolve => setTimeout(resolve, 500));
-                                }
-
-                                if (sonicClient.getSessionId()) {
-                                    await sonicClient.sendText(`I remember that. ${displayResult}`);
-                                }
-
-                                return; // Skip normal processing
-                            }
 
                             // Send user message to transcript display
                             ws.send(JSON.stringify({
@@ -2136,8 +1898,7 @@ You do not have access to any tools. Answer questions directly based on your kno
 
         const session = activeSessions.get(ws);
         if (session) {
-            // Clean up progressive filler timers
-            clearProgressiveFiller(session);
+
 
             // Clean up Sonic session
             if (session.sonicClient.isActive()) {
@@ -2261,58 +2022,28 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
         case 'contentStart':
             if (event.data.role === 'assistant') {
-                // In Banking Bot mode, if this is a TTS-only response (not a conversation),
-                // don't buffer the audio - let it play immediately
-                const isBankingBotTTS = session.brainMode === 'bedrock_agent';
-
-                if (isBankingBotTTS) {
-                    console.log('[Server] Banking Bot TTS - Allowing audio to flow immediately...');
-                    session.isBufferingAudio = false;
-                    session.hasFlowedAudio = true; // Mark as flowing to prevent future buffering
-                    session.audioBufferQueue = [];
-                } else {
-                    // Only verify buffering if we haven't already flowed audio for this turn
-                    if (!session.hasFlowedAudio) {
-                        console.log('[Server] Assistant Turn Started - Buffering Audio for Safety...');
-                        session.isBufferingAudio = true;
-                        session.audioBufferQueue = [];
-                    }
-                }
-                session.isIntercepting = false; // Reset interception flag for new turn
-            } else if (event.data.role === 'user') {
-                // Reset turn state on user input
-                session.hasFlowedAudio = false;
-                session.isBufferingAudio = false;
-                session.audioBufferQueue = [];
+                console.log('[Server] Assistant Turn Started');
+                // No buffering - audio flows immediately
             }
             break;
 
         case 'audio':
             // Forward audio data as binary WebSocket message
             if (event.data.audio) {
-                // If we are intercepting (confirmed tool call), DROP everything
-                if (session.isIntercepting) return;
+                // If we are interrupted, drop audio
+                if (session.isInterrupted) return;
 
                 const audioBuffer = Buffer.isBuffer(event.data.audio)
                     ? event.data.audio
                     : Buffer.from(event.data.audio);
 
-                if (session.isBufferingAudio || session.isIntercepting) {
-                    // Buffer this chunk until we confirm strictly that it's NOT a tool call
-                    // OR suppress audio completely during tool execution
-                    if (session.isBufferingAudio) {
-                        session.audioBufferQueue?.push(audioBuffer);
-                        // console.log(`[Server] Buffering audio chunk... (Queue: ${session.audioBufferQueue?.length})`);
-                    } else {
-                        // Tool is executing - drop all audio to prevent mid-sentence interruptions
-                        // console.log(`[Server] Dropping audio during tool execution (${audioBuffer.length} bytes)`);
-                    }
-                } else if (ws.readyState === WebSocket.OPEN) {
+                if (ws.readyState === WebSocket.OPEN) {
                     ws.send(audioBuffer);
-                    // console.log(`[Server] Sent audio packet (${audioBuffer.length} bytes)`);
                 }
             }
             break;
+
+
 
         case 'transcript':
             // In Agent Mode, we already sent the transcript from the Agent directly.
@@ -2387,37 +2118,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 //     (!!text.match(/get[_\s]*server[_\s]*time/i) && isToolEnabled('get_server_time'))
                 // );
 
-                // Lookahead Logic:
-                // If we have text, we can decide whether to FLUSH or DROP the audio buffer.
-                if (session.isBufferingAudio && text.length > 5) { // Wait for at least 5 chars ("ACTION" is 6)
-                    if (hasJson) {
-                        console.log('[Server] Lookahead detected Tool Call! DROPPING audio buffer.');
-                        session.isIntercepting = true;
-                        session.isBufferingAudio = false;
-                        session.audioBufferQueue = []; // Drop
-                    } else {
-                        // It's just normal speech ("Ahoy...")
-                        // BUT wait... the tool call might come LATER in the sentence?
-                        // No, the prompt mandate says tool call must be IMMEDIATE.
-                        // So if the first ~10-20 chars aren't a tool call, we assume it's speech.
-                        // Let's be safe: Flush if > 20 chars OR verified "safe" start.
-                        // Actually, simpler: If NOT hasJson, flush.
-                        // Wait, "ACTION" might arrive in chunks "ACT", "ION".
-                        // So we wait for a bit more length if it looks ambiguous.
 
-                        const looksLikeToolStart = text.match(/^(action|invoke|call|Use|param|json|{)/i);
-
-                        if (!looksLikeToolStart || text.length > 20) {
-                            console.log('[Server] Lookahead verified Speech. FLUSHING audio buffer.');
-                            session.isBufferingAudio = false;
-                            session.hasFlowedAudio = true; // Mark turn as "flowing"
-                            session.audioBufferQueue?.forEach(chunk => {
-                                if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
-                            });
-                            session.audioBufferQueue = [];
-                        }
-                    }
-                }
 
                 console.log(`[DEBUG] Transcript received: "${text}"`);
 
@@ -2951,103 +2652,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     return;
                 }
 
-                // Check cache first for interrupted/repeated queries
-                // Check cache first for interrupted/repeated queries
-                const userQuery = session.lastUserTranscript || '';
-                const toolInput = toolUse.content || toolUse.input;
-
-                // CRITICAL FIX: Check for recent duplicate tool executions
-                const recentExecution = isRecentToolExecution(session, actualToolName, toolInput);
-                if (recentExecution.isDuplicate) {
-                    console.log(`[ToolDedup] Skipping duplicate tool execution: ${actualToolName} (ID: ${toolUse.toolUseId})`);
-
-                    // Send the cached result immediately without progressive filler
-                    if (session.sonicClient && session.sonicClient.getSessionId()) {
-                        await session.sonicClient.sendToolResult(
-                            toolUse.toolUseId,
-                            recentExecution.result,
-                            false
-                        );
-                        logWithTimestamp('[Server]', `Duplicate tool result sent to Nova Sonic: ${actualToolName}`);
-                    }
-                    return;
-                }
-                console.log(`[CACHE DEBUG] ===== CACHE CHECK START =====`);
-                console.log(`[CACHE DEBUG] Tool: ${actualToolName}`);
-                console.log(`[CACHE DEBUG] User Query: "${userQuery}"`);
-                console.log(`[CACHE DEBUG] Tool Input:`, toolInput);
-                console.log(`[CACHE DEBUG] Session has cache:`, !!session.toolResultCache);
-                const cachedResult = getCachedToolResult(session, actualToolName, userQuery, toolInput);
-                console.log(`[CACHE DEBUG] Cache result:`, cachedResult ? 'HIT' : 'MISS');
-                console.log(`[CACHE DEBUG] ===== CACHE CHECK END =====`);
-
-                if (cachedResult) {
-                    console.log(`[Server] Using cached result for ${actualToolName}`);
-
-                    // PROGRESSIVE FILLER FOR CACHED RESULTS: Same experience as fresh tool execution
-                    console.log(`[Server] Tool execution started (cached): ${actualToolName} (ID: ${toolUse.toolUseId})`);
-                    console.log(`[DEBUG] ===== ABOUT TO CALL PROGRESSIVE FILLER (CACHED) =====`);
-                    try {
-                        await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
-                        console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL COMPLETED (CACHED) =====`);
-                    } catch (error) {
-                        console.log(`[DEBUG] ===== PROGRESSIVE FILLER CALL FAILED (CACHED) =====`);
-                        console.log(`[DEBUG] Error:`, error);
-                    }
-
-                    // Send UI notification for cached tool use
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'debugInfo',
-                            data: {
-                                toolUse: {
-                                    name: actualToolName,
-                                    toolName: actualToolName,
-                                    input: toolUse.content || toolUse.input,
-                                    toolUseId: toolUse.toolUseId
-                                }
-                            }
-                        }));
-                    }
-
-                    // Process cached result
-                    let cleanResult = cachedResult;
-                    if (typeof cleanResult === 'string') {
-                        cleanResult = cleanResult.replace(/\*\*/g, '').replace(/\*/g, '');
-                        const timeMatch = cleanResult.match(/current time.*?is[:\s]+([^.\n]+)/i);
-                        if (timeMatch) {
-                            cleanResult = `The current time is ${timeMatch[1].trim()}`;
-                        }
-                    }
-
-                    // Add small delay for cached results to allow filler to play
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-
-                    // Clear progressive filler
-                    clearProgressiveFiller(session);
-
-                    // Send cached result to Nova Sonic
-                    if (session.sonicClient && session.sonicClient.getSessionId()) {
-                        await session.sonicClient.sendToolResult(
-                            toolUse.toolUseId,
-                            { text: cleanResult },
-                            false
-                        );
-                        logWithTimestamp('[Server]', `Cached result sent to Nova Sonic: ${actualToolName}`);
-                    }
-
-                    return; // Skip actual tool execution
-                }
-
-                // SIMPLE PROGRESSIVE FILLER: Just start the timing system
-                console.log(`[Server] Tool execution started: ${actualToolName} (ID: ${toolUse.toolUseId}) at ${new Date().toISOString()}`);
-                try {
-                    await startProgressiveFiller(session, actualToolName, toolUse.toolUseId);
-                    console.log(`[Server] Progressive filler started for ${actualToolName}`);
-                } catch (error) {
-                    console.log(`[Server] Progressive filler failed: ${error}`);
-                }
-
                 // Execute the tool call against AWS AgentCore
                 console.log(`[Server] Executing native tool call: ${actualToolName}`);
 
@@ -3065,11 +2669,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }
                     }));
                 }
-
-
-
-                // LOCAL TOOL INTERCEPTOR REMOVED per user request (Steps 355)
-                // All tools now flow to AgentCore Gateway or callAgentCore below.
 
                 try {
                     let result: any;
@@ -3148,21 +2747,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     console.log('[Server] AgentCore Result (Native):', result);
 
-                    // Clear progressive filler
-                    clearProgressiveFiller(session);
-
-                    // Reset intercepting flag to allow audio again
-                    session.isIntercepting = false;
-
                     // HYBRID APPROACH: Try native tool result processing, fallback to direct delivery
                     const toolResult = result.status === "success" ? result.data : result.message;
                     console.log(`[Server] Processing tool result: "${toolResult.substring(0, 100)}..."`);
-
-                    // Cache the result for future use
-                    const userQuery = session.lastUserTranscript || '';
-                    setCachedToolResult(session, actualToolName, userQuery, toolResult, toolInput);
-
-                    // NATIVE DELIVERY: Let Nova Sonic handle the response naturally
                     console.log(`[Server] Delivering tool result via Nova Sonic native response`);
                     console.log(`[Server] Full Tool Result Length: ${toolResult.length}`);
                     console.log(`[Server] Tool Result Preview: "${toolResult.substring(0, 200)}..."`);
@@ -3191,8 +2778,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
 
-                            // Record this tool execution to prevent duplicates
-                            recordToolExecution(session, actualToolName, toolInput, { text: cleanResult });
                         } else {
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');
                             // Try to restart the session and send the result
@@ -3231,17 +2816,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     }
                     */
 
-                } catch (e: any) {
-                    console.error('[Server] Native tool execution failed:', e);
-
-                    // Clear progressive filler on error
-                    clearProgressiveFiller(session);
-
-                    // Report error back to Sonic
-                    if (session.sonicClient) {
+                } catch (error) {
+                    console.error('[Server] Tool execution failed:', error);
+                    if (session.sonicClient && session.sonicClient.getSessionId()) {
                         await session.sonicClient.sendToolResult(
                             toolUse.toolUseId,
-                            { text: `Error: ${e.message} ` },
+                            { text: "Error executing tool." },
                             true
                         );
                     }
@@ -3263,9 +2843,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             break;
 
         case 'interruption':
-            // Clear progressive filler on interruption
-            clearProgressiveFiller(session);
-
             // Forward interruption signal
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -3299,29 +2876,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
         case 'contentEnd':
             // Reset audio squelch for next turn
-            if (session.isIntercepting) {
-                console.log(`[Server] Turn End(${event.type}): Resetting intercept flag.`);
-                session.isIntercepting = false;
-            }
             break;
 
         case 'interactionTurnEnd':
             // Reset flow state for next interaction
             session.hasFlowedAudio = false;
-            if (session.isIntercepting) {
-                session.isIntercepting = false;
-            }
             break;
 
-        case 'toolExecutionDetected':
-            // Nova Sonic completed a tool execution - trigger filler system
-            console.log('[Server] Tool execution detected by Nova Sonic - triggering progressive filler');
-            try {
-                await startProgressiveFiller(session, 'detected_tool', `tool-${Date.now()}`);
-            } catch (error) {
-                console.error('[Server] Failed to start progressive filler for detected tool:', error);
-            }
-            break;
+
 
 
     }

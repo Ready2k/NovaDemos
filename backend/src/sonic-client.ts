@@ -38,7 +38,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'toolExecutionDetected';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart';
     data: any;
 }
 
@@ -895,24 +895,24 @@ export class SonicClient {
                         // 2. Previous turn completed (isTurnComplete flag) AND it's a TEXT content start
                         // 3. FIXED: Only reset on actual role changes or completed turns, not every content chunk
                         const roleChanged = normalizedRole !== currentRoleNormalized;
+                        // FIXED: Reset on role change OR if previous turn ended OR if we detect a new TEXT block from Assistant that implies a new response structure
                         const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
+
+                        // Debugging the "I apologize" ghost text
+                        if (this.currentTurnTranscript.length > 0 && shouldReset) {
+                            console.log(`[SonicClient] Resetting transcript. Prev content (chars: ${this.currentTurnTranscript.length}): "${this.currentTurnTranscript.substring(0, 50)}..."`);
+                        }
 
                         if (shouldReset) {
                             console.log(`[SonicClient] Resetting transcript. Reason: ${roleChanged ? 'Role changed' : 'New turn starting'}. Old role: ${this.currentRole}, New role: ${eventData.contentStart.role}, Type: ${eventData.contentStart.type}`);
 
-                            // FILLER SYSTEM: Detect tool execution completion
-                            if (roleChanged && this.currentRole === 'TOOL' && eventData.contentStart.role === 'ASSISTANT') {
-                                console.log('[SonicClient] Tool execution completed - triggering filler system');
-                                this.eventCallback?.({
-                                    type: 'toolExecutionDetected',
-                                    data: {
-                                        message: 'Tool execution completed, ready for filler'
-                                    }
-                                });
-                            }
+
 
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
+                        } else if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
+                            // If we are NOT resetting, but getting new text, log why
+                            console.log(`[SonicClient] EXPLICITLY NOT RESETTING transcript. Appending new TEXT block to existing turn.`);
                         }
 
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);

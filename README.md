@@ -104,7 +104,6 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 ### 🛠️ Technical Enhancements
 - **Tool execution timing**: Added timestamps and duration measurements for debugging
 - **Enhanced logging**: Improved debug output with ISO timestamps and execution tracking
-- **Filler system reliability**: Restored working progressive filler implementation from commit 8850d88
 - **Session management**: Better handling of tool execution states and cleanup
 
 ### Integration Details
@@ -224,7 +223,7 @@ Open your browser and navigate to:
    - `💬 Chat Only`: Audio muted, mic disabled
 
 ### Tool Usage Examples
-- **Time Queries**: "What time is it?" → Progressive filler → Native tool execution → Natural speech response
+- **Time Queries**: "What time is it?" → Native tool execution → Natural speech response
 - **Repeated Queries**: "What was the time?" → Instant cached response without re-execution
 - **Interrupted Queries**: Ask for time, interrupt, then ask again → Smart cache hit detection
 - **Banking Queries**: "Hello" → Banking Bot greeting and assistance

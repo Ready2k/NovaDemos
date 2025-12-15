@@ -21,6 +21,11 @@ All notable changes to this project will be documented in this file.
   - **Impact**: Users can now select "Banking Bot (Agent)" from dropdown and server correctly receives `brainMode: 'bedrock_agent'`
   - **Verification**: Server logs show "Switched Brain Mode to: bedrock_agent" and "Sending Banking Bot greeting to TTS..."
 
+- **Double Audio Playback Resolved**: Completely removed the "Progressive Filler" audio system
+  - **Reason**: The system was causing duplicate audio playback, "Let me check..." interruptions, and server instability
+  - **Impact**: Cleaner audio experience, reduced server memory usage, and simplified backend architecture
+  - **Behavior**: Assistant is now silent during tool execution until the final response is ready
+
 ### Added
 - **Dynamic AWS Configuration GUI**: Added Agent Core Runtime ARN field to AWS Configuration panel
   - New input field for Agent Core Runtime ARN in the AWS Configuration modal
