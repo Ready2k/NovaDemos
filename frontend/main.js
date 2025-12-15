@@ -595,6 +595,14 @@ class VoiceAssistant {
                     <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">VIEWING HISTORY ARCHIVE</div>
                     <div style="font-weight: 600;">Session: ${data.sessionId}</div>
                     <div style="font-size: 0.75rem; color: #64748b;">${new Date(data.startTime).toLocaleString()}</div>
+                    ${data.tools && data.tools.length > 0 ? `
+                        <div style="margin-top: 8px; font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
+                            <strong>Loaded Tools:</strong>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                                ${data.tools.map(t => `<span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 2px 6px; border-radius: 4px;">${t}</span>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                     <button id="exit-history-btn" style="margin-top: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
                         Return to Live Session
                     </button>
@@ -634,8 +642,38 @@ class VoiceAssistant {
         }
 
         const isSpeculative = type === 'speculative';
+        const isTool = role === 'tool_use' || role === 'tool';
         const msgDiv = document.createElement('div');
         const isUser = role === 'user';
+
+        if (isTool) {
+            msgDiv.className = 'message tool-message';
+            msgDiv.style.cssText = `
+                margin-bottom: 12px;
+                max-width: 90%;
+                align-self: center;
+                background: rgba(16, 185, 129, 0.05);
+                border: 1px solid rgba(16, 185, 129, 0.2);
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: #34d399;
+                font-size: 0.85rem;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+
+            const toolName = roleOrMsg.toolName || 'Tool';
+            msgDiv.innerHTML = `
+                <span style="font-size: 1rem;">🔧</span>
+                <span style="font-family: monospace;">${text || `Executed: ${toolName}`}</span>
+                <span style="margin-left: auto; font-size: 0.7rem; color: rgba(52, 211, 153, 0.6);">${new Date(timestamp).toLocaleTimeString()}</span>
+            `;
+
+            this.transcriptEl.appendChild(msgDiv);
+            this.transcriptEl.scrollTop = this.transcriptEl.scrollHeight;
+            return;
+        }
 
         msgDiv.className = `message ${isUser ? 'user-message' : 'agent-message'}`;
         msgDiv.style.cssText = `

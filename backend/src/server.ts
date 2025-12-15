@@ -548,7 +548,8 @@ function saveTranscript(session: ClientSession) {
             startTime: session.transcript[0]?.timestamp || Date.now(),
             endTime: Date.now(),
             brainMode: session.brainMode,
-            transcript: session.transcript
+            transcript: session.transcript,
+            tools: session.allowedTools || [] // Save allowed tools list
         };
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -1983,12 +1984,25 @@ function formatUserTranscript(text: string): string {
 
     // Simple textual number to digit mapping
     const numberMap: { [key: string]: string } = {
-        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
         'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
         'eleven': '11', 'twelve': '12', 'twenty': '20', 'thirty': '30',
         'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
-        'eighty': '80', 'ninety': '90'
+        'eighty': '80', 'ninety': '90', 'double': 'double', 'triple': 'triple'
     };
+
+    // Pre-processing: Split concatenated number words (e.g. "seveneight" -> "seven eight", "onetwo" -> "one two")
+    // Use a specific regex built from number words
+    const numKeys = Object.keys(numberMap).filter(k => k !== 'double' && k !== 'triple').join('|');
+    // Regex matches instances where two number words are adjacent with NO space
+    const concatRegex = new RegExp(`(${numKeys})(${numKeys})`, 'gi');
+
+    // Apply multiple times to handle overlaps (e.g. onetwothree -> one two three)
+    let prevText = '';
+    while (formatted !== prevText) {
+        prevText = formatted;
+        formatted = formatted.replace(concatRegex, '$1 $2');
+    }
 
     // Regex to capture "£word point word" pattern
     // e.g. "£three point fifty" -> "£3.50"
@@ -2019,6 +2033,50 @@ function formatUserTranscript(text: string): string {
             return `£${whole}.${fraction}`;
         }
         return match;
+    });
+
+    // Handle generic number sequences (e.g. "one two three four" -> "1234", "one, two" -> "12")
+    const numberWords = Object.keys(numberMap).join('|');
+    // Allow spaces, commas, dots, dashes as separators between number words
+    const separatorRegex = /[\s,.-]+/;
+    const sequenceRegex = new RegExp(`\\b(${numberWords})([\\s,.-]+(${numberWords}))+\\b`, 'gi');
+
+    formatted = formatted.replace(sequenceRegex, (match) => {
+        // Split but capture separators so we can ignore them
+        const parts = match.split(/([\s,.-]+)/);
+        let result = '';
+        let pendingMultiplier = 1;
+
+        for (const part of parts) {
+            // Check if it is a separator - if so, IGNORE it (collapse to contiguous digits)
+            if (separatorRegex.test(part)) {
+                continue;
+            }
+
+            const lower = part.toLowerCase();
+            if (lower === 'double') {
+                pendingMultiplier = 2;
+                continue;
+            }
+            if (lower === 'triple') {
+                pendingMultiplier = 3;
+                continue;
+            }
+
+            const digit = numberMap[lower];
+            if (digit) {
+                // Apply multiplier
+                let digits = '';
+                for (let i = 0; i < pendingMultiplier; i++) digits += digit;
+
+                result += digits;
+                pendingMultiplier = 1; // Reset
+            } else {
+                // Fallback (unlikely)
+                result += part;
+            }
+        }
+        return result;
     });
 
     return formatted;
@@ -2119,7 +2177,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
             // --- RAW NOVA MODE ---
             // Store user transcript for debug context
+            // Store user transcript for debug context
             const role = event.data.role || 'assistant';
+
+            // CRITICAL FIX: Format user numbers (e.g. "one two three" -> "123")
+            if (role === 'user' && event.data.transcript) {
+                event.data.transcript = formatUserTranscript(event.data.transcript);
+            }
+
             if (role === 'user') {
                 session.lastUserTranscript = event.data.transcript;
                 session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
@@ -2741,6 +2806,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }
                     }));
                 }
+
+                // Add Tool Use to Transcript History
+                session.transcript.push({
+                    role: 'tool_use',
+                    text: `Tool Invoked: ${actualToolName}`,
+                    timestamp: Date.now(),
+                    // @ts-ignore - Adding custom fields for history
+                    toolName: actualToolName,
+                    toolInput: toolUse.content || toolUse.input
+                });
 
                 try {
                     let result: any;

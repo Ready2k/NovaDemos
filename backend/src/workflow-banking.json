@@ -95,9 +95,9 @@
     },
     {
       "id": "resolved",
-      "label": "Issue Resolved",
-      "type": "end",
-      "outcome": "RESOLVED_QUERY"
+      "label": "Issue Resolved - Call 'update_dispute_case' to set status='CLOSED' and inform the user.",
+      "type": "tool",
+      "toolName": "update_dispute_case"
     },
     {
       "id": "classify",
