@@ -27,16 +27,30 @@ export class AgentCoreGatewayClient {
         this.config = {
             gatewayUrl: "https://agentcore-gateway-lambda-rsxfef9nbr.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
             awsRegion: process.env.NOVA_AWS_REGION || 'us-east-1',
-            awsAccessKey: process.env.NOVA_AWS_ACCESS_KEY_ID!,
-            awsSecretKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY!
+            awsAccessKey: process.env.NOVA_AWS_ACCESS_KEY_ID || '',
+            awsSecretKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY || ''
         };
 
         if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
-            throw new Error('AgentCore Gateway requires NOVA_AWS_ACCESS_KEY_ID and NOVA_AWS_SECRET_ACCESS_KEY');
+            console.warn('[AgentCoreGateway] WARNING: Missing AWS Credentials. Client is unconfigured.');
+        } else {
+            console.log('[AgentCoreGateway] Client initialized with environment credentials.');
         }
     }
 
+    updateCredentials(accessKey: string, secretKey: string, region: string) {
+        this.config.awsAccessKey = accessKey;
+        this.config.awsSecretKey = secretKey;
+        this.config.awsRegion = region;
+        console.log('[AgentCoreGateway] Credentials updated via runtime configuration.');
+    }
+
     async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
+        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
+            console.warn('[AgentCoreGateway] Call aborted: Missing AWS Credentials.');
+            throw new Error('AWS Credentials not configured. Please configure them in the Settings UI.');
+        }
+
         console.log(`[AgentCoreGateway] Calling tool: ${toolName} with args:`, args);
 
         let actualToolName = gatewayTarget;
@@ -242,6 +256,11 @@ export class AgentCoreGatewayClient {
     }
 
     async listTools(): Promise<any[]> {
+        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
+            console.warn('[AgentCoreGateway] List tools aborted: Missing AWS Credentials.');
+            return []; // Return empty list instead of throwing to prevent startup crashes
+        }
+
         const payload = {
             jsonrpc: "2.0",
             id: `list-tools-${Date.now()}`,

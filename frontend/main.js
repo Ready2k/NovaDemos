@@ -76,6 +76,7 @@ class VoiceAssistant {
         this.saveAwsBtn = document.getElementById('saveAwsBtn');
         this.cancelAwsBtn = document.getElementById('cancelAwsBtn');
         this.clearAwsBtn = document.getElementById('clearAwsBtn');
+        this.novaSonicModelId = document.getElementById('novaSonicModelId');
 
         // Prompt Preset Change
         if (this.promptPresetSelect) {
@@ -105,6 +106,7 @@ class VoiceAssistant {
 
         this.customAgents = [];
         this.pendingDeleteIndex = null;
+        this.pendingConfirmAction = null;
 
         // Delete Confirmation Modal Elements
         this.deleteConfirmModal = document.getElementById('deleteConfirmModal');
@@ -231,6 +233,7 @@ class VoiceAssistant {
             // Clear form fields
             this.awsAccessKey.value = '';
             this.awsSecretKey.value = '';
+            this.novaSonicModelId.value = 'amazon.nova-2-sonic-v1:0';
         });
         this.saveAwsBtn.addEventListener('click', () => this.saveAwsCredentials());
         this.clearAwsBtn.addEventListener('click', () => this.clearStoredAwsCredentials());
@@ -249,8 +252,17 @@ class VoiceAssistant {
         this.cancelDeleteBtn.addEventListener('click', () => {
             this.deleteConfirmModal.style.display = 'none';
             this.pendingDeleteIndex = null;
+            this.pendingKbDeleteId = null;
+            this.pendingConfirmAction = null;
         });
         this.confirmDeleteBtn.addEventListener('click', () => {
+            if (this.pendingConfirmAction) {
+                this.pendingConfirmAction();
+                this.pendingConfirmAction = null;
+                this.deleteConfirmModal.style.display = 'none';
+                return;
+            }
+
             if (this.pendingDeleteIndex !== null) {
                 this.customAgents.splice(this.pendingDeleteIndex, 1);
                 this.saveAgents();
@@ -1697,6 +1709,7 @@ class VoiceAssistant {
                 // Don't populate sensitive fields for security, but show region and ARN
                 this.awsRegion.value = awsCredentials.region || 'us-east-1';
                 this.agentCoreRuntimeArn.value = awsCredentials.agentCoreRuntimeArn || '';
+                this.novaSonicModelId.value = awsCredentials.modelId || 'amazon.nova-2-sonic-v1:0';
 
                 // Show placeholder text to indicate credentials are stored
                 this.awsAccessKey.placeholder = 'Stored (enter new to update)';
@@ -1719,6 +1732,7 @@ class VoiceAssistant {
         const secretAccessKey = this.awsSecretKey.value.trim();
         const region = this.awsRegion.value.trim();
         const agentCoreRuntimeArn = this.agentCoreRuntimeArn.value.trim();
+        const modelId = this.novaSonicModelId.value.trim();
 
         if (!accessKeyId || !secretAccessKey || !region) {
             alert('Please fill in all required AWS fields (Access Key, Secret Key, and Region).');
@@ -1730,7 +1744,8 @@ class VoiceAssistant {
             accessKeyId,
             secretAccessKey,
             region,
-            agentCoreRuntimeArn: agentCoreRuntimeArn || undefined
+            agentCoreRuntimeArn: agentCoreRuntimeArn || undefined,
+            modelId: modelId || 'amazon.nova-2-sonic-v1:0'
         };
 
         sessionStorage.setItem('aws_credentials', JSON.stringify(awsCredentials));
@@ -1760,7 +1775,8 @@ class VoiceAssistant {
      * Clear stored AWS credentials
      */
     clearStoredAwsCredentials() {
-        if (confirm('Are you sure you want to clear stored AWS credentials?')) {
+        this.deleteConfirmText.textContent = 'Are you sure you want to clear stored AWS credentials?';
+        this.pendingConfirmAction = () => {
             sessionStorage.removeItem('aws_credentials');
             this.showToast('AWS Credentials Cleared', 'info');
             this.log('Cleared stored AWS credentials');
@@ -1770,11 +1786,13 @@ class VoiceAssistant {
             this.awsSecretKey.value = '';
             this.awsRegion.value = 'us-east-1';
             this.agentCoreRuntimeArn.value = '';
+            this.novaSonicModelId.value = 'amazon.nova-2-sonic-v1:0';
             this.awsAccessKey.placeholder = 'AKIA...';
             this.awsSecretKey.placeholder = 'wJalrX...';
 
             this.awsModal.style.display = 'none';
-        }
+        };
+        this.deleteConfirmModal.style.display = 'flex';
     }
 
     // --- Agent Management ---

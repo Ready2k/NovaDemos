@@ -148,6 +148,12 @@ export class SonicClient {
      * Start a bidirectional streaming session with Nova 2 Sonic
      */
     async startSession(onEvent: (event: SonicEvent) => void): Promise<void> {
+        // Validation: Check for credentials
+        if ((!this.config.accessKeyId || !this.config.secretAccessKey) && !this.config.bearerToken) {
+            console.warn('[SonicClient] Start session aborted: Missing AWS Credentials.');
+            throw new Error('AWS Credentials not configured. Please configure them in the Settings UI.');
+        }
+
         if (this.sessionId) {
             throw new Error('Session already active. Call stopSession() first.');
         }
@@ -716,7 +722,7 @@ export class SonicClient {
     /**
      * Update AWS Credentials for this session
      */
-    updateCredentials(accessKeyId: string, secretAccessKey: string, region: string, agentCoreRuntimeArn?: string) {
+    updateCredentials(accessKeyId: string, secretAccessKey: string, region: string, agentCoreRuntimeArn?: string, modelId?: string) {
         console.log('[SonicClient] Updating AWS credentials for session');
 
         const clientConfig: any = {
@@ -734,6 +740,12 @@ export class SonicClient {
         if (agentCoreRuntimeArn) {
             this.config.agentCoreRuntimeArn = agentCoreRuntimeArn;
             console.log(`[SonicClient] Updated Agent Core Runtime ARN: ${agentCoreRuntimeArn}`);
+        }
+
+        // Store Model ID if provided
+        if (modelId) {
+            this.config.modelId = modelId;
+            console.log(`[SonicClient] Updated Nova Sonic Model ID: ${modelId}`);
         }
 
         console.log(`[SonicClient] Re-initialized client with new credentials in region: ${region}`);

@@ -1683,9 +1683,12 @@ You do not have access to any tools. Answer questions directly based on your kno
                         return;
                     } else if (parsed.type === 'awsConfig') {
                         console.log('[Server] Received AWS Configuration update');
-                        const { accessKeyId, secretAccessKey, region, agentCoreRuntimeArn } = parsed.config;
+                        const { accessKeyId, secretAccessKey, region, agentCoreRuntimeArn, modelId } = parsed.config;
                         if (accessKeyId && secretAccessKey && region) {
-                            sonicClient.updateCredentials(accessKeyId, secretAccessKey, region, agentCoreRuntimeArn);
+                            sonicClient.updateCredentials(accessKeyId, secretAccessKey, region, agentCoreRuntimeArn, modelId);
+                            if (agentCoreGatewayClient) {
+                                agentCoreGatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
+                            }
                             ws.send(JSON.stringify({ type: 'status', message: 'AWS Credentials Updated' }));
                         } else {
                             ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));
