@@ -1069,6 +1069,14 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    if (req.url === '/api/voices') {
+        const voices = formatVoicesForFrontend();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(voices));
+        return;
+    }
+
+
     if (req.url === '/api/version') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(VERSION_INFO));
