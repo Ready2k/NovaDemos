@@ -40,7 +40,7 @@ function logWithTimestamp(level: string, message: string) {
 
 // --- AWS Bedrock AgentCore Client ---
 // Build credentials config for AgentCore client
-const agentCoreConfig: any = {
+let agentCoreConfig: any = {
     region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
 };
 
@@ -49,21 +49,23 @@ if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY
     agentCoreConfig.credentials = {
         accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+        ...(process.env.NOVA_AWS_SESSION_TOKEN && { sessionToken: process.env.NOVA_AWS_SESSION_TOKEN })
     };
 } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     agentCoreConfig.credentials = {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        ...(process.env.AWS_SESSION_TOKEN && { sessionToken: process.env.AWS_SESSION_TOKEN })
     };
 }
 
-const agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
+let agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
 
 // Initialize Bedrock Client for listing models
-const bedrockClient = new BedrockClient(agentCoreConfig);
+let bedrockClient = new BedrockClient(agentCoreConfig);
 
 // Initialize Bedrock Agent Runtime Client for KB retrieval
-const bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(agentCoreConfig);
+let bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(agentCoreConfig);
 
 
 // Initialize AgentCore Gateway Client
@@ -1256,7 +1258,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         type: 'connected',
         sessionId,
         message: 'Connected to Nova 2 Sonic',
-        version: VERSION_INFO
+        version: VERSION_INFO,
+        hasCredentials: !!(agentCoreConfig.credentials && agentCoreConfig.credentials.accessKeyId)
     }));
 
     // Handle incoming messages (JSON config or binary audio)
@@ -1689,6 +1692,22 @@ You do not have access to any tools. Answer questions directly based on your kno
                             if (agentCoreGatewayClient) {
                                 agentCoreGatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
                             }
+
+                            // Update Global Clients
+                            console.log('[Server] Re-initializing global AWS clients with new credentials');
+                            const newConfig: any = {
+                                region: region,
+                                credentials: {
+                                    accessKeyId: accessKeyId,
+                                    secretAccessKey: secretAccessKey
+                                }
+                            };
+
+                            // Re-initialize clients
+                            agentCoreClient = new BedrockAgentCoreClient(newConfig);
+                            bedrockClient = new BedrockClient(newConfig);
+                            bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(newConfig);
+
                             ws.send(JSON.stringify({ type: 'status', message: 'AWS Credentials Updated' }));
                         } else {
                             ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));

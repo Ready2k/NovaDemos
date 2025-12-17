@@ -1,0 +1,141 @@
+{
+  "sessionId": "652e1bbf-afab-46cd-9da2-0c9452a3d556",
+  "startTime": 1766006140950,
+  "endTime": 1766006179505,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Barclays Bank. Howcan I assist you today?",
+      "timestamp": 1766006140950,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Barclays Bank. Howcan I assist you today?Are you looking for general information ordo you need help with an account-specific query?",
+      "timestamp": 1766006141898,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, and welcome to Barclays Bank. Howcan I assist you today?Are you looking for general information ordo you need help with an account-specific query?",
+      "timestamp": 1766006142916,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "yeah, can you tell me my balance please?",
+      "timestamp": 1766006148012
+    },
+    {
+      "role": "assistant",
+      "text": "I can help you check your balance, but I'll need to verify your identity first for security reasons.",
+      "timestamp": 1766006148556,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I can help you check your balance, but I'll need to verify your identity first for security reasons. Could you please provide your Account Number and Sort Code?",
+      "timestamp": 1766006149653,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I can help you check your balance, but I'll need to verify your identity first for security reasons. Could you please provide your Account Number and Sort Code?",
+      "timestamp": 1766006150362,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "my sort code is 1234. no, sorry,",
+      "timestamp": 1766006155357
+    },
+    {
+      "role": "user",
+      "text": "my sort code is 1234. no, sorry,apologies. my sort code is 112233. and my",
+      "timestamp": 1766006159453
+    },
+    {
+      "role": "user",
+      "text": "my sort code is 1234. no, sorry,apologies. my sort code is 112233. and myaccount is 12345678.",
+      "timestamp": 1766006162364
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1766006162881,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1766006164378,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00. Is there anything else I can help you with today?",
+      "timestamp": 1766006166311,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00. Is there anything else I can help you with today?",
+      "timestamp": 1766006167583,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "yeah, it's all good. thank you.",
+      "timestamp": 1766006172470
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1766006173187,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"summary\":\"Customer requested balance check. Balance verified as £1,200.00. No further action required.\",\"action\":\"PUBLISH\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\",\"outcome\":\"RESOLVED_QUERY\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "You're very welcome, Sarah. If you need any more help in the future, don't hesitate to reach out.",
+      "timestamp": 1766006174798,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "You're very welcome, Sarah. If you need any more help in the future, don't hesitate to reach out. Have a great day!",
+      "timestamp": 1766006175945,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "You're very welcome, Sarah. If you need any more help in the future, don't hesitate to reach out. Have a great day!",
+      "timestamp": 1766006176247,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "You're very welcome, Sarah. If you need any more help in the future, don't hesitate to reach out.",
+      "timestamp": 1766006179466,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "create_dispute_case",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "update_dispute_case",
+    "calculate_max_loan",
+    "check_credit_score",
+    "get_mortgage_rates",
+    "value_property",
+    "get_server_time",
+    "search_knowledge_base"
+  ]
+}

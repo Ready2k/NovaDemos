@@ -1121,15 +1121,30 @@ class VoiceAssistant {
                                         </div>
                                     `;
                                 }
+
+                                // Check for missing credentials
+                                if (message.hasCredentials === false) {
+                                    // Check if we have them stored locally to send?
+                                    const stored = sessionStorage.getItem('aws_credentials');
+                                    if (!stored) {
+                                        this.log('Missing AWS Credentials - Prompting user', 'warning');
+                                        this.showToast('Please configure AWS Credentials', 'warning');
+                                        if (this.awsModal) {
+                                            this.awsModal.style.display = 'flex';
+                                            // Focus the first field
+                                            if (this.awsAccessKey) this.awsAccessKey.focus();
+                                        }
+                                    }
+                                }
                                 break;
 
                             case 'sessionStart':
-                                this.log(`Session: ${message.sessionId}`, 'success');
+                                this.log(`Session: ${message.sessionId} `, 'success');
                                 break;
 
                             case 'transcript':
                                 this.displayTranscript(message.role || 'assistant', message.text, message.isFinal, message.isStreaming);
-                                this.log(`Transcript [${message.role}]: ${message.text}`);
+                                this.log(`Transcript[${message.role}]: ${message.text} `);
                                 break;
 
                             case 'transcriptCancelled':
@@ -1158,7 +1173,7 @@ class VoiceAssistant {
 
                                     if (!this.recentToolNotifications.has(toolUseId)) {
                                         this.recentToolNotifications.add(toolUseId);
-                                        this.showToast(`🛠️ Processing: ${toolName}`, 'info');
+                                        this.showToast(`🛠️ Processing: ${toolName} `, 'info');
 
                                         // Visual Status Update
                                         const originalStatus = this.statusEl.textContent;
@@ -1277,7 +1292,7 @@ class VoiceAssistant {
             // Debug logging
             this.chunkCount = (this.chunkCount || 0) + 1;
             if (this.chunkCount % 50 === 0) {
-                console.log(`[Frontend] Sent ${this.chunkCount} audio chunks (${audioData.byteLength} bytes each)`);
+                console.log(`[Frontend] Sent ${this.chunkCount} audio chunks(${audioData.byteLength} bytes each)`);
             }
         } else {
             console.warn('[Frontend] WebSocket not open, cannot send audio');
@@ -1289,7 +1304,7 @@ class VoiceAssistant {
             this.reconnectAttempts++;
             const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000); // Exponential backoff max 10s
 
-            this.log(`Attempting reconnect ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+            this.log(`Attempting reconnect ${this.reconnectAttempts} / ${this.maxReconnectAttempts} in ${delay}ms...`);
             this.showToast(`Reconnecting in ${delay / 1000}s...`, 'warning');
 
             this.reconnectTimeout = setTimeout(() => {
@@ -1303,7 +1318,7 @@ class VoiceAssistant {
 
     showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
+        toast.className = `toast ${type} `;
         toast.textContent = message;
 
         const container = document.getElementById('toast-container') || this.createToastContainer();
@@ -1333,7 +1348,7 @@ class VoiceAssistant {
         this.state = newState;
 
         // Update status indicator
-        this.statusEl.className = `status ${newState}`;
+        this.statusEl.className = `status ${newState} `;
 
         const stateLabels = {
             disconnected: 'Disconnected',
@@ -1400,7 +1415,7 @@ class VoiceAssistant {
                 minute: '2-digit'
             });
 
-            versionEl.textContent = `v${versionData.version} • Built: ${formattedDate}`;
+            versionEl.textContent = `v${versionData.version} • Built: ${formattedDate} `;
         }
     }
 
@@ -1501,15 +1516,27 @@ class VoiceAssistant {
                 entry.classList.add('streaming');
             }
 
-            const roleSpan = document.createElement('span');
-            roleSpan.className = 'role';
-            roleSpan.textContent = role === 'assistant' ? '🤖 Assistant: ' : '👤 User: ';
+            // Header Row (Name + Time)
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.75rem; opacity: 0.9;';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.style.fontWeight = '600';
+            nameSpan.textContent = role === 'assistant' ? '🤖 Assistant' : 'You';
+
+            const timeSpan = document.createElement('span');
+            timeSpan.style.opacity = '0.7';
+            const now = new Date();
+            timeSpan.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+            header.appendChild(nameSpan);
+            header.appendChild(timeSpan);
 
             const textSpan = document.createElement('span');
             textSpan.className = 'text';
             textSpan.textContent = text;
 
-            entry.appendChild(roleSpan);
+            entry.appendChild(header);
             entry.appendChild(textSpan);
 
             this.transcriptEl.appendChild(entry);
@@ -1546,16 +1573,16 @@ class VoiceAssistant {
         const timestamp = new Date().toLocaleTimeString();
 
         // Log to console
-        console.log(`[${timestamp}] [${type}] ${message}`);
+        console.log(`[${timestamp}][${type}] ${message} `);
 
         // Log to UI if element exists
         if (this.logEl) {
             const entry = document.createElement('div');
-            entry.className = `log-entry ${type}`;
+            entry.className = `log - entry ${type} `;
             entry.innerHTML = `
-            <span class="timestamp">${timestamp}</span>
-            <span>${message}</span>
-            `;
+    < span class="timestamp" > ${timestamp}</span >
+        <span>${message}</span>
+`;
 
             this.logEl.appendChild(entry);
 
@@ -1576,7 +1603,7 @@ class VoiceAssistant {
             const elapsed = Math.floor((Date.now() - this.sessionStartTime) / 1000);
             const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
             const seconds = (elapsed % 60).toString().padStart(2, '0');
-            if (this.statDuration) this.statDuration.textContent = `${minutes}:${seconds}`;
+            if (this.statDuration) this.statDuration.textContent = `${minutes}:${seconds} `;
         }, 1000);
     }
 
@@ -1634,7 +1661,7 @@ class VoiceAssistant {
 
                     // Dynamic color based on height/intensity
                     const hue = 240 + (barHeight / height) * 60; // Blue to Purple
-                    ctx.fillStyle = `hsla(${hue}, 80%, 60%, 0.8)`;
+                    ctx.fillStyle = `hsla(${hue}, 80 %, 60 %, 0.8)`;
 
                     // Draw mirrored bar (center aligned)
                     const y = (height - barHeight) / 2;
@@ -1840,7 +1867,7 @@ class VoiceAssistant {
         // Add custom agents
         this.customAgents.forEach((agent, index) => {
             const option = document.createElement('option');
-            option.value = `agent:${index}`; // Use index as ID reference
+            option.value = `agent:${index} `; // Use index as ID reference
             option.textContent = `${agent.name} (Agent)`;
             this.brainModeSelect.appendChild(option);
         });
@@ -1872,12 +1899,12 @@ class VoiceAssistant {
             item.style.cssText = 'background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.1);';
 
             item.innerHTML = `
-                <div>
+    < div >
                     <div style="font-weight: 600; color: #e2e8f0;">${agent.name}</div>
                     <div style="font-size: 0.8rem; color: #94a3b8;">ID: ${agent.id.substr(0, 8)}...</div>
-                </div>
-                <button class="delete-agent-btn danger-btn" data-index="${index}" style="padding: 6px 12px; font-size: 0.8rem;">Delete</button>
-            `;
+                </div >
+    <button class="delete-agent-btn danger-btn" data-index="${index}" style="padding: 6px 12px; font-size: 0.8rem;">Delete</button>
+`;
 
             this.agentList.appendChild(item);
         });
@@ -1915,7 +1942,7 @@ class VoiceAssistant {
     deleteAgent(index) {
         this.pendingDeleteIndex = index;
         const agentName = this.customAgents[index].name;
-        this.deleteConfirmText.textContent = `Are you sure you want to delete agent "${agentName}"?`;
+        this.deleteConfirmText.textContent = `Are you sure you want to delete agent "${agentName}" ? `;
         this.deleteConfirmModal.style.display = 'flex';
     }
 
@@ -1931,11 +1958,11 @@ class VoiceAssistant {
         // 1. Errors
         if (data.error) {
             const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = `margin-top: 12px; padding: 12px; background: rgba(220, 38, 38, 0.1); border-left: 3px solid #ef4444; border-radius: 4px; color: #fca5a5; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;`;
+            errorDiv.style.cssText = `margin - top: 12px; padding: 12px; background: rgba(220, 38, 38, 0.1); border - left: 3px solid #ef4444; border - radius: 4px; color: #fca5a5; font - family: 'JetBrains Mono', monospace; font - size: 0.85rem; `;
             errorDiv.innerHTML = `
-                <div style="font-weight: 700; color: #ef4444;">⚠️ ${data.error.message}</div>
-                <div style="opacity: 0.9;">${data.error.details}</div>
-            `;
+    < div style = "font-weight: 700; color: #ef4444;" >⚠️ ${data.error.message}</div >
+        <div style="opacity: 0.9;">${data.error.details}</div>
+`;
             this.debugContent.appendChild(errorDiv);
             this.debugContent.scrollTop = this.debugContent.scrollHeight;
             return;
@@ -1946,10 +1973,10 @@ class VoiceAssistant {
             const infoDiv = document.createElement('div');
             infoDiv.style.cssText = 'margin-bottom: 16px; padding: 12px; background: rgba(59, 130, 246, 0.1); border-radius: 6px;';
             infoDiv.innerHTML = `
-                <div style="color: #60a5fa; font-weight: 600;">System Active</div>
+    < div style = "color: #60a5fa; font-weight: 600;" > System Active</div >
                 <div style="font-size: 0.85rem; color: #93c5fd;">Mode: ${data.systemInfo.mode}</div>
                 <div style="font-size: 0.85rem; color: #93c5fd;">Persona: ${data.systemInfo.persona}</div>
-            `;
+`;
             this.debugContent.innerHTML = '';
             this.debugContent.appendChild(infoDiv);
             return;
@@ -1963,10 +1990,10 @@ class VoiceAssistant {
             if (panel && latencyEl && tokensEl) {
                 panel.style.display = 'block';
                 const lat = data.metrics.latencyMs || data.metrics.processingTime || data.metrics.latency || '--';
-                latencyEl.textContent = lat !== '--' ? `${lat}ms` : lat;
+                latencyEl.textContent = lat !== '--' ? `${lat} ms` : lat;
                 if (data.metrics.usage) {
                     tokensEl.textContent = data.metrics.usage.totalTokens || '0';
-                    tokensEl.title = `In: ${data.metrics.usage.inputTokens}, Out: ${data.metrics.usage.outputTokens}`;
+                    tokensEl.title = `In: ${data.metrics.usage.inputTokens}, Out: ${data.metrics.usage.outputTokens} `;
                 }
             }
             return;
@@ -1976,8 +2003,8 @@ class VoiceAssistant {
         let html = '';
 
         if (data.transcript) {
-            html += `<div style="margin-top: 12px; color: #94a3b8; font-size: 0.8rem;">User Input</div>
-                     <div style="color: #e2e8f0; margin-bottom: 8px;">"${data.transcript}"</div>`;
+            html += `< div style = "margin-top: 12px; color: #94a3b8; font-size: 0.8rem;" > User Input</div >
+    <div style="color: #e2e8f0; margin-bottom: 8px;">"${data.transcript}"</div>`;
         }
 
         if (data.agentReply) {
@@ -1990,16 +2017,16 @@ class VoiceAssistant {
                     data.stage === 'USER_INPUT' ? '👤' : '•';
             const stageLabel = data.stage || (data.isFinal ? 'FINAL' : 'STREAMING');
 
-            html += `<div style="color: #94a3b8; font-size: 0.8rem;">
-                        Agent Response 
-                        <span style="color: ${stageColor}; font-weight: 600; margin-left: 8px;">${stageIcon} ${stageLabel}</span>
-                     </div>
-                     <div style="color: ${stageColor}; margin-bottom: 8px;">"${data.agentReply}"</div>`;
+            html += `< div style = "color: #94a3b8; font-size: 0.8rem;" >
+    Agent Response
+        < span style = "color: ${stageColor}; font-weight: 600; margin-left: 8px;" > ${stageIcon} ${stageLabel}</span >
+                     </div >
+    <div style="color: ${stageColor}; margin-bottom: 8px;">"${data.agentReply}"</div>`;
         }
 
         // Show Tool Use if present
         if (data.toolUse) {
-            html += `<div style="margin-top: 8px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-left: 3px solid #a78bfa; border-radius: 4px;">
+            html += `< div style = "margin-top: 8px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-left: 3px solid #a78bfa; border-radius: 4px;" >
                         <div style="color: #c4b5fd; font-size: 0.8rem; font-weight: 600;">🛠️ Tool Call</div>
                         <div style="color: #e9d5ff; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
                             ${data.toolUse.name}
@@ -2007,13 +2034,13 @@ class VoiceAssistant {
                         <div style="color: #ddd6fe; font-size: 0.75rem; margin-top: 4px;">
                             ${JSON.stringify(data.toolUse.input, null, 2)}
                         </div>
-                     </div>`;
+                     </div > `;
         }
 
         // Render Reasoning Trace
         if (data.trace && data.trace.length > 0) {
-            html += `<div style="color: #94a3b8; font-size: 0.8rem;">Reasoning Trace</div>
-                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; overflow-x: auto;">`;
+            html += `< div style = "color: #94a3b8; font-size: 0.8rem;" > Reasoning Trace</div >
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; overflow-x: auto;">`;
 
             data.trace.forEach(step => {
                 const tr = step.trace || step;
@@ -2047,7 +2074,7 @@ class VoiceAssistant {
         if (!this.debugModeCheckbox.checked) return;
         const container = document.getElementById('tts-output-container');
         if (container) {
-            container.innerHTML = `<strong>🔊 TTS Output:</strong> "${data.text}"`;
+            container.innerHTML = `< strong >🔊 TTS Output:</strong > "${data.text}"`;
         }
     }
 
@@ -2211,7 +2238,7 @@ class VoiceAssistant {
 
                         const btn = document.createElement('button');
                         btn.textContent = cat;
-                        btn.id = `tab-btn-${cat}`;
+                        btn.id = `tab - btn - ${cat} `;
                         btn.style.cssText = baseTabStyle + (cat === activeCategory ? activeTabStyle : inactiveTabStyle);
 
                         btn.addEventListener('click', () => {
@@ -2225,7 +2252,7 @@ class VoiceAssistant {
                             document.querySelectorAll('[id^="cat-content-"]').forEach(c => {
                                 c.style.display = 'none';
                             });
-                            const content = document.getElementById(`cat-content-${cat}`);
+                            const content = document.getElementById(`cat - content - ${cat} `);
                             if (content) content.style.display = 'flex';
                         });
 
@@ -2238,8 +2265,8 @@ class VoiceAssistant {
                         if (categoryTools.length === 0) return;
 
                         const catContent = document.createElement('div');
-                        catContent.id = `cat-content-${category}`;
-                        catContent.style.cssText = `display: ${category === activeCategory ? 'flex' : 'none'}; flex-direction: column; gap: 8px;`;
+                        catContent.id = `cat - content - ${category} `;
+                        catContent.style.cssText = `display: ${category === activeCategory ? 'flex' : 'none'}; flex - direction: column; gap: 8px; `;
 
                         categoryTools.forEach(tool => {
                             const div = document.createElement('div');
@@ -2250,12 +2277,12 @@ class VoiceAssistant {
 
                             const checkbox = document.createElement('input');
                             checkbox.type = 'checkbox';
-                            checkbox.id = `tool-${tool.name}`;
+                            checkbox.id = `tool - ${tool.name} `;
                             checkbox.value = tool.name;
                             checkbox.checked = true; // Default to checked
 
                             const label = document.createElement('label');
-                            label.htmlFor = `tool-${tool.name}`;
+                            label.htmlFor = `tool - ${tool.name} `;
                             label.style.fontSize = '0.9rem';
                             label.style.cursor = 'pointer';
                             label.style.color = '#e2e8f0';
@@ -2301,14 +2328,14 @@ class VoiceAssistant {
 
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
-                        checkbox.id = `wf-${wf.id}`;
+                        checkbox.id = `wf - ${wf.id} `;
                         checkbox.value = wf.id;
                         checkbox.name = 'linkedWorkflow';
                         checkbox.style.cursor = 'pointer';
                         checkbox.addEventListener('change', () => this.saveSettings());
 
                         const label = document.createElement('label');
-                        label.htmlFor = `wf-${wf.id}`;
+                        label.htmlFor = `wf - ${wf.id} `;
                         label.style.fontSize = '0.9rem';
                         label.style.color = '#e2e8f0';
                         label.style.cursor = 'pointer';
@@ -2373,7 +2400,7 @@ class VoiceAssistant {
         }
 
         if (targetId) {
-            const targetCheckbox = document.getElementById(`wf-${targetId}`);
+            const targetCheckbox = document.getElementById(`wf - ${targetId} `);
             if (targetCheckbox) {
                 targetCheckbox.checked = true;
             }
@@ -2412,20 +2439,20 @@ class VoiceAssistant {
                         const item = document.createElement('div');
                         item.style.cssText = 'padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;';
                         item.innerHTML = `
-                            <div>
+    < div >
                                 <div style="font-weight: 600; color: #e2e8f0; font-size: 0.9rem;">${kb.name}</div>
                                 <div style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">${kb.id}</div>
                                 <div style="font-size: 0.7rem; color: #64748b;">${kb.modelName || 'Unknown Model'}</div>
-                            </div>
-                            <div style="display: flex; gap: 5px;">
-                                <button class="icon-btn edit-kb-btn" data-id="${kb.id}" data-name="${kb.name}" data-model="${kb.modelArn || ''}" style="color: #6366f1; opacity: 0.7;">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                </button>
-                                <button class="icon-btn delete-kb-btn" data-id="${kb.id}" style="color: #ef4444; opacity: 0.7;">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                </button>
-                            </div>
-                        `;
+                            </div >
+    <div style="display: flex; gap: 5px;">
+        <button class="icon-btn edit-kb-btn" data-id="${kb.id}" data-name="${kb.name}" data-model="${kb.modelArn || ''}" style="color: #6366f1; opacity: 0.7;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        </button>
+        <button class="icon-btn delete-kb-btn" data-id="${kb.id}" style="color: #ef4444; opacity: 0.7;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+    </div>
+`;
                         this.kbList.appendChild(item);
                     });
 
@@ -2446,7 +2473,7 @@ class VoiceAssistant {
                         btn.addEventListener('click', (e) => {
                             const id = btn.getAttribute('data-id');
                             this.pendingKbDeleteId = id;
-                            this.deleteConfirmText.textContent = `Are you sure you want to delete KB "${id}"?`;
+                            this.deleteConfirmText.textContent = `Are you sure you want to delete KB "${id}" ? `;
                             this.deleteConfirmModal.style.display = 'flex';
                         });
                     });
@@ -2500,7 +2527,7 @@ class VoiceAssistant {
             let response;
             if (this.editingKbId) {
                 // Update Mode
-                response = await fetch(`/api/knowledge-bases/${this.editingKbId}`, {
+                response = await fetch(`/ api / knowledge - bases / ${this.editingKbId} `, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, id, modelArn, modelName })
@@ -2549,7 +2576,7 @@ class VoiceAssistant {
 
     async deleteKnowledgeBase(id) {
         try {
-            const response = await fetch(`/api/knowledge-bases/${id}`, {
+            const response = await fetch(`/ api / knowledge - bases / ${id} `, {
                 method: 'DELETE'
             });
 
