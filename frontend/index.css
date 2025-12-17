@@ -945,8 +945,14 @@ canvas {
         flex-wrap: wrap;
     }
 
+
     button {
         flex: 1;
         justify-content: center;
+    }
+
+    /* Fix for overlap: Push nav items down below the toggle button */
+    .sidebar-nav {
+        padding-top: 80px;
     }
 }
