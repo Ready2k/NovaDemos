@@ -1198,7 +1198,16 @@ class VoiceAssistant {
                                 break;
 
                             case 'error':
-                                this.showToast(message.message, 'error');
+                                if (message.code === 'invalid_credentials') {
+                                    this.showToast('Invalid AWS Credentials - Please check settings', 'error');
+                                    this.log('Invalid AWS Credentials detected', 'error');
+                                    if (this.awsModal) {
+                                        this.awsModal.style.display = 'flex';
+                                        if (this.awsAccessKey) this.awsAccessKey.focus();
+                                    }
+                                } else {
+                                    this.showToast(message.message, 'error');
+                                }
                                 break;
 
                             case 'usage':
@@ -1757,31 +1766,52 @@ class VoiceAssistant {
     async saveAwsCredentials() {
         const accessKeyId = this.awsAccessKey.value.trim();
         const secretAccessKey = this.awsSecretKey.value.trim();
-        const region = this.awsRegion.value.trim();
+        const region = this.awsRegion.value.trim() || 'us-east-1';
         const agentCoreRuntimeArn = this.agentCoreRuntimeArn.value.trim();
         const modelId = this.novaSonicModelId.value.trim();
 
-        if (!accessKeyId || !secretAccessKey || !region) {
-            alert('Please fill in all required AWS fields (Access Key, Secret Key, and Region).');
+        // Check if we have stored credentials to merge with
+        const storedJson = sessionStorage.getItem('aws_credentials');
+        let stored = null;
+        if (storedJson) {
+            try { stored = JSON.parse(storedJson); } catch (e) { }
+        }
+
+        // Logic: If fields are empty BUT we have stored creds, treat as "unchanged" (valid)
+        // If fields are empty AND no stored creds, treat as "missing" (invalid)
+
+        const isAccessKeyValid = !!accessKeyId || (stored && !!stored.accessKeyId);
+        const isSecretKeyValid = !!secretAccessKey || (stored && !!stored.secretAccessKey);
+
+        // Reset visual errors
+        this.awsAccessKey.style.borderColor = '';
+        this.awsSecretKey.style.borderColor = '';
+
+        if (!isAccessKeyValid || !isSecretKeyValid) {
+            this.showToast('Please enter both Access Key and Secret Key', 'error');
+            if (!isAccessKeyValid) this.awsAccessKey.style.borderColor = '#ef4444';
+            if (!isSecretKeyValid) this.awsSecretKey.style.borderColor = '#ef4444';
             return;
         }
 
-        // Store credentials in sessionStorage (not localStorage for security)
-        const awsCredentials = {
-            accessKeyId,
-            secretAccessKey,
-            region,
-            agentCoreRuntimeArn: agentCoreRuntimeArn || undefined,
-            modelId: modelId || 'amazon.nova-2-sonic-v1:0'
+        // Construct new credentials object
+        // Use new value if provided, else fallback to stored
+        const newCredentials = {
+            accessKeyId: accessKeyId || (stored ? stored.accessKeyId : ''),
+            secretAccessKey: secretAccessKey || (stored ? stored.secretAccessKey : ''),
+            region: region,
+            agentCoreRuntimeArn: agentCoreRuntimeArn,
+            modelId: modelId
         };
 
-        sessionStorage.setItem('aws_credentials', JSON.stringify(awsCredentials));
+        // Store credentials in sessionStorage
+        sessionStorage.setItem('aws_credentials', JSON.stringify(newCredentials));
 
-        // If already connected, send update to server
+        // Send to server if connected
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             const awsConfig = {
                 type: 'awsConfig',
-                config: awsCredentials
+                config: newCredentials
             };
             this.ws.send(JSON.stringify(awsConfig));
             this.log('Updated AWS credentials on server');
@@ -1795,7 +1825,10 @@ class VoiceAssistant {
         this.awsModal.style.display = 'none';
         this.awsAccessKey.value = '';
         this.awsSecretKey.value = '';
-        // Keep region and ARN for convenience
+
+        // Update placeholders to show they are stored
+        this.awsAccessKey.placeholder = 'Stored (enter new to update)';
+        this.awsSecretKey.placeholder = 'Stored (enter new to update)';
     }
 
     /**

@@ -1268,12 +1268,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         let firstByte = 'N/A';
         if (isBuffer && data.length > 0) firstByte = data[0].toString();
 
-        // console.log(`[Server] Message received. Type: ${typeof data}, IsBuffer: ${isBuffer}, Length: ${data.length}, First byte: ${firstByte}`);
-
-        if (isBuffer && data.length > 0 && data[0] === 123) {
-            console.log(`[Server] Potential JSON message: ${data.toString().substring(0, 100)}...`);
-        }
-
         try {
             // Check if it's a JSON message (configuration)
             // Improved detection: must be string data or buffer that looks like valid JSON
@@ -1724,7 +1718,6 @@ You do not have access to any tools. Answer questions directly based on your kno
             if (!Buffer.isBuffer(data)) {
                 // If it was JSON, we already handled it. If it was invalid JSON, we ignore it.
                 // But if it's NOT a buffer and NOT handled as JSON, we should probably return.
-                // However, the check above `!Buffer.isBuffer(data)` covers strings.
                 // If it was a string and not JSON, we fall through here.
                 // We should only process as audio if it IS a buffer.
                 return;
@@ -1914,12 +1907,19 @@ You do not have access to any tools. Answer questions directly based on your kno
                 }
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('[Server] Error processing message:', error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Failed to process message'
-            }));
+
+            // Check for specific AWS Auth errors
+            if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException' || (error.message && error.message.includes('security token'))) {
+                ws.send(JSON.stringify({
+                    type: 'error',
+                    code: 'invalid_credentials',
+                    message: 'Invalid AWS Credentials. Please check your settings.'
+                }));
+            } else {
+                ws.send(JSON.stringify({ type: 'error', message: `Server error: ${error.message}` }));
+            }
         }
     });
 
