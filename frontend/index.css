@@ -785,58 +785,7 @@ canvas {
     border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Mobile Navigation Styles */
-.mobile-menu-toggle {
-    display: none;
-    position: fixed;
-    top: 15px;
-    left: 15px;
-    z-index: 2000;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(17, 24, 39, 0.9);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: white;
-    font-size: 1.2rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.mobile-menu-toggle:hover {
-    background: rgba(30, 41, 59, 0.9);
-    transform: scale(1.05);
-}
-
-.mobile-menu-toggle:active {
-    transform: scale(0.95);
-}
-
-.sidebar-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    z-index: 1099;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.sidebar-overlay.show {
-    opacity: 1;
-}
-
-
-
+/* Mobile Experience Overhaul */
 @media (max-width: 768px) {
     .app-container {
         flex-direction: column;
@@ -844,154 +793,402 @@ canvas {
         height: 100%;
         max-width: none;
         padding: 0;
-        /* Remove padding */
         gap: 0;
+        overflow: hidden;
+        /* Prevent body scroll */
     }
 
-    /* Hide the old toggle */
-    .mobile-menu-toggle {
+    /* Hide the old toggle just in case */
+    .mobile-menu-toggle,
+    .sidebar-overlay {
         display: none !important;
     }
 
-    .sidebar-overlay {
-        display: none;
+    /* --- Sidebar Container (Now just a wrapper) --- */
+    .sidebar {
+        /* Container is invisible, just holds the fixed elements */
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        width: auto;
+        padding: 0;
+        border-radius: 0;
+        position: static;
+        overflow: visible;
+        display: block;
+        /* Normal flow */
     }
 
-    /* Transform Sidebar into Bottom Nav Container */
-    .sidebar {
+    /* --- Bottom Navigation Bar --- */
+    .sidebar-nav {
         position: fixed;
         bottom: 0;
         left: 0;
         width: 100%;
-        height: auto;
-        /* Allow content to flow */
-        max-height: 85vh;
-        /* Max height for content drawer */
-        z-index: 1100;
-        background: transparent;
-        border: none;
-        border-radius: 0;
-        box-shadow: none;
-        display: flex;
-        flex-direction: column-reverse;
-        /* Nav at bottom, content above */
-        transform: none;
-        /* Reset transform */
-        overflow: visible;
-        margin: 0;
-    }
-
-    .sidebar.show {
-        transform: none;
-        /* Reset */
-    }
-
-    /* Bottom Navigation Bar */
-    .sidebar-nav {
-        width: 100%;
-        height: 70px;
-        /* Fixed height for touch targets */
-        flex-direction: row;
-        justify-content: space-around;
-        align-items: center;
+        height: calc(64px + env(safe-area-inset-bottom));
         background: rgba(17, 24, 39, 0.95);
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         border-right: none;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 0 10px;
-        flex-shrink: 0;
-        padding-bottom: env(safe-area-inset-bottom);
-        /* iPhone X+ safe area */
-        height: calc(64px + env(safe-area-inset-bottom));
-        padding-top: 5px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        /* Left align for scroll */
+        padding: 10px 15px;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom));
+        gap: 20px;
         z-index: 2000;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+        overflow-x: auto;
+        /* Scrollable if too many items */
+        scrollbar-width: none;
+        /* Hide scrollbar Firefox */
+    }
+
+    .sidebar-nav::-webkit-scrollbar {
+        display: none;
+        /* Hide scrollbar Chrome/Safari */
     }
 
     .nav-item {
         width: 44px;
         height: 44px;
-        border-radius: 12px;
+        flex-shrink: 0;
         margin: 0;
-        /* Spaced via justify-content */
+        border-radius: 12px;
     }
 
-    /* Hide less important items on mobile if needed, or keep scrollable? 
-       For now, let's keep them all, 7 items is tight but possible with scroll or squeeze.
-       Actually, let's make the nav scrollable just in case. */
-    .sidebar-nav {
-        overflow-x: auto;
-        justify-content: start;
-        gap: 15px;
-        /* Add gap for scrolling */
-    }
-
-    .sidebar-nav::-webkit-scrollbar {
+    .nav-item[data-tooltip]:hover::after,
+    .nav-item[data-tooltip]:hover::before {
         display: none;
+        /* Disable tooltips on mobile */
     }
 
-    /* Content Drawer */
-    .sidebar-content {
-        background: var(--bg-color);
-        width: 100%;
-        border-top-left-radius: 24px;
-        border-top-right-radius: 24px;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 24px;
-        padding-bottom: 20px;
-        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
-
-        /* Animation for slide up */
-        display: none;
-        /* Hidden by default if not active */
-        flex: 1;
-        overflow-y: auto;
-        max-height: calc(80vh - 70px);
-        /* Leave space at top */
+    /* Indicator for active item on mobile */
+    .nav-item.active {
+        background: rgba(139, 92, 246, 0.2);
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+        border: 1px solid rgba(139, 92, 246, 0.4);
     }
 
-    /* When a view is active, the content is flex */
-    .sidebar-view.active {
-        display: flex;
-    }
+    /* --- Views Architecture --- */
 
-    /* We need a parent class on sidebar-content to show it only when active */
-    .sidebar.mobile-expanded .sidebar-content {
-        display: flex;
-    }
-
-    /* Main Content */
+    /* Main Content (Live Chat) */
     .main-content {
+        position: fixed;
+        top: 0;
+        left: 0;
         width: 100%;
-        height: 100%;
+        height: calc(100% - 65px);
+        /* Minus nav height roughly */
         padding: 15px;
-        padding-bottom: 90px;
-        /* Space for bottom nav */
-        padding-top: 20px;
-        border-radius: 0;
+        padding-bottom: env(safe-area-inset-bottom);
         margin: 0;
         border: none;
-        min-height: 100vh;
+        border-radius: 0;
+        z-index: 10;
+        /* Lower than settings overlay */
+        overflow-y: auto;
+        transition: opacity 0.2s ease;
     }
+
+    /* Sidebar Content (Settings/Tools Panels) */
+    .sidebar-content {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: calc(100% - 70px);
+        /* Leave space for bottom nav */
+        background: var(--bg-color);
+        /* Opaque background */
+        z-index: 20;
+        /* On top of main content */
+        padding: 20px;
+        padding-top: 60px;
+        /* Space for a header if we want, or just padding */
+        overflow-y: auto;
+        display: none;
+        /* Hidden by default */
+        flex-direction: column;
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    /* When Sidebar Content is Active (via JS class) */
+    .sidebar-content.active-mobile {
+        display: flex;
+    }
+
+    /* When Main Content is Inactive (Optional, or just cover it) */
+    .main-content.hidden-mobile {
+        display: none;
+        pointer-events: none;
+    }
+
+    /* --- Specific Elements Adjustment --- */
 
     header {
         flex-direction: row;
         align-items: center;
-        margin-bottom: 15px;
+        justify-content: center;
+        /* Center title */
+        margin-bottom: 0;
+        padding: 15px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(17, 24, 39, 0.85);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: 100;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        height: 60px;
     }
 
     header h1 {
-        font-size: 1.2rem;
-        padding-left: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        margin: 0;
+        padding: 0;
     }
 
-    .visualizer {
-        padding: 10px;
-        margin-bottom: 10px;
+    /* Connection Status in Header */
+    #connection-status {
+        position: absolute;
+        right: 15px;
+        font-size: 0.8rem;
     }
+
+    /* Main Layout Adjustments */
+    .main-content {
+        height: 100%;
+        padding-top: 70px;
+        /* Header height + spacing */
+        padding-bottom: 140px;
+        /* Nav + Controls height */
+        background: radial-gradient(circle at top right, #1f2937, #111827);
+    }
+
+    /* Visualizer - Minimalist */
+    .visualizer {
+        height: 60px;
+        margin: 0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        width: 100%;
+        position: absolute;
+        top: 60px;
+        /* Below header */
+        z-index: 90;
+        pointer-events: none;
+        opacity: 0.6;
+    }
+
+    .visualizer canvas {
+        filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.5));
+    }
+
+    /* Internal Views (Not used in Live Mode but good to style) */
+    .view-content h2 {
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+        color: white;
+    }
+
+    /* --- Chat Transcript (WhatsApp Style) --- */
+    #transcript {
+        padding: 15px;
+        gap: 12px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .message {
+        max-width: 85%;
+        padding: 12px 16px;
+        border-radius: 20px;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        position: relative;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        margin-bottom: 5px;
+        animation: messagePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes messagePop {
+        from {
+            transform: scale(0.9);
+            opacity: 0;
+        }
+
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    /* User Messages (Right, Blue/Gradient) */
+    .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        border-bottom-right-radius: 4px;
+        border: none;
+    }
+
+    /* Assistant Messages (Left, Gray) */
+    .message.assistant {
+        align-self: flex-start;
+        background: rgba(255, 255, 255, 0.1);
+        color: #e2e8f0;
+        border-bottom-left-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .message .timestamp {
+        font-size: 0.7rem;
+        opacity: 0.6;
+        margin-top: 4px;
+        text-align: right;
+        display: block;
+    }
+
+    /* --- Controls Area --- */
 
     .chat-input-container {
-        margin-bottom: 20px;
+        position: fixed;
+        bottom: calc(64px + env(safe-area-inset-bottom));
+        /* Above nav */
+        left: 0;
+        width: 100%;
+        background: rgba(17, 24, 39, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        padding: 12px 15px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    /* If not connected, show big CONNECT button */
+    .controls {
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        width: 100%;
+        align-items: center;
+    }
+
+    /* Connect Button - Prominent */
+    #connectBtn {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+        border-radius: 12px;
+        padding: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 1rem;
+    }
+
+    #connectBtn.connected {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        box-shadow: none;
+        width: auto;
+        /* Shrink when connected */
+        flex: 0 0 auto;
+        font-size: 0.8rem;
+        padding: 10px;
+    }
+
+    /* Record Button - FAB Style (When Connected) */
+    #recordBtn {
+        order: 2;
+        /* Middle */
+        width: 60px;
+        height: 60px;
+        border-radius: 30px;
+        border: none;
+        background: #ef4444;
+        /* Default Red for "Not Recording" ? No, mic is usually separate */
+        /* Let's style based on state classes if available, or default */
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.5);
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* Recording Active State */
+    #recordBtn.recording {
+        background: #ef4444;
+        animation: pulse 1.5s infinite;
+        transform: scale(1.1);
+    }
+
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        }
+
+        70% {
+            box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+        }
+
+        100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        }
+    }
+
+    /* Clear/Interrupt Buttons - Secondary */
+    #clearBtn,
+    #interruptBtn {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        color: rgba(255, 255, 255, 0.7);
+        border-radius: 50%;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        padding: 0;
+    }
+
+    /* Hide Text Mode Input by default on mobile unless toggled? 
+       For now, keep it visible but styled. */
+    #chat-input {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 10px 15px;
+        font-size: 0.95rem;
     }
 }

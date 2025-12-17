@@ -405,20 +405,30 @@ class VoiceAssistant {
                     return;
                 }
 
+                // Handle Live/Home View
+                if (item.id === 'nav-live') {
+                    // Update Nav
+                    navItems.forEach(n => n.classList.remove('active'));
+                    item.classList.add('active');
+
+                    // Deselect all settings views
+                    views.forEach(v => v.classList.remove('active'));
+
+                    // Mobile: Hide sidebar content (settings drawer), show main content
+                    const sidebarContent = document.querySelector('.sidebar-content');
+                    if (sidebarContent) sidebarContent.classList.remove('active-mobile');
+
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) mainContent.classList.remove('hidden-mobile');
+
+                    return;
+                }
+
                 // Identify target view
                 const viewId = item.id.replace('nav-', 'view-');
                 const targetView = document.getElementById(viewId);
 
                 if (targetView) {
-                    // Mobile Toggle Logic: If clicking the active item, toggle it off (close drawer)
-                    if (window.innerWidth <= 768 && item.classList.contains('active')) {
-                        item.classList.remove('active');
-                        targetView.classList.remove('active');
-                        document.querySelector('.sidebar').classList.remove('mobile-expanded');
-                        return;
-                    }
-
-                    // Normal Navigation Logic
                     // Update Nav Active State
                     navItems.forEach(n => n.classList.remove('active'));
                     item.classList.add('active');
@@ -427,12 +437,15 @@ class VoiceAssistant {
                     views.forEach(v => v.classList.remove('active'));
                     targetView.classList.add('active');
 
-                    // Mobile: Expand drawer
-                    if (window.innerWidth <= 768) {
-                        document.querySelector('.sidebar').classList.add('mobile-expanded');
-                    }
+                    // Mobile: Show sidebar content (settings drawer)
+                    const sidebarContent = document.querySelector('.sidebar-content');
+                    if (sidebarContent) sidebarContent.classList.add('active-mobile');
 
-                    // console.log(`[Sidebar] Switched to ${viewId}`);
+                    // Mobile: Optionally hide main content if we want full focus
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent && window.innerWidth <= 768) {
+                        // mainContent.classList.add('hidden-mobile'); // Optional: Keeps background clean
+                    }
 
                     // Special handling for Chat History view
                     if (viewId === 'view-chat') {
@@ -456,28 +469,6 @@ class VoiceAssistant {
             historyDateFilter.addEventListener('change', () => {
                 this.renderChatHistory();
             });
-        }
-
-        // Mobile Menu Logic
-        const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
-        const sidebar = document.querySelector('.sidebar');
-        const overlay = document.getElementById('sidebar-overlay');
-
-        if (mobileMenuToggle && sidebar && overlay) {
-            const toggleMenu = () => {
-                sidebar.classList.toggle('show');
-                overlay.classList.toggle('show');
-            };
-
-            const closeMenu = () => {
-                sidebar.classList.remove('show');
-                overlay.classList.remove('show');
-            };
-
-            mobileMenuToggle.addEventListener('click', toggleMenu);
-            overlay.addEventListener('click', closeMenu);
-
-
         }
     }
 
