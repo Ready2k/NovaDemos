@@ -1,8 +1,7 @@
 {
   "name": "update_dispute_case",
-  "description": "Updates an existing case when status is 'MORE_INFO'.",
-  "category": "Banking",
-  "parameters": {
+  "description": "Updates an existing case when status is 'MORE_INFO'. or when the case needs to be 'CLOSED' as it's been resolved by the Customer",
+  "input_schema": {
     "type": "object",
     "properties": {
       "caseId": {
@@ -12,12 +11,20 @@
       "additionalDetails": {
         "type": "string",
         "description": "The specific information requested (e.g. Correct Date, Invoice Proof)."
+      },
+      "status": {
+        "type": "string",
+        "description": "The specific status, CLOSED if resolved by the Customer, OPEN if customer still has this issue open"
       }
     },
     "required": [
       "caseId",
-      "additionalDetails"
+      "additionalDetails",
+      "status"
     ]
   },
-  "gatewayTarget": "Update-Dispute-case___update_dispute_case"
+  "instruction": "",
+  "agentPrompt": "",
+  "gatewayTarget": "Update-Dispute-case___update_dispute_case",
+  "category": "Banking"
 }

@@ -140,7 +140,7 @@
     },
     {
       "id": "end_interaction",
-      "label": "Provide a concise summary of the interaction, ensure that its voice friendly and then ask the user if there's anything else you can help with today.",
+      "label": "Provide a concise summary of the interaction, ensure that its voice friendly and if needed ask the user if there's anything else you can help with today.",
       "type": "end",
       "outcome": ""
     },
