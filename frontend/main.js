@@ -423,6 +423,35 @@ class VoiceAssistant {
                 this.renderChatHistory();
             });
         }
+
+        // Mobile Menu Logic
+        const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+
+        if (mobileMenuToggle && sidebar && overlay) {
+            const toggleMenu = () => {
+                sidebar.classList.toggle('show');
+                overlay.classList.toggle('show');
+            };
+
+            const closeMenu = () => {
+                sidebar.classList.remove('show');
+                overlay.classList.remove('show');
+            };
+
+            mobileMenuToggle.addEventListener('click', toggleMenu);
+            overlay.addEventListener('click', closeMenu);
+
+            // Close menu when a nav item is clicked (on mobile)
+            navItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        closeMenu();
+                    }
+                });
+            });
+        }
     }
 
     async renderChatHistory() {
