@@ -171,6 +171,14 @@ class VoiceAssistant {
         this.loadKnowledgeBases(); // Load KBs
         this.loadBedrockModels(); // Load models
 
+        // Mobile Init: Clear active selection so main chat is visible
+        if (window.innerWidth <= 768) {
+            const navItems = document.querySelectorAll('.nav-item');
+            const views = document.querySelectorAll('.sidebar-view');
+            navItems.forEach(n => n.classList.remove('active'));
+            views.forEach(v => v.classList.remove('active'));
+        }
+
         // Then load saved settings
         this.loadSettings();
 
@@ -390,6 +398,15 @@ class VoiceAssistant {
                 const targetView = document.getElementById(viewId);
 
                 if (targetView) {
+                    // Mobile Toggle Logic: If clicking the active item, toggle it off (close drawer)
+                    if (window.innerWidth <= 768 && item.classList.contains('active')) {
+                        item.classList.remove('active');
+                        targetView.classList.remove('active');
+                        document.querySelector('.sidebar').classList.remove('mobile-expanded');
+                        return;
+                    }
+
+                    // Normal Navigation Logic
                     // Update Nav Active State
                     navItems.forEach(n => n.classList.remove('active'));
                     item.classList.add('active');
@@ -397,6 +414,11 @@ class VoiceAssistant {
                     // Update View Active State
                     views.forEach(v => v.classList.remove('active'));
                     targetView.classList.add('active');
+
+                    // Mobile: Expand drawer
+                    if (window.innerWidth <= 768) {
+                        document.querySelector('.sidebar').classList.add('mobile-expanded');
+                    }
 
                     // console.log(`[Sidebar] Switched to ${viewId}`);
 
