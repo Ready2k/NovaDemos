@@ -735,6 +735,8 @@ export class SonicClient {
 
         this.client = new BedrockRuntimeClient(clientConfig);
         this.config.region = region;
+        this.config.accessKeyId = accessKeyId;
+        this.config.secretAccessKey = secretAccessKey;
 
         // Store Agent Core Runtime ARN if provided
         if (agentCoreRuntimeArn) {

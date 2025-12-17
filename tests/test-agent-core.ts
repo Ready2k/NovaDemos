@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: 'backend/.env' });
 
 const REGION = process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
-const CONFIG_ARN = "arn:aws:bedrock-agentcore:us-east-1:388660028061:runtime/BankingCoreRuntime_http_v1-aIECoiHAgv";
+const CONFIG_ARN = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/BankingCoreRuntime_http_v1-abc123456";
 let RUNTIME_ARN = process.env.AGENT_CORE_RUNTIME_ARN || CONFIG_ARN;
 // Strip /runtime-endpoint/... suffix if present (User note: qualifier 'DEFAULT' replaces this suffix)
 if (RUNTIME_ARN.includes('/runtime-endpoint/')) {

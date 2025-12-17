@@ -23,7 +23,7 @@ const CONFIG = {
 function displayImplementationPlan() {
     console.log('📋 HYBRID IMPLEMENTATION PLAN');
     console.log('=============================');
-    
+
     console.log('Instead of modifying your existing runtime, we will:');
     console.log('');
     console.log('1. ✅ Keep BankingCoreRuntime_http_v1-aIECoiHAgv as-is');
@@ -36,7 +36,7 @@ function displayImplementationPlan() {
 function displayBrowserToolCreation() {
     console.log('🌐 STEP 1: CREATE BROWSER TOOL INSTANCE');
     console.log('=======================================');
-    
+
     console.log('First, create a browser tool instance (separate from runtime):');
     console.log('');
     console.log('Option A: AWS CLI (if available)');
@@ -60,7 +60,7 @@ function displayBrowserToolCreation() {
 function generateModifiedGatewayClient() {
     console.log('🔧 STEP 2: MODIFY GATEWAY CLIENT');
     console.log('================================');
-    
+
     console.log('Create enhanced agentcore-gateway-client.ts:');
     console.log('');
     console.log('```typescript');
@@ -242,7 +242,7 @@ function displayEnvironmentUpdates() {
     console.log('');
     console.log('```env');
     console.log('# Existing banking runtime (keep as-is)');
-    console.log('AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:388660028061:runtime/BankingCoreRuntime_http_v1-aIECoiHAgv');
+    console.log('AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/BankingCoreRuntime_http_v1-abc123456');
     console.log('');
     console.log('# New browser tool ARN (update after creating browser)');
     console.log(`BROWSER_TOOL_ARN=arn:aws:bedrock-agentcore:${CONFIG.awsRegion}:${CONFIG.accountId}:browser/TimeQueryBrowser`);
@@ -256,7 +256,7 @@ function displayEnvironmentUpdates() {
 function displayTestingSteps() {
     console.log('🧪 STEP 4: TESTING');
     console.log('==================');
-    
+
     console.log('After implementation, test both capabilities:');
     console.log('');
     console.log('1. Test Banking Tools (should work as before):');
@@ -284,7 +284,7 @@ function displayTestingSteps() {
 function displayBenefits() {
     console.log('✅ BENEFITS OF HYBRID APPROACH');
     console.log('==============================');
-    
+
     console.log('✅ No disruption to existing banking functionality');
     console.log('✅ Browser capabilities for time and web queries');
     console.log('✅ Smart routing - right tool for right job');
