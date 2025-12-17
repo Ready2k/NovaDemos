@@ -443,14 +443,7 @@ class VoiceAssistant {
             mobileMenuToggle.addEventListener('click', toggleMenu);
             overlay.addEventListener('click', closeMenu);
 
-            // Close menu when a nav item is clicked (on mobile)
-            navItems.forEach(item => {
-                item.addEventListener('click', () => {
-                    if (window.innerWidth <= 768) {
-                        closeMenu();
-                    }
-                });
-            });
+
         }
     }
 
