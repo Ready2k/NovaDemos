@@ -876,3 +876,247 @@ canvas {
     max-height: 100px;
     overflow-y: auto;
 }
+
+/* ==========================================================================
+   Mobile Responsive Styles
+   ========================================================================== */
+
+@media screen and (max-width: 768px) {
+    body {
+        /* Remove centering on mobile to allow full flow */
+        align-items: flex-start;
+        padding: 0;
+        background-attachment: fixed;
+        /* Fix gradient background */
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .app-container {
+        flex-direction: column;
+        width: 100%;
+        height: auto;
+        min-height: 100vh;
+        max-width: none;
+        gap: 0;
+        border-radius: 0;
+        overflow: hidden;
+    }
+
+    /* Adjust Main Content to be full screen minus nav */
+    .main-content {
+        width: 100%;
+        height: calc(100vh - 70px);
+        /* Leave space for bottom nav */
+        border-radius: 0;
+        border: none;
+        padding: 20px 16px;
+        margin-bottom: 70px;
+        backdrop-filter: none;
+        /* Perf */
+        background: transparent;
+    }
+
+    /* Transform Sidebar into Bottom Navigation */
+    .sidebar {
+        width: 100%;
+        height: auto;
+        /* Allow content to expand */
+        position: static;
+        background: none;
+        border: none;
+        box-shadow: none;
+        border-radius: 0;
+        overflow: visible;
+        /* CRITICAL: Remove backdrop-filter to prevent creating a containing block for fixed children */
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        transform: none;
+        will-change: auto;
+    }
+
+    /* Navigation Rail becomes Bottom Bar */
+    .sidebar-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: calc(70px + env(safe-area-inset-bottom));
+        /* Add safe area */
+        padding-bottom: env(safe-area-inset-bottom);
+        flex-direction: row;
+        justify-content: flex-start;
+        /* Start from left */
+        overflow-x: auto;
+        /* Scrollable */
+        background: rgba(17, 24, 39, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-right: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 1000;
+        padding-left: 10px;
+        padding-right: 10px;
+        gap: 0;
+        /* Hide scrollbar */
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .sidebar-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .nav-item {
+        width: auto;
+        min-width: 60px;
+        /* Ensure clickable target size */
+        height: 100%;
+        flex: 0 0 auto;
+        /* Don't shrink or grow overly */
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .nav-item span {
+        font-size: 1.4rem !important;
+        /* Larger icons for touch */
+    }
+
+    /* Hide tooltips on mobile */
+    .nav-item[data-tooltip]::after,
+    .nav-item[data-tooltip]::before {
+        display: none;
+    }
+
+    /* Sidebar Content Overlay Management 
+       - If #view-live is active: Hide the sidebar content container (show main app)
+       - If any other view is active: Show sidebar content as full-screen overlay
+    */
+    .sidebar-content {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: calc(100vh - 70px);
+        /* Above nav bar */
+        z-index: 900;
+        background: #030712;
+        /* Solid bg */
+        padding: 20px;
+        overflow-y: auto;
+        display: none;
+        /* Hidden by default */
+    }
+
+    /* Using :has selector to detect state */
+    /* When #view-live is NOT active in the sidebar content, show the sidebar content */
+    .sidebar:has(.sidebar-view.active:not(#view-live)) .sidebar-content {
+        display: flex;
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Live View Sidebar Component (Key Moments) 
+       Optional: We can choose to show this in a drawer or hide it.
+       For now, let's keep it hidden to prioritize the main interface in Live mode.
+    */
+    #view-live {
+        display: none !important;
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    /* Main Content Header Adjustments */
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding-bottom: 12px;
+        margin-bottom: 16px;
+    }
+
+    .header-right {
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    #mode-indicator {
+        margin-left: 0;
+        margin-top: 4px;
+        display: block;
+        width: fit-content;
+    }
+
+    /* Controls at bottom above nav */
+    .controls {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .controls button {
+        flex: 1;
+        min-width: 45%;
+        padding: 10px;
+        font-size: 0.9rem;
+    }
+
+    /* Transcript Adjustments */
+    .transcript-container {
+        padding: 12px;
+    }
+
+    .transcript-entry {
+        max-width: 90%;
+        font-size: 0.9rem;
+    }
+
+    /* Debug Panel Overlay */
+    .debug-sidebar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 85%;
+        height: 100%;
+        z-index: 2000;
+        transform: translateX(100%);
+        transition: transform 0.3s;
+    }
+
+    .debug-sidebar.visible {
+        /* You'd need js to toggle this class, or trust display:none toggling */
+        transform: translateX(0);
+    }
+
+    /* Session Stats */
+    .session-stats {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .stat-item {
+        flex: 1 1 40%;
+        /* 2 cols */
+        font-size: 0.75rem;
+    }
+}
