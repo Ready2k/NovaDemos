@@ -54,6 +54,23 @@
       <!-- Sidebar Content -->
       <div class="sidebar-content">
 
+        <!-- View: Live Session -->
+        <div id="view-live" class="sidebar-view">
+          <h2>Live Session</h2>
+          <div
+            style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+            <p style="margin: 0; color: #94a3b8; font-size: 0.9rem;">
+              Ready to interact. Use the controls in the main panel to start/stop the session.
+            </p>
+            <div style="margin-top: 15px; font-size: 0.8rem; color: #64748b;">
+              <div style="display:flex; justify-content: space-between; margin-bottom: 5px;">
+                <span>Status:</span>
+                <span id="live-status-indicator" style="color: #94a3b8;">Disconnected</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- View: Voice / General Settings -->
         <div id="view-voice" class="sidebar-view active">
           <h2>General Settings</h2>
