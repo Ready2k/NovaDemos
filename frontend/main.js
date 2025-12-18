@@ -984,7 +984,28 @@ class VoiceAssistant {
         // Add User/Persona Prompt
         finalSystemPrompt += this.systemPromptInput.value + '\n\n';
 
-        // Append Tool Instructions if tools are selected
+        // Voice Only Mode Optimization
+        const currentInteractionMode = this.modeSelect ? this.modeSelect.value : 'chat_voice';
+        if (currentInteractionMode === 'voice_only') {
+            finalSystemPrompt += `
+[CRITICAL MODE OVERRIDE: VOICE ONLY]
+You are currently speaking to the user via audio-only interface. They CANNOT see your text.
+1. Be extremely concise. Use short, simple sentences.
+2. Do NOT use markdown, lists, or visual formatting.
+3. Do NOT read long lists. Summarize or ask clarifying questions.
+4. Focus on spoken clarity. Avoid complex numbers or codes unless essential.
+`;
+        } else {
+            // Chat Only or Chat + Voice
+            finalSystemPrompt += `
+[CRITICAL MODE OVERRIDE: VISUAL INTERFACE ENABLED]
+The user can see your response on a screen.
+1. You may use Markdown formatting (bold, italics, lists) for better readability.
+2. If providing resources, ALWAYS use fully formed Markdown links: [Link Text](https://example.com).
+3. Do NOT omit URLs if they are helpful.
+`;
+        }
+
         // Append Tool Instructions if tools are selected
         if (selectedTools.length > 0) {
             finalSystemPrompt += '\n\n[SYSTEM INSTRUCTION: You have access to the following tools. YOU MUST USE THEM when the user asks for relevant information. Do not refuse or make up answers.]\n';
