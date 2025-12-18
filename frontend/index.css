@@ -1182,9 +1182,300 @@ canvas {
         padding: 0;
     }
 
-    /* Hide Text Mode Input by default on mobile unless toggled? 
-       For now, keep it visible but styled. */
-    #chat-input {
+    /* --- Specific Elements Adjustment --- */
+
+    /* Clean Header */
+    header {
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0;
+        padding: 5px 15px;
+        /* Reduced vertical padding */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(17, 24, 39, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: 100;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        height: 50px;
+        /* Reduced height */
+    }
+
+    header h1 {
+        font-size: 1rem;
+        /* Smaller title */
+        font-weight: 600;
+        margin: 0;
+    }
+
+    /* Hide Header Noise on Mobile */
+    #mode-indicator,
+    #version-info,
+    .header-right .status-badge {
+        display: none !important;
+    }
+
+    /* Show only a simple dot for status if needed, or just rely on button state */
+    /* Let's keep a tiny status dot in the header title potentially? 
+       For now, just cleaning it up is enough. */
+
+    /* Hide Stats Container */
+    .session-stats,
+    .visualizer {
+        display: none !important;
+    }
+
+    /* Connection Status in Header (Simplified) */
+    #connection-status {
+        position: absolute;
+        right: 15px;
+        font-size: 0.7rem;
+    }
+
+    /* Main Layout - maximize space for chat */
+    .main-content {
+        height: 100%;
+        padding-top: 50px;
+        /* Header height */
+        padding-bottom: 80px;
+        /* Nav height + buffer */
+        background: #111827;
+        /* Solid dark background */
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* --- Chat Transcript --- */
+    #transcript {
+        flex: 1;
+        padding: 15px;
+        padding-bottom: 150px;
+        /* Space for bottom controls */
+        gap: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+
+    /* ... (Message styles kept same) ... */
+    .message {
+        max-width: 85%;
+        padding: 12px 16px;
+        border-radius: 20px;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        position: relative;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        margin-bottom: 5px;
+        animation: messagePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes messagePop {
+        from {
+            transform: scale(0.9);
+            opacity: 0;
+        }
+
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        border-bottom-right-radius: 4px;
+        border: none;
+    }
+
+    .message.assistant {
+        align-self: flex-start;
+        background: rgba(255, 255, 255, 0.1);
+        color: #e2e8f0;
+        border-bottom-left-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .message .timestamp {
+        font-size: 0.7rem;
+        opacity: 0.6;
+        margin-top: 4px;
+        text-align: right;
+        display: block;
+    }
+
+    /* --- Controls Area (The Fix) --- */
+
+    /* 1. Reset the wrapper */
+    .controls {
+        display: block;
+        /* Remove grid/flex constraints */
+        position: static;
+        width: auto;
+        height: 0;
+        /* Don't take up flow space */
+        padding: 0;
+        margin: 0;
+    }
+
+    /* 2. Connect Button: Centered Overlay */
+    /* Only visible when NOT connected (controlled by JS toggling disabled usually, 
+       but we might need to rely on its presence/state. 
+       Issue: CSS doesn't know 'connected' state of app easily without a class on body.
+       Workaround: Position it fixed. If it disappears (hidden by JS), good. */
+    #connectBtn {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #10b981, #059669);
+        box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* If disabled (meaning Connected), hide it completely */
+    #connectBtn:disabled {
+        display: none;
+    }
+
+    /* 3. Record/Stop Buttons: Floating Action Button (FAB) */
+    /* Positioned bottom-right, floating above content */
+    #startBtn,
+    #stopBtn {
+        position: fixed;
+        bottom: 85px;
+        /* Above nav (64px) + padding */
+        right: 20px;
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        z-index: 200;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        font-size: 0;
+        /* Hide text */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        transition: transform 0.2s ease;
+    }
+
+    /* Icons for buttons (using specific styling or unicode) */
+    #startBtn::after {
+        content: "🎙️";
+        font-size: 1.8rem;
+    }
+
+    #stopBtn::after {
+        content: "⏹️";
+        font-size: 1.8rem;
+    }
+
+    /* Start Button Style */
+    #startBtn {
+        background: #3b82f6;
+    }
+
+    /* Stop Button Style */
+    #stopBtn {
+        background: #ef4444;
+    }
+
+    /* Logic: HIDE the button that is DISABLED */
+    /* This ensures they swap in place */
+    #startBtn:disabled,
+    #stopBtn:disabled {
+        display: none !important;
+    }
+
+    /* Recording Animation */
+    #stopBtn {
+        animation: pulseFab 1.5s infinite;
+    }
+
+    @keyframes pulseFab {
+        0% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        }
+
+        70% {
+            box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+        }
+
+        100% {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        }
+    }
+
+    /* 4. Disconnect Button: Small icon top right */
+    #disconnectButton {
+        position: fixed;
+        top: 10px;
+        right: 15px;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        font-size: 0;
+        /* Hide text */
+        z-index: 101;
+        /* Above header */
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #disconnectButton::after {
+        content: "✕";
+        /* Close icon */
+        font-size: 1rem;
+    }
+
+    #disconnectButton:disabled {
+        display: none;
+    }
+
+    /* 5. Chat Input positioning */
+    .chat-input-container {
+        position: fixed;
+        bottom: calc(64px + env(safe-area-inset-bottom));
+        /* Above nav */
+        left: 0;
+        width: 100%;
+        background: rgba(17, 24, 39, 0.95);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        padding: 10px 15px;
+        padding-right: 90px;
+        /* Space for FAB */
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 90;
+        /* Below FAB */
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    #textInput {
         background: rgba(0, 0, 0, 0.3);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
