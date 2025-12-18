@@ -78,6 +78,11 @@ class VoiceAssistant {
         this.clearAwsBtn = document.getElementById('clearAwsBtn');
         this.novaSonicModelId = document.getElementById('novaSonicModelId');
 
+        // Live Session Elements
+        this.liveStatusIndicator = document.getElementById('live-status-indicator');
+        this.liveMomentsList = document.getElementById('live-moments-list');
+        this.liveMomentsHeader = document.getElementById('live-moments-header');
+
         // Prompt Preset Change
         if (this.promptPresetSelect) {
             this.promptPresetSelect.addEventListener('change', () => {
@@ -454,6 +459,43 @@ class VoiceAssistant {
                 this.renderChatHistory();
             });
         }
+    }
+
+    /**
+     * Add an item to the "Key Moments" timeline
+     * @param {string} type - 'connected', 'disconnected', 'tool', 'error'
+     * @param {string} title 
+     * @param {string} details 
+     */
+    addKeyMoment(type, title, details = '') {
+        if (!this.liveMomentsList) return;
+
+        // Remove "Session not started" placeholder if present
+        const placeholder = this.liveMomentsList.querySelector('div[style*="font-style: italic"]');
+        if (placeholder) {
+            placeholder.remove();
+        }
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        const item = document.createElement('div');
+        item.className = `moment-item ${type === 'disconnected' ? 'error' : type === 'connected' ? 'success' : type}`;
+
+        let detailsHtml = '';
+        if (details) {
+            detailsHtml = `<div class="moment-details">${details}</div>`;
+        }
+
+        item.innerHTML = `
+            <div class="moment-header">
+                <span class="moment-title">${title}</span>
+                <span class="moment-time">${timeStr}</span>
+            </div>
+            ${detailsHtml}
+        `;
+
+        this.liveMomentsList.prepend(item); // Add to top
     }
 
     async renderChatHistory() {
@@ -1002,6 +1044,8 @@ class VoiceAssistant {
                 this.reconnectAttempts = 0; // Reset attempts
                 this.showToast('Connected to server', 'success');
 
+                this.addKeyMoment('connected', 'Session Connected', `Session ID: ${this.sessionId || 'Pending...'}`);
+
                 // Start session timer
                 this.startSessionTimer();
                 this.startVisualizer();
@@ -1077,6 +1121,12 @@ class VoiceAssistant {
                                 this.sessionId = message.sessionId;
                                 this.log(`Connected: ${message.sessionId}`, 'success');
 
+                                // Update the moment we just added with real ID
+                                const lastMoment = this.liveMomentsList?.querySelector('.moment-details');
+                                if (lastMoment && lastMoment.textContent.includes('Pending')) {
+                                    lastMoment.textContent = `Session ID: ${this.sessionId}`;
+                                }
+
                                 // Display version information
                                 if (message.version) {
                                     this.updateVersionInfo(message.version);
@@ -1148,7 +1198,10 @@ class VoiceAssistant {
 
                                     if (!this.recentToolNotifications.has(toolUseId)) {
                                         this.recentToolNotifications.add(toolUseId);
-                                        this.showToast(`🛠️ Processing: ${toolName} `, 'info');
+                                        this.showToast(`🛠️ Processing: ${toolName}`, 'info');
+
+                                        // Add to Key Moments
+                                        this.addKeyMoment('tool', `Tool Used: ${toolName}`, JSON.stringify(message.data.toolUse.input, null, 2));
 
                                         // Visual Status Update
                                         const originalStatus = this.statusEl.textContent;
@@ -1182,6 +1235,7 @@ class VoiceAssistant {
                                     }
                                 } else {
                                     this.showToast(message.message, 'error');
+                                    this.addKeyMoment('error', 'Error Occurred', message.message);
                                 }
                                 break;
 
@@ -1217,6 +1271,7 @@ class VoiceAssistant {
         this.audioProcessor.clearQueue();
         this.updateState('disconnected');
         this.showToast('Disconnected', 'info');
+        this.addKeyMoment('disconnected', 'Session Ended', 'User disconnected');
 
         // Clear any pending reconnect
         if (this.reconnectTimeout) {
@@ -1341,6 +1396,24 @@ class VoiceAssistant {
         };
 
         this.statusEl.textContent = stateLabels[newState] || newState;
+
+        // Update Sidebar Live Status
+        if (this.liveStatusIndicator) {
+            this.liveStatusIndicator.textContent = stateLabels[newState] || newState;
+            // Remove all possible status classes
+            this.liveStatusIndicator.classList.remove('disconnected', 'connected', 'recording');
+            this.liveStatusIndicator.classList.add(newState);
+
+            // Toggle header visibility based on connection
+            if (this.liveMomentsHeader) {
+                this.liveMomentsHeader.style.display = newState === 'connected' || newState === 'recording' ? 'block' : 'none';
+            }
+
+            // Clear list on new connection
+            if (newState === 'connected' && this.liveMomentsList) {
+                // Optional: clear list or keep history? Let's keep history for now but maybe mark a new session
+            }
+        }
 
         // Update button states
         this.connectBtn.disabled = newState !== 'disconnected';

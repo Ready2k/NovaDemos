@@ -55,7 +55,7 @@
       <div class="sidebar-content">
 
         <!-- View: Live Session -->
-        <div id="view-live" class="sidebar-view">
+        <div id="view-live" class="sidebar-view active">
           <h2>Live Session</h2>
           <div
             style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
@@ -63,16 +63,26 @@
               Ready to interact. Use the controls in the main panel to start/stop the session.
             </p>
             <div style="margin-top: 15px; font-size: 0.8rem; color: #64748b;">
-              <div style="display:flex; justify-content: space-between; margin-bottom: 5px;">
-                <span>Status:</span>
-                <span id="live-status-indicator" style="color: #94a3b8;">Disconnected</span>
+              <div style="display:flex; justify-content: space-between; margin-bottom: 15px; align-items: center;">
+                <span style="font-weight: 600;">Current Status:</span>
+                <span id="live-status-indicator" class="status-badge disconnected"
+                  style="font-size: 0.75rem;">Disconnected</span>
+              </div>
+
+              <div id="live-moments-header" style="display: none;">
+                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px;">
+                <h4 style="margin: 0 0 10px 0; font-size: 0.85rem; color: #e2e8f0;">Key Moments</h4>
+              </div>
+
+              <div id="live-moments-list" class="moments-list">
+                <!-- Moments will be injected here -->
               </div>
             </div>
           </div>
         </div>
 
         <!-- View: Voice / General Settings -->
-        <div id="view-voice" class="sidebar-view active">
+        <div id="view-voice" class="sidebar-view">
           <h2>General Settings</h2>
 
           <div class="input-group">

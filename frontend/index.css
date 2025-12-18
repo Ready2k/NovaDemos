@@ -786,3 +786,93 @@ canvas {
 }
 
 /* Mobile Experience Overhaul */
+
+/* Live Session Timeline */
+.moments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    /* Connected by line */
+    position: relative;
+    padding-left: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.moment-item {
+    position: relative;
+    padding: 0 0 20px 20px;
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    animation: fadeIn 0.3s ease;
+}
+
+.moment-item:last-child {
+    border-left: 2px solid transparent;
+}
+
+.moment-item::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    /* Center on the 2px border */
+    top: 0;
+    /* Align with top */
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #1e293b;
+    /* Match bg */
+    border: 2px solid #64748b;
+    z-index: 1;
+}
+
+.moment-item.success::before {
+    border-color: var(--success-color);
+    background: var(--success-color);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.moment-item.error::before {
+    border-color: var(--error-color);
+    background: var(--error-color);
+}
+
+.moment-item.tool::before {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+}
+
+.moment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 4px;
+    margin-top: -4px;
+    /* Align text with dot */
+}
+
+.moment-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.moment-time {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-family: monospace;
+}
+
+.moment-details {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    line-height: 1.4;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 6px;
+    border-radius: 6px;
+    margin-top: 4px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    max-height: 100px;
+    overflow-y: auto;
+}
