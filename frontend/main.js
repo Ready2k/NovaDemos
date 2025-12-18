@@ -71,6 +71,7 @@ class VoiceAssistant {
         this.awsModal = document.getElementById('awsModal');
         this.awsAccessKey = document.getElementById('awsAccessKey');
         this.awsSecretKey = document.getElementById('awsSecretKey');
+        this.awsSessionToken = document.getElementById('awsSessionToken'); // New Field
         this.awsRegion = document.getElementById('awsRegion');
         this.agentCoreRuntimeArn = document.getElementById('agentCoreRuntimeArn');
         this.saveAwsBtn = document.getElementById('saveAwsBtn');
@@ -229,9 +230,11 @@ class VoiceAssistant {
         });
         this.cancelAwsBtn.addEventListener('click', () => {
             this.awsModal.style.display = 'none';
+            this.awsModal.style.display = 'none';
             // Clear form fields
             this.awsAccessKey.value = '';
             this.awsSecretKey.value = '';
+            this.awsSessionToken.value = '';
             this.novaSonicModelId.value = 'amazon.nova-2-sonic-v1:0';
         });
         this.saveAwsBtn.addEventListener('click', () => this.saveAwsCredentials());
@@ -1021,6 +1024,24 @@ The user can see your response on a screen.
             });
         }
 
+        // Retrieve stored AWS credentials to pass to the backend
+        let awsCredentials = {};
+        try {
+            const stored = sessionStorage.getItem('aws_credentials');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                awsCredentials = {
+                    awsAccessKeyId: parsed.accessKeyId,
+                    awsSecretAccessKey: parsed.secretAccessKey,
+                    awsSessionToken: parsed.sessionToken,
+                    awsRegion: parsed.region,
+                    agentCoreRuntimeArn: parsed.agentCoreRuntimeArn
+                };
+            }
+        } catch (e) {
+            console.error('Failed to load AWS credentials for session config', e);
+        }
+
         return {
             type: 'sessionConfig',
             config: {
@@ -1031,7 +1052,9 @@ The user can see your response on a screen.
                 agentId: agentId,
                 agentAliasId: agentAliasId,
                 selectedTools: selectedTools,
-                linkedWorkflows: linkedWorkflows
+                linkedWorkflows: linkedWorkflows,
+                // Pass AWS Credentials
+                ...awsCredentials
             }
         };
     }
@@ -1819,6 +1842,9 @@ The user can see your response on a screen.
                 // Show placeholder text to indicate credentials are stored
                 this.awsAccessKey.placeholder = 'Stored (enter new to update)';
                 this.awsSecretKey.placeholder = 'Stored (enter new to update)';
+                if (awsCredentials.sessionToken) {
+                    this.awsSessionToken.placeholder = 'Stored (enter new to update)';
+                }
             } catch (e) {
                 console.error('[Frontend] Failed to parse stored AWS credentials:', e);
             }
@@ -1826,6 +1852,7 @@ The user can see your response on a screen.
             // Reset placeholders if no credentials stored
             this.awsAccessKey.placeholder = 'AKIA...';
             this.awsSecretKey.placeholder = 'wJalrX...';
+            this.awsSessionToken.placeholder = 'IQoJb3JpZ2luX2Vj...';
         }
     }
 
@@ -1835,6 +1862,7 @@ The user can see your response on a screen.
     async saveAwsCredentials() {
         const accessKeyId = this.awsAccessKey.value.trim();
         const secretAccessKey = this.awsSecretKey.value.trim();
+        const sessionToken = this.awsSessionToken.value.trim();
         const region = this.awsRegion.value.trim() || 'us-east-1';
         const agentCoreRuntimeArn = this.agentCoreRuntimeArn.value.trim();
         const modelId = this.novaSonicModelId.value.trim();
@@ -1868,6 +1896,7 @@ The user can see your response on a screen.
         const newCredentials = {
             accessKeyId: accessKeyId || (stored ? stored.accessKeyId : ''),
             secretAccessKey: secretAccessKey || (stored ? stored.secretAccessKey : ''),
+            sessionToken: sessionToken || (stored ? stored.sessionToken : ''),
             region: region,
             agentCoreRuntimeArn: agentCoreRuntimeArn,
             modelId: modelId
@@ -1894,10 +1923,12 @@ The user can see your response on a screen.
         this.awsModal.style.display = 'none';
         this.awsAccessKey.value = '';
         this.awsSecretKey.value = '';
+        this.awsSessionToken.value = '';
 
         // Update placeholders to show they are stored
         this.awsAccessKey.placeholder = 'Stored (enter new to update)';
         this.awsSecretKey.placeholder = 'Stored (enter new to update)';
+        this.awsSessionToken.placeholder = 'Stored (enter new to update)';
     }
 
     /**
@@ -1913,11 +1944,13 @@ The user can see your response on a screen.
             // Reset form
             this.awsAccessKey.value = '';
             this.awsSecretKey.value = '';
+            this.awsSessionToken.value = '';
             this.awsRegion.value = 'us-east-1';
             this.agentCoreRuntimeArn.value = '';
             this.novaSonicModelId.value = 'amazon.nova-2-sonic-v1:0';
             this.awsAccessKey.placeholder = 'AKIA...';
             this.awsSecretKey.placeholder = 'wJalrX...';
+            this.awsSessionToken.placeholder = 'IQoJb3JpZ2luX2Vj...';
 
             this.awsModal.style.display = 'none';
         };

@@ -738,6 +738,13 @@ interface ClientSession {
         timestamp: number;
         type?: 'speculative' | 'final'; // New: Track type of transcript
     }[];
+
+    // AWS Credentials (Per Session)
+    awsAccessKeyId?: string;
+    awsSecretAccessKey?: string;
+    awsSessionToken?: string;
+    awsRegion?: string;
+    agentCoreRuntimeArn?: string;
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -1312,6 +1319,18 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             }
                         }
 
+                        // 1.5 Handle AWS Credentials from Client
+                        if (parsed.config.awsAccessKeyId && parsed.config.awsSecretAccessKey) {
+                            session.awsAccessKeyId = parsed.config.awsAccessKeyId;
+                            session.awsSecretAccessKey = parsed.config.awsSecretAccessKey;
+                            session.awsSessionToken = parsed.config.awsSessionToken;
+                            session.awsRegion = parsed.config.awsRegion || 'us-east-1';
+                            session.agentCoreRuntimeArn = parsed.config.agentCoreRuntimeArn; // Store ARN if provided
+
+                            const tokenStatus = session.awsSessionToken ? `Present (len: ${session.awsSessionToken.length})` : 'Missing/Empty';
+                            console.log(`[Server] Received AWS Credentials from client. AccessKey: ${session.awsAccessKeyId?.substr(0, 4)}..., Token: ${tokenStatus}`);
+                        }
+
 
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
@@ -1334,7 +1353,13 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                             "Hello, I'd like to get started",
                                             session.sessionId,
                                             session.agentId,
-                                            session.agentAliasId
+                                            session.agentAliasId,
+                                            {
+                                                accessKeyId: session.awsAccessKeyId,
+                                                secretAccessKey: session.awsSecretAccessKey,
+                                                sessionToken: session.awsSessionToken,
+                                                region: session.awsRegion
+                                            }
                                         );
                                         logWithTimestamp('[Server]', `Banking Bot replied: "${agentReply}"`);
 
@@ -1811,7 +1836,13 @@ You do not have access to any tools. Answer questions directly based on your kno
                                         finalText,
                                         session.sessionId,
                                         session.agentId,
-                                        session.agentAliasId
+                                        session.agentAliasId,
+                                        {
+                                            accessKeyId: session.awsAccessKeyId,
+                                            secretAccessKey: session.awsSecretAccessKey,
+                                            sessionToken: session.awsSessionToken,
+                                            region: session.awsRegion
+                                        }
                                     );
                                     console.log(`[Server] Agent replied: "${agentReply}"`);
 

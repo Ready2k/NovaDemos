@@ -70,6 +70,11 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Solution**: Implemented server-side interception. All tools are defined to the model (preventing hallucinations), but execution is guarded by an `allowedTools` list.
 - **Outcome**: If a user requests a disabled tool, the system intercepts the call and instructs the model to politely apologize ("request cannot be fulfilled").
 
+### ✅ Improved Credential Management (Dec 18, 2025)
+- **Fixed**: "Invalid Security Token" errors when using temporary AWS credentials
+- **Solution**: Added optional **Session Token** field to AWS Configuration UI and updated backend to handle credentials correctly during initial handshake.
+- **Support**: Fully supports both Long-term (AKIA) and Temporary (SSO) AWS credentials.
+
 ### ✅ Latest: Visual Workflow Editor & Dynamic Injection (Dec 13, 2025)
 - **New Feature**: Added a full visual editor for building agent flows (`/workflow-editor.html`)
 - **Backend Logic**: Implemented `workflow-{persona}.json` detection and automatic prompt injection
@@ -236,6 +241,7 @@ Open your browser and navigate to:
 9. **Tools**: Enable/disable specific tools in the configuration panel
 10. **AWS Configuration**: Configure AWS credentials and Agent Core Runtime ARN via the GUI
     - Credentials are stored securely in session storage
+    - Supports Access Key, Secret Key, and **Session Token** (for SSO/MFA)
     - Agent Core Runtime ARN can be set per session
     - Settings are applied automatically when connecting
 

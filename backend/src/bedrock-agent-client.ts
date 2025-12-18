@@ -6,24 +6,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// Build credentials config
-const clientConfig: any = {
-    region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
-};
-
-if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
-    clientConfig.credentials = {
-        accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
-    };
-} else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-    clientConfig.credentials = {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    };
-}
-
-const client = new BedrockAgentRuntimeClient(clientConfig);
+// Global client removed in favor of per-request client with dynamic credentials
 
 const agentId = process.env.AGENT_ID!;
 const agentAliasId = process.env.AGENT_ALIAS_ID!;
@@ -37,7 +20,13 @@ export async function callBankAgent(
     userText: string,
     sessionId: string,
     agentIdOverride?: string,
-    agentAliasIdOverride?: string
+    agentAliasIdOverride?: string,
+    credentials?: {
+        accessKeyId?: string;
+        secretAccessKey?: string;
+        sessionToken?: string;
+        region?: string;
+    }
 ): Promise<AgentResponse> {
     const targetAgentId = agentIdOverride || agentId;
     const targetAgentAliasId = agentAliasIdOverride || agentAliasId;
@@ -45,6 +34,32 @@ export async function callBankAgent(
     if (!targetAgentId || !targetAgentAliasId) {
         throw new Error("AGENT_ID or AGENT_ALIAS_ID not set (and no override provided)");
     }
+
+    // Build Client Config Dynamically
+    const clientConfig: any = {
+        region: credentials?.region || process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
+    };
+
+    if (credentials?.accessKeyId && credentials?.secretAccessKey) {
+        clientConfig.credentials = {
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey,
+            ...(credentials.sessionToken ? { sessionToken: credentials.sessionToken } : {})
+        };
+    } else if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
+        clientConfig.credentials = {
+            accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+        };
+    } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+        clientConfig.credentials = {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        };
+    }
+
+    // Initialize client for this request
+    const client = new BedrockAgentRuntimeClient(clientConfig);
 
     const command = new InvokeAgentCommand({
         agentId: targetAgentId,
