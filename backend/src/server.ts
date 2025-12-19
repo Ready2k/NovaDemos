@@ -696,6 +696,7 @@ interface ClientSession {
     silenceTimer: NodeJS.Timeout | null;
     isInterrupted: boolean;
     isIntercepting?: boolean; // New: Flag to suppress audio if we catch a hallucination
+    initialGreetingTimer?: NodeJS.Timeout | null; // Track initial greeting to prevent duplicates
     lastUserTranscript?: string;
     // Deduplication
     lastAgentReply?: string;
@@ -1253,6 +1254,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         agentBuffer: [],
         transcribeClient,
         silenceTimer: null,
+        initialGreetingTimer: null,
         isInterrupted: false,
         isIntercepting: false,
         lastUserTranscript: '',
@@ -1331,6 +1333,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             console.log(`[Server] Received AWS Credentials from client. AccessKey: ${session.awsAccessKeyId?.substr(0, 4)}..., Token: ${tokenStatus}`);
                         }
 
+                        // 1.8 Enforce Global System Prompt (Formatting Rules)
+                        // If the incoming prompt is a specific persona (e.g. Banking), it replaces the default.
+                        // We must ensure the global rules (number formatting etc) are preserved.
+                        const globalPrompt = loadPrompt('core-system_default.txt');
+                        if (parsed.config.systemPrompt && globalPrompt) {
+                            // Check if the formatting rules are present (naive check using unique sentinel)
+                            // If not, prepend the global prompt's rules.
+                            if (!parsed.config.systemPrompt.includes("number formatting rules")) {
+                                console.log('[Server] Injecting Global System Rules into Persona Prompt');
+                                parsed.config.systemPrompt = globalPrompt + "\n\n" + "--- SPECIFIC PERSONA INSTRUCTIONS BELOW ---\n" + parsed.config.systemPrompt;
+                            }
+                        }
+
 
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
@@ -1345,62 +1360,62 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
                                 console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
 
-                                // Test the agent with an initial greeting
-                                setTimeout(async () => {
-                                    try {
-                                        console.log('[Server] Testing Banking Bot with initial greeting...');
-                                        const { completion: agentReply } = await callBankAgent(
-                                            "Hello, I'd like to get started",
-                                            session.sessionId,
-                                            session.agentId,
-                                            session.agentAliasId,
-                                            {
-                                                accessKeyId: session.awsAccessKeyId,
-                                                secretAccessKey: session.awsSecretAccessKey,
-                                                sessionToken: session.awsSessionToken,
-                                                region: session.awsRegion
-                                            }
-                                        );
-                                        logWithTimestamp('[Server]', `Banking Bot replied: "${agentReply}"`);
+                                // Test the agent with an initial greeting - DISABLED to prevent double streams
+                                // setTimeout(async () => {
+                                //     try {
+                                //         console.log('[Server] Testing Banking Bot with initial greeting...');
+                                //         const { completion: agentReply } = await callBankAgent(
+                                //             "Hello, I'd like to get started",
+                                //             session.sessionId,
+                                //             session.agentId,
+                                //             session.agentAliasId,
+                                //             {
+                                //                 accessKeyId: session.awsAccessKeyId,
+                                //                 secretAccessKey: session.awsSecretAccessKey,
+                                //                 sessionToken: session.awsSessionToken,
+                                //                 region: session.awsRegion
+                                //             }
+                                //         );
+                                //         logWithTimestamp('[Server]', `Banking Bot replied: "${agentReply}"`);
 
-                                        // Send to UI
-                                        ws.send(JSON.stringify({
-                                            type: 'transcript',
-                                            role: 'assistant',
-                                            text: agentReply,
-                                            isFinal: true
-                                        }));
+                                //         // Send to UI
+                                //         ws.send(JSON.stringify({
+                                //             type: 'transcript',
+                                //             role: 'assistant',
+                                //             text: agentReply,
+                                //             isFinal: true
+                                //         }));
 
-                                        // Send to TTS - Ensure session is properly started
-                                        if (session.sonicClient) {
-                                            // Check if Nova Sonic session is active
-                                            if (!session.sonicClient.getSessionId()) {
-                                                console.log('[Server] Starting Nova Sonic session for Banking Bot TTS...');
-                                                await session.sonicClient.startSession((event: SonicEvent) =>
-                                                    handleSonicEvent(ws, event, session)
-                                                );
-                                                // Wait a moment for session to be fully established
-                                                await new Promise(resolve => setTimeout(resolve, 500));
-                                            }
+                                //         // Send to TTS - Ensure session is properly started
+                                //         if (session.sonicClient) {
+                                //             // Check if Nova Sonic session is active
+                                //             if (!session.sonicClient.getSessionId()) {
+                                //                 console.log('[Server] Starting Nova Sonic session for Banking Bot TTS...');
+                                //                 await session.sonicClient.startSession((event: SonicEvent) =>
+                                //                     handleSonicEvent(ws, event, session)
+                                //                 );
+                                //                 // Wait a moment for session to be fully established
+                                //                 await new Promise(resolve => setTimeout(resolve, 500));
+                                //             }
 
-                                            // Double-check session is active before sending text
-                                            if (session.sonicClient.getSessionId()) {
-                                                logWithTimestamp('[Server]', 'Sending Banking Bot greeting to TTS...');
-                                                await session.sonicClient.sendText(agentReply);
-                                            } else {
-                                                console.error('[Server] Nova Sonic session failed to start for Banking Bot TTS');
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error('[Server] Banking Bot test failed:', error);
-                                        ws.send(JSON.stringify({
-                                            type: 'transcript',
-                                            role: 'system',
-                                            text: `Banking Bot Error: ${error instanceof Error ? error.message : String(error)}`,
-                                            isFinal: true
-                                        }));
-                                    }
-                                }, 1000);
+                                //             // Double-check session is active before sending text
+                                //             if (session.sonicClient.getSessionId()) {
+                                //                 logWithTimestamp('[Server]', 'Sending Banking Bot greeting to TTS...');
+                                //                 await session.sonicClient.sendText(agentReply);
+                                //             } else {
+                                //                 console.error('[Server] Nova Sonic session failed to start for Banking Bot TTS');
+                                //             }
+                                //         }
+                                //     } catch (error) {
+                                //         console.error('[Server] Banking Bot test failed:', error);
+                                //         ws.send(JSON.stringify({
+                                //             type: 'transcript',
+                                //             role: 'system',
+                                //             text: `Banking Bot Error: ${error instanceof Error ? error.message : String(error)}`,
+                                //             isFinal: true
+                                //         }));
+                                //     }
+                                // }, 1000);
                             }
                         }
 
@@ -1659,8 +1674,15 @@ You do not have access to any tools. Answer questions directly based on your kno
                             // AI SPEAKS FIRST: Send initial greeting trigger (only for raw Nova mode)
                             // In Banking Bot mode, the agent will send its own greeting
                             if (session.brainMode !== 'bedrock_agent') {
+                                // Clear any pending greeting timer to prevent double-speak if config is resent
+                                if (session.initialGreetingTimer) {
+                                    clearTimeout(session.initialGreetingTimer);
+                                    session.initialGreetingTimer = null;
+                                }
+
                                 console.log('[Server] Triggering initial AI greeting...');
-                                setTimeout(async () => {
+                                session.initialGreetingTimer = setTimeout(async () => {
+                                    session.initialGreetingTimer = null; // Timer fired, clear ref
                                     // Check if user has already spoken (Smart Start)
                                     // Check if user has already spoken (Smart Start)
                                     if (sonicClient.getSessionId() && !session.lastUserTranscript) {
@@ -1673,6 +1695,12 @@ You do not have access to any tools. Answer questions directly based on your kno
                                     }
                                 }, 1000); // Increased delay slightly to 1000ms to ensure stability
                             } else {
+                                // CRITICAL: Clear any pending greeting timer if we switched TO bedrock_agent
+                                if (session.initialGreetingTimer) {
+                                    clearTimeout(session.initialGreetingTimer);
+                                    session.initialGreetingTimer = null;
+                                    console.log('[Server] Cleared pending initial greeting (switched to Agent Mode)');
+                                }
                                 console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
                             }
                         }
