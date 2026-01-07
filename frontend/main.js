@@ -190,6 +190,8 @@ class VoiceAssistant {
         this.corePrompt = ''; // Store core guardrails
         this.availableTools = []; // Store full tool definitions
 
+        this.currentHistoryData = null; // Store current session data
+
         // Bind event handlers
         this.connectBtn.addEventListener('click', () => this.connect());
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
@@ -450,16 +452,15 @@ class VoiceAssistant {
         // Chat History Filter Listeners
         const historySearch = document.getElementById('history-search');
         const historyDateFilter = document.getElementById('history-date-filter');
+        // Checkbox Listener
+        const historyFinalCheckbox = document.getElementById('history-final-checkbox');
 
-        if (historySearch) {
-            historySearch.addEventListener('input', () => {
-                this.renderChatHistory();
-            });
-        }
-
-        if (historyDateFilter) {
-            historyDateFilter.addEventListener('change', () => {
-                this.renderChatHistory();
+        if (historyFinalCheckbox) {
+            historyFinalCheckbox.addEventListener('change', () => {
+                this.renderChatHistory(); // Updates listing (to update message counts if logic changes)
+                if (this.currentHistoryData) {
+                    this.renderCurrentSession(); // Updates transcript view if active
+                }
             });
         }
     }
@@ -499,6 +500,39 @@ class VoiceAssistant {
         `;
 
         this.liveMomentsList.prepend(item); // Add to top
+    }
+
+
+
+    getFilteredMessages(transcript, showFinalOnly) {
+        if (!transcript || !Array.isArray(transcript)) return [];
+
+        if (!showFinalOnly) {
+            return transcript;
+        }
+
+        // 1. Filter out speculative assistant messages
+        const nonSpeculative = transcript.filter(msg => msg.type !== 'speculative');
+
+        // 2. Filter out consecutive user messages (keep only the last one)
+        const result = [];
+        for (let i = 0; i < nonSpeculative.length; i++) {
+            const current = nonSpeculative[i];
+            const next = (i + 1 < nonSpeculative.length) ? nonSpeculative[i + 1] : null;
+
+            if (current.role === 'user') {
+                // Check if next message is also user
+                if (next && next.role === 'user') {
+                    continue; // Skip this one, it's an intermediate update
+                }
+            }
+            result.push(current);
+        }
+        return result;
+    }
+
+    getFilteredMessageCount(transcript, showFinalOnly) {
+        return this.getFilteredMessages(transcript, showFinalOnly).length;
     }
 
     async renderChatHistory() {
@@ -569,6 +603,10 @@ class VoiceAssistant {
                 }
             });
 
+            // Get checkbox state
+            const historyFinalCheckbox = document.getElementById('history-final-checkbox');
+            const showFinalOnly = historyFinalCheckbox ? historyFinalCheckbox.checked : false;
+
             // Render Groups
             let html = '';
             let groupIndex = 0;
@@ -576,11 +614,6 @@ class VoiceAssistant {
                 if (items.length > 0) {
                     const groupId = `history-group-${groupIndex++}`;
                     const isToday = groupName === 'Today';
-                    // Default to expanded for Today, collapsed for others if desired, or all expanded.
-                    // Let's default 'Today' to expanded, others to collapsed to reduce clutter if requested,
-                    // but usually "collapsible" implies user choice. User asked to "click on Today it collapses".
-                    // So they probably want them expanded by default? Or maybe just toggle capability.
-                    // "allow the dates to be collapsable" implies capability.
 
                     html += `
                         <div class="history-group-container" style="margin-bottom: 5px;">
@@ -596,23 +629,29 @@ class VoiceAssistant {
                                 align-items: center;
                                 padding: 4px 8px;
                                 background: rgba(255,255,255,0.03);
-                                border-radius: 4px;
+                                borderRadius: 4px;
                             ">
                                 <span>${groupName}</span>
                                 <span class="group-chevron" style="transition: transform 0.2s; font-size: 0.6rem;">▼</span>
                             </h5>
                             <div id="${groupId}" class="history-group-content" style="display: block; overflow: hidden; transition: all 0.3s ease;">
-                                ${items.map(item => `
+                                ${items.map(item => {
+                        const messageCount = showFinalOnly ? (item.finalMessages || 0) : (item.totalMessages || 0);
+                        const sessionId = item.id.includes('_') ? item.id.split('_')[1].substring(0, 6) : 'Unknown';
+                        const dynamicSummary = `Session ${sessionId} - ${messageCount} msgs`;
+
+                        return `
                                     <div class="history-item" data-id="${item.id}" style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin-bottom: 6px; transition: all 0.2s ease;">
                                         <div style="font-size: 0.8rem; font-weight: 600; color: #e2e8f0; display: flex; justify-content: space-between;">
                                             <span>${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                             <span style="font-size: 0.7rem; color: #64748b;">${new Date(item.date).toLocaleDateString()}</span>
                                         </div>
                                         <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                            ${item.summary}
+                                            ${dynamicSummary}
                                         </div>
                                     </div>
-                                `).join('')}
+                                `;
+                    }).join('')}
                             </div>
                         </div>
                     `;
@@ -658,49 +697,68 @@ class VoiceAssistant {
         try {
             const response = await fetch(`/api/history/${filename}`);
             if (!response.ok) throw new Error('Failed to load transcript');
-            const data = await response.json();
+            this.currentHistoryData = await response.json(); // Store for dynamic rendering
 
-            if (!data.transcript || !Array.isArray(data.transcript)) {
+            if (!this.currentHistoryData.transcript || !Array.isArray(this.currentHistoryData.transcript)) {
                 this.showToast('Invalid transcript format', 'error');
                 return;
             }
 
-            // Clear current transcript
-            this.transcriptEl.innerHTML = `
-                <div style="padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
-                    <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">VIEWING HISTORY ARCHIVE</div>
-                    <div style="font-weight: 600;">Session: ${data.sessionId}</div>
-                    <div style="font-size: 0.75rem; color: #64748b;">${new Date(data.startTime).toLocaleString()}</div>
-                    ${data.tools && data.tools.length > 0 ? `
-                        <div style="margin-top: 8px; font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
-                            <strong>Loaded Tools:</strong>
-                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
-                                ${data.tools.map(t => `<span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 2px 6px; border-radius: 4px;">${t}</span>`).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                    <button id="exit-history-btn" style="margin-top: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
-                        Return to Live Session
-                    </button>
-                </div>
-            `;
-
-            // Render messages
-            data.transcript.forEach(msg => {
-                this.appendTranscriptMessage(msg);
-            });
-
-            // Add exit handler
-            document.getElementById('exit-history-btn').addEventListener('click', () => {
-                this.startNewSession(); // Simplest way to return to "live" state for now
-            });
-
+            this.renderCurrentSession();
             this.showToast('Target session loaded', 'success');
 
         } catch (e) {
             console.error('Failed to load session:', e);
             this.showToast('Failed to load session history', 'error');
         }
+    }
+
+    renderCurrentSession() {
+        if (!this.currentHistoryData) return;
+
+        const data = this.currentHistoryData;
+
+        // Get checkbox state for filtering messages
+        const historyFinalCheckbox = document.getElementById('history-final-checkbox');
+        const showFinalOnly = historyFinalCheckbox ? historyFinalCheckbox.checked : false;
+
+        // Filter messages based on toggle state
+        const messagesToShow = this.getFilteredMessages(data.transcript, showFinalOnly);
+
+        // Clear current transcript
+        this.transcriptEl.innerHTML = `
+            <div style="padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 4px;">VIEWING HISTORY ARCHIVE</div>
+                <div style="font-weight: 600;">Session: ${data.sessionId}</div>
+                <div style="font-size: 0.75rem; color: #64748b;">${new Date(data.startTime).toLocaleString()}</div>
+                <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">
+                    Showing ${messagesToShow.length} of ${data.transcript.length} messages 
+                    ${showFinalOnly ? '(Final Only)' : '(All)'}
+                </div>
+                ${data.tools && data.tools.length > 0 ? `
+                    <div style="margin-top: 8px; font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
+                        <strong>Loaded Tools:</strong>
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                            ${data.tools.map(t => `<span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 2px 6px; border-radius: 4px;">${t}</span>`).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                <button id="exit-history-btn" style="margin-top: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                    Return to Live Session
+                </button>
+            </div>
+        `;
+
+        // Render filtered messages
+        messagesToShow.forEach(msg => {
+            this.appendTranscriptMessage(msg);
+        });
+
+        // Add exit handler
+        document.getElementById('exit-history-btn').addEventListener('click', () => {
+            this.currentHistoryData = null; // Clear view state
+            this.startNewSession(); // Simplest way to return to "live" state for now
+        });
     }
 
     appendTranscriptMessage(roleOrMsg, textArg, timestampArg) {

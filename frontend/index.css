@@ -1120,3 +1120,21 @@ canvas {
         font-size: 0.75rem;
     }
 }
+/* Toggle Switch Styles */
+#message-filter-toggle:checked + .toggle-slider {
+  background-color: var(--accent-color);
+}
+
+#message-filter-toggle:checked + .toggle-slider .toggle-knob {
+  transform: translateX(18px);
+  background-color: white;
+}
+
+.toggle-slider:hover {
+  background-color: rgba(255,255,255,0.3);
+}
+
+#message-filter-toggle:checked + .toggle-slider:hover {
+  background-color: var(--accent-color);
+  opacity: 0.8;
+}

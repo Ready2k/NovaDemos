@@ -1100,10 +1100,15 @@ const server = http.createServer(async (req, res) => {
                 .map(f => {
                     const content = fs.readFileSync(path.join(HISTORY_DIR, f), 'utf-8');
                     const data = JSON.parse(content);
+                    const totalMessages = data.transcript?.length || 0;
+                    const finalMessages = data.transcript?.filter((msg: any) => msg.type !== 'speculative').length || 0;
+                    
                     return {
                         id: f,
                         date: data.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
-                        summary: `Session ${data.sessionId?.substring(0, 6) || 'Unknown'} - ${data.transcript?.length || 0} msgs`,
+                        summary: `Session ${data.sessionId?.substring(0, 6) || 'Unknown'} - ${totalMessages} msgs`,
+                        totalMessages,
+                        finalMessages,
                         transcript: data.transcript // Optional: don't send full transcript in list if heavy
                     };
                 })

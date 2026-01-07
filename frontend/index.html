@@ -148,14 +148,33 @@
         <div id="view-chat" class="sidebar-view">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h2 style="margin: 0; margin-bottom: 10px;">Chat History</h2>
-            <div class="chat-filters" style="display: flex; gap: 8px; margin-bottom: 10px;">
-              <input type="text" id="history-search" placeholder="Search..."
-                style="flex: 1; min-width: 0; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px; color: white; font-size: 0.8rem;">
-              <input type="date" id="history-date-filter"
-                style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px; color: white; font-size: 0.8rem; color-scheme: dark;">
-            </div>
-          </div>
+            <div class="chat-filters" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
 
+              <!-- Search -->
+              <div class="input-group" style="margin-bottom: 0;">
+                <input type="text" id="history-search" placeholder="Search history..."
+                  style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px; color: white; font-size: 0.85rem;">
+              </div>
+
+              <!-- Date -->
+              <div class="input-group" style="margin-bottom: 0;">
+                <input type="date" id="history-date-filter"
+                  style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px; color: white; font-size: 0.85rem; color-scheme: dark;">
+              </div>
+
+              <!-- Checkbox -->
+              <div style="display: flex; align-items: center; gap: 8px; padding-left: 2px;">
+                <input type="checkbox" id="history-final-checkbox"
+                  style="accent-color: var(--accent-color); cursor: pointer;">
+                <label for="history-final-checkbox"
+                  style="font-size: 0.85rem; color: #cbd5e1; cursor: pointer; user-select: none;">
+                  Show Final Answer Only
+                </label>
+              </div>
+
+            </div>
+
+          </div>
           <div id="chat-history-list" style="display: flex; flex-direction: column; gap: 10px;">
             <!-- Placeholder for history items -->
             <div
