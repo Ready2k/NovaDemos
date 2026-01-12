@@ -454,6 +454,21 @@ h1 {
     color: var(--accent-color);
 }
 
+.transcript-entry .text {
+    display: inline-block;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+}
+
+.transcript-entry .text strong {
+    font-weight: 700;
+}
+
+.transcript-entry .text em {
+    font-style: italic;
+}
+
 @keyframes pulse {
 
     0%,

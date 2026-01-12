@@ -1102,7 +1102,7 @@ const server = http.createServer(async (req, res) => {
                     const data = JSON.parse(content);
                     const totalMessages = data.transcript?.length || 0;
                     const finalMessages = data.transcript?.filter((msg: any) => msg.type !== 'speculative').length || 0;
-                    
+
                     return {
                         id: f,
                         date: data.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
@@ -2056,8 +2056,13 @@ function cleanTextForSonic(text: string): string {
     if (!text || typeof text !== 'string') return text;
 
     let clean = text;
-    // Remove markdown formatting (headers, bold, italics, code blocks)
-    clean = clean.replace(/[#*`]/g, '');
+    // Remove markdown formatting while preserving spaces
+    // First, handle bold and italic (preserve the text, remove markers)
+    clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');  // **text** -> text
+    clean = clean.replace(/\*([^*]+)\*/g, '$1');      // *text* -> text
+    clean = clean.replace(/_([^_]+)_/g, '$1');        // _text_ -> text
+    // Remove remaining markdown (headers, code blocks)
+    clean = clean.replace(/[#`]/g, '');
     // Collapse newlines
     clean = clean.replace(/\n{3,}/g, '\n\n');
 
@@ -2584,7 +2589,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     }
 
                                     if (typeof cleanData === 'string') {
-                                        cleanData = cleanData.replace(/\*\*/g, '').replace(/\*/g, '');
+                                        // Remove markdown while preserving spaces  
+                                        cleanData = cleanData.replace(/\*\*([^*]+)\*\*/g, '$1');  // **text** -> text
+                                        cleanData = cleanData.replace(/\*([^*]+)\*/g, '$1');      // *text* -> text
                                         const timeMatch = cleanData.match(/time.*?is[:\s]+([^.\n]+)/i);
                                         if (timeMatch) {
                                             cleanData = timeMatch[1].trim();

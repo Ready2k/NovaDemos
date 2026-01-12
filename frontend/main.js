@@ -833,12 +833,13 @@ class VoiceAssistant {
 
         const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
+
         msgDiv.innerHTML = `
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between;">
                 <span>${isUser ? 'You' : (isSpeculative ? '🤖 Assistant (Plan)' : '🤖 Assistant')}</span>
                 <span>${timeStr}</span>
             </div>
-            <div>${text}</div>
+            <div>${isUser ? this.parseMarkdown(text) : this.parseMarkdown(text)}</div>
         `;
 
         this.transcriptEl.appendChild(msgDiv);
@@ -1619,6 +1620,35 @@ The user can see your response on a screen.
     }
 
     /**
+     * Helper function to parse basic markdown formatting
+     */
+    parseMarkdown(text) {
+        if (!text) return '';
+
+        // Escape HTML to prevent XSS
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        };
+
+        let escaped = escapeHtml(text);
+
+        // Parse markdown formatting
+        // Bold: **text**
+        escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+        // Italics: *text* or _text_
+        escaped = escaped.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        escaped = escaped.replace(/_(.+?)_/g, '<em>$1</em>');
+
+        // Preserve line breaks
+        escaped = escaped.replace(/\n/g, '<br>');
+
+        return escaped;
+    }
+
+    /**
      * Display transcript in UI with streaming support
      */
     displayTranscript(role, text, isFinal = true, isStreaming = false) {
@@ -1640,17 +1670,23 @@ The user can see your response on a screen.
         // STREAMING MODE: Update existing streaming message
         if (isStreaming && (isTemporary || isStreamingMsg) && isSameRole) {
             // Update the text content with the accumulated text
-            lastMessage.querySelector('.text').textContent = text;
+            const textEl = lastMessage.querySelector('.text');
+            if (isFinal) {
+                textEl.innerHTML = this.parseMarkdown(text);
+            } else {
+                textEl.textContent = text;
+            }
             lastMessage.classList.add('streaming');
             return;
         }
 
         // FINALIZE: Convert streaming message to final
         if (isFinal && (isTemporary || isStreamingMsg) && isSameRole) {
-            const lastText = lastMessage.querySelector('.text').textContent;
+            const textEl = lastMessage.querySelector('.text');
+            const lastText = textEl.textContent;
             // Only update if the text is different or longer
             if (text.length >= lastText.length) {
-                lastMessage.querySelector('.text').textContent = text;
+                textEl.innerHTML = this.parseMarkdown(text);
                 lastMessage.classList.remove('temporary', 'streaming');
             }
             return;
@@ -1693,7 +1729,12 @@ The user can see your response on a screen.
 
             const textSpan = document.createElement('span');
             textSpan.className = 'text';
-            textSpan.textContent = text;
+            // Use innerHTML with parsed markdown for final messages, textContent for streaming
+            if (isFinal && !isStreaming) {
+                textSpan.innerHTML = this.parseMarkdown(text);
+            } else {
+                textSpan.textContent = text;
+            }
 
             entry.appendChild(header);
             entry.appendChild(textSpan);
