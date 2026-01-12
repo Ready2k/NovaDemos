@@ -1338,17 +1338,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             console.log(`[Server] Received AWS Credentials from client. AccessKey: ${session.awsAccessKeyId?.substr(0, 4)}..., Token: ${tokenStatus}`);
                         }
 
-                        // 1.8 Enforce Global System Prompt (Formatting Rules)
-                        // If the incoming prompt is a specific persona (e.g. Banking), it replaces the default.
-                        // We must ensure the global rules (number formatting etc) are preserved.
-                        const globalPrompt = loadPrompt('core-system_default.txt');
-                        if (parsed.config.systemPrompt && globalPrompt) {
-                            // Check if the formatting rules are present (naive check using unique sentinel)
-                            // If not, prepend the global prompt's rules.
-                            if (!parsed.config.systemPrompt.includes("number formatting rules")) {
-                                console.log('[Server] Injecting Global System Rules into Persona Prompt');
-                                parsed.config.systemPrompt = globalPrompt + "\n\n" + "--- SPECIFIC PERSONA INSTRUCTIONS BELOW ---\n" + parsed.config.systemPrompt;
+                        // 1.8 Inject Core Guardrails (System-Level Quality Rules)
+                        // These guardrails ensure consistent quality across all personas
+                        // Can be disabled via frontend toggle for demonstration purposes
+                        const enableGuardrails = parsed.config.enableGuardrails ?? true; // Default enabled
+
+                        if (enableGuardrails && parsed.config.systemPrompt) {
+                            const guardrails = loadPrompt('core-guardrails.txt');
+                            if (guardrails) {
+                                console.log('[Server] ✅ Injecting Core Guardrails (enabled by config)');
+                                parsed.config.systemPrompt = guardrails + "\n\n" + "--- PERSONA-SPECIFIC INSTRUCTIONS BELOW ---\n\n" + parsed.config.systemPrompt;
                             }
+                        } else if (!enableGuardrails) {
+                            console.log('[Server] ⚠️  Core Guardrails DISABLED (per config) - persona prompt only');
                         }
 
 

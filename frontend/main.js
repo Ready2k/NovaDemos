@@ -1112,6 +1112,7 @@ The user can see your response on a screen.
                 agentAliasId: agentAliasId,
                 selectedTools: selectedTools,
                 linkedWorkflows: linkedWorkflows,
+                enableGuardrails: document.getElementById('enable-guardrails')?.checked ?? true,
                 // Pass AWS Credentials
                 ...awsCredentials
             }
