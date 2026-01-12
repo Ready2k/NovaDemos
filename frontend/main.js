@@ -302,7 +302,7 @@ class VoiceAssistant {
         if (!this.presetSelect) return;
 
         // Capture current prompt text (from text area, which might be restored from localStorage)
-        const currentContent = this.systemPromptInput.value.trim();
+        let currentContent = this.systemPromptInput.value.trim();
 
         // Clear existing options except default
         this.presetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
@@ -320,6 +320,19 @@ class VoiceAssistant {
             // Restore selection if content matches
             if (currentContent && prompt.content.trim() === currentContent) {
                 option.selected = true;
+            }
+            // AUTO-SELECT DEFAULT: Banking Disputes Lite (if nothing else matched)
+            else if (!currentContent && prompt.id === 'persona-BankingDisputesLite.txt') {
+                option.selected = true;
+                this.systemPromptInput.value = prompt.content; // Populate text area
+                currentContent = prompt.content; // Prevent overwriting by subsequent defaults
+
+                // Trigger workflow/description updates if applicable
+                // (Deferred until next event loop to ensure DOM is ready)
+                setTimeout(() => {
+                    if (this.autoSelectWorkflowForPersona) this.autoSelectWorkflowForPersona();
+                    if (this.updateAgentDescription) this.updateAgentDescription();
+                }, 100);
             }
         });
     }

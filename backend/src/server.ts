@@ -1431,7 +1431,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let workflowTools: string[] | undefined;
                         try {
                             const availableWorkflows: any = {}; // Map of Prefix -> FilePath
-                            let personaId = parsed.config.agentId || 'persona-banking_bot'; // Default fallback
+                            let personaId = parsed.config.agentId || 'persona-BankingDisputesLite'; // Default fallback
                             personaId = personaId.replace('.txt', '');
 
                             // MULTI-WORKFLOW CONFIGURATION
@@ -1451,7 +1451,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 });
                             }
                             // Fallback: Hardcoded 'Banking Bot' Logic (Preserve for backward compatibility or default behavior)
-                            else if (personaId === 'persona-banking_bot' || personaId === 'banking') {
+                            else if (personaId === 'persona-banking_bot' || personaId === 'banking' || personaId === 'persona-BankingDisputesLite') {
                                 // Default Banking Bot behavior = Dispute + Mortgage (until user overrides via UI)
                                 // Actually, per new requirement, default should be NO linked workflow? 
                                 // User said: "default view being no linked workflow" - but that refers to UI.
