@@ -2145,6 +2145,7 @@ function formatUserTranscript(text: string): string {
         const parts = match.split(/([\s,.-]+)/);
         let result = '';
         let pendingMultiplier = 1;
+        let pendingTens = 0; // Track if we have a "ty" number awaiting a single digit
 
         for (const part of parts) {
             // Check if it is a separator - if so, IGNORE it (collapse to contiguous digits)
@@ -2164,17 +2165,56 @@ function formatUserTranscript(text: string): string {
 
             const digit = numberMap[lower];
             if (digit) {
-                // Apply multiplier
-                let digits = '';
-                for (let i = 0; i < pendingMultiplier; i++) digits += digit;
+                // Check if this is a "ty" number (20, 30, 40, etc.) that should combine with next digit
+                const isTyNumber = ['20', '30', '40', '50', '60', '70', '80', '90'].includes(digit);
+                const isSingleDigit = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(digit);
 
-                result += digits;
-                pendingMultiplier = 1; // Reset
+                // If we have a pending tens value and current is a single digit, combine them
+                if (pendingTens > 0 && isSingleDigit) {
+                    result += (pendingTens + parseInt(digit)).toString();
+                    pendingTens = 0;
+                    pendingMultiplier = 1;
+                }
+                // If this is a ty number, store it to potentially combine with next digit
+                else if (isTyNumber) {
+                    // First flush any pending tens that weren't combined
+                    if (pendingTens > 0) {
+                        result += pendingTens.toString();
+                    }
+                    pendingTens = parseInt(digit);
+                    // Don't add to result yet, wait to see if next digit combines
+                }
+                // Regular case
+                else {
+                    // First flush any pending tens that weren't combined
+                    if (pendingTens > 0) {
+                        result += pendingTens.toString();
+                        pendingTens = 0;
+                    }
+
+                    // Apply multiplier
+                    let digits = '';
+                    for (let i = 0; i < pendingMultiplier; i++) digits += digit;
+
+                    result += digits;
+                    pendingMultiplier = 1; // Reset
+                }
             } else {
+                // Flush pending tens if any non-number word appears
+                if (pendingTens > 0) {
+                    result += pendingTens.toString();
+                    pendingTens = 0;
+                }
                 // Fallback (unlikely)
                 result += part;
             }
         }
+
+        // Flush any remaining pending tens at end of sequence
+        if (pendingTens > 0) {
+            result += pendingTens.toString();
+        }
+
         return result;
     });
 
