@@ -767,6 +767,41 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Save Prompt API
+    if (req.method === 'POST' && req.url?.startsWith('/api/prompts/')) {
+        const id = req.url.substring(13); // Remove /api/prompts/
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                // Determine filename
+                let filename = id;
+                if (!filename.endsWith('.txt')) filename += '.txt';
+                const savePath = path.join(PROMPTS_DIR, filename);
+
+                // Write body directly (assuming text/plain or handle JSON wrapper)
+                let content = body;
+                // check if body is JSON with a 'content' field
+                try {
+                    const json = JSON.parse(body);
+                    if (json.content) content = json.content;
+                } catch (e) {
+                    // Not JSON, treat as raw text
+                }
+
+                fs.writeFileSync(savePath, content);
+                console.log(`[Server] Saved prompt to ${savePath}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'success' }));
+            } catch (error: any) {
+                console.error('[Server] Failed to save prompt:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
     if (req.url === '/api/tools') {
         if (req.method === 'GET') {
             const tools = toolManager.listTools();
@@ -914,6 +949,25 @@ const server = http.createServer(async (req, res) => {
                 // validate minimal structure
                 if (!workflowData.nodes || !Array.isArray(workflowData.nodes)) {
                     throw new Error('Invalid workflow data: missing nodes array');
+                }
+
+                // Check for embedded persona/systemPrompt to save separately
+                if (workflowData.systemPrompt || workflowData.persona) {
+                    const promptContent = workflowData.systemPrompt || workflowData.persona;
+                    // Try to map ID to a prompt file
+                    // Heuristic: use ID as filename, add .txt if needed.
+                    let promptId = id;
+                    if (promptId === 'banking') promptId = 'persona-BankingDisputes'; // Alias
+
+                    let promptFilename = promptId;
+                    if (!promptFilename.endsWith('.txt')) promptFilename += '.txt';
+
+                    // Verify it matches a known prompt or create new? 
+                    // We will overwrite/create in PROMPTS_DIR
+                    const promptPath = path.join(PROMPTS_DIR, promptFilename);
+
+                    fs.writeFileSync(promptPath, promptContent);
+                    console.log(`[Server] Updated persona prompt from workflow save: ${promptPath}`);
                 }
 
                 // Determine filename
