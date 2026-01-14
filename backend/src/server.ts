@@ -1746,7 +1746,14 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             let mergedEdges: any[] = [];
                             let validedTools: string[] = [];
 
-                            for (const [prefix, filename] of Object.entries(availableWorkflows)) {
+                            const processingQueue = Object.entries(availableWorkflows);
+                            const processedPrefixes = new Set(Object.keys(availableWorkflows));
+
+                            while (processingQueue.length > 0) {
+                                const entry = processingQueue.shift();
+                                if (!entry) break;
+                                const [prefix, filename] = entry;
+
                                 const workflowPath = path.join(__dirname, '../src/', filename as string);
                                 const localPath = path.join(__dirname, filename as string);
                                 let wfData;
@@ -1779,11 +1786,26 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                         validedTools = [...validedTools, ...wfData.tools];
                                     }
 
-                                    // AUTO-DETECT TOOLS FROMNODES (Fix for missing 'tools' array)
+                                    // AUTO-DETECT TOOLS FROM NODES
                                     if (wfData.nodes) {
                                         wfData.nodes.forEach((node: any) => {
                                             if (node.type === 'tool' && node.toolName) {
                                                 validedTools.push(node.toolName);
+                                            }
+                                            // AUTO-DETECT SUB-WORKFLOWS
+                                            if (node.type === 'workflow' && node.workflowId) {
+                                                const depId = node.workflowId;
+                                                const depPrefix = depId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+                                                // Handle potential collision or infinite loop
+                                                if (!processedPrefixes.has(depPrefix)) {
+                                                    const depFilename = `workflow-${depId}.json`;
+                                                    console.log(`[Server] Discovered dependency: ${depPrefix} -> ${depFilename}`);
+                                                    processedPrefixes.add(depPrefix);
+                                                    processingQueue.push([depPrefix, depFilename]);
+
+                                                    // Add to master map so Master Router knows about it if needed
+                                                    availableWorkflows[depPrefix] = depFilename;
+                                                }
                                             }
                                         });
                                     }
@@ -2515,6 +2537,15 @@ function convertWorkflowToText(workflow: any): string {
             text += `   -> ACTION: Call Tool "${node.toolName}"\n`;
         }
 
+        // Sub-Workflow Config
+        if (node.type === 'workflow' && node.workflowId) {
+            // Generate the target start node ID based on standard prefixing logic
+            // We assume the prefix is the UPPERCASE workflowId (e.g., idv -> IDV_start)
+            // This relies on the loader using the same naming convention.
+            const prefix = node.workflowId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+            text += `   -> SUB-PROCESS CALL: Jump to [${prefix}_start]. Execute that workflow until it ends, then RETURN here and proceed to the next step.\n`;
+        }
+
         // Transitions
         const edges = workflow.edges.filter((e: any) => e.from === node.id);
         if (edges.length > 0) {
@@ -2524,7 +2555,7 @@ function convertWorkflowToText(workflow: any): string {
                 text += `   - ${condition} -> GOTO [${edge.to}]\n`;
             });
         } else if (node.type === 'end') {
-            text += "   -> PROCESS ENDS HERE.\n";
+            text += "   -> PROCESS ENDS. (If this was a sub-workflow, navigate back to the calling step).\n";
         }
         text += "\n";
     });

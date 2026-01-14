@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    {
+      "id": "flow_start",
+      "label": "Start",
+      "type": "start"
+    },
+    {
+      "id": "flow_end",
+      "label": "End",
+      "type": "end"
+    },
+    {
+      "id": "Route to SciFi",
+      "label": "Route to Sci-Fi",
+      "type": "workflow",
+      "workflowId": "persona-sci_fi_bot"
+    }
+  ],
+  "edges": [
+    {
+      "from": "flow_start",
+      "to": "Route to SciFi",
+      "label": ""
+    },
+    {
+      "from": "Route to SciFi",
+      "to": "flow_end",
+      "label": ""
+    }
+  ]
+}

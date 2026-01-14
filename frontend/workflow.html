@@ -292,28 +292,46 @@
         function generateMermaid(data) {
             let def = 'flowchart TD\n';
 
+            // Helper to escape reserved keywords & invalid chars
+            const safeId = (id) => {
+                const reserved = ['end', 'subgraph', 'class', 'click', 'style'];
+                if (reserved.includes(id)) return id + '_safe';
+                if (!id.match(/^[a-zA-Z0-9_]+$/)) return id.replace(/[^a-zA-Z0-9_]/g, '_');
+                return id;
+            };
+
             // Define Nodes
             data.nodes.forEach(node => {
+                const sid = safeId(node.id);
                 const labelText = (node.label && node.label.trim() !== '') ? node.label : node.id;
                 const safeLabel = labelText.replace(/"/g, "'").replace(/\n/g, '<br>');
                 let shapeStart = '[', shapeEnd = ']';
-                let styleClass = '';
+                let styleDef = '';
 
-                if (node.type === 'start' || node.type === 'end') {
-                    shapeStart = '(['; shapeEnd = '])';
-                    styleClass = 'fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#fff';
-                } else if (node.type === 'decision') {
-                    shapeStart = '{'; shapeEnd = '}';
-                    styleClass = 'fill:#374151,stroke:#f59e0b,stroke-width:2px,color:#fff';
-                } else if (node.type === 'tool') {
-                    shapeStart = '[['; shapeEnd = ']]';
-                    styleClass = 'fill:#111827,stroke:#8b5cf6,stroke-width:2px,color:#fff';
-                } else {
-                    styleClass = 'fill:#1f2937,stroke:#4b5563,color:#9ca3af';
+                switch (node.type) {
+                    case 'start':
+                    case 'end':
+                        shapeStart = '(['; shapeEnd = '])';
+                        styleDef = `style ${sid} fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#fff`;
+                        break;
+                    case 'decision':
+                        shapeStart = '{'; shapeEnd = '}';
+                        styleDef = `style ${sid} fill:#374151,stroke:#f59e0b,stroke-width:2px,color:#fff`;
+                        break;
+                    case 'tool':
+                        shapeStart = '[['; shapeEnd = ']]';
+                        styleDef = `style ${sid} fill:#111827,stroke:#8b5cf6,stroke-width:2px,color:#fff`;
+                        break;
+                    case 'workflow':
+                        shapeStart = '{{'; shapeEnd = '}}';
+                        styleDef = `style ${sid} fill:#111827,stroke:#f43f5e,stroke-width:2px,color:#fff,stroke-dasharray: 5 5`;
+                        break;
+                    default: // process matches default
+                        styleDef = `style ${sid} fill:#1f2937,stroke:#4b5563,color:#9ca3af`;
                 }
 
-                def += `    ${node.id}${shapeStart}"${safeLabel}"${shapeEnd}\n`;
-                def += `    style ${node.id} ${styleClass} \n`;
+                def += `    ${sid}${shapeStart}"${safeLabel}"${shapeEnd}\n`;
+                def += `    ${styleDef}\n`;
             });
 
             // Define Edges
@@ -323,7 +341,7 @@
                     const safeEdgeLabel = edge.label.replace(/"/g, "'").replace(/\n/g, ' ');
                     label = `|"${safeEdgeLabel}"|`;
                 }
-                def += `    ${edge.from} -->${label} ${edge.to}\n`;
+                def += `    ${safeId(edge.from)} -->${label} ${safeId(edge.to)}\n`;
             });
 
             return def;

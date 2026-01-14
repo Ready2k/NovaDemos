@@ -13,7 +13,6 @@
         window.mermaid = mermaid;
     </script>
     <link rel="stylesheet" href="index.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
     <style>
         /* Override/Extend index.css for Editor specific needs */
         .workspace-sidebar {
@@ -314,6 +313,7 @@
                                 <option value="process">⏹ Process</option>
                                 <option value="decision">◇ Decision</option>
                                 <option value="tool">⚙️ Tool Call</option>
+                                <option value="workflow">🔗 Link Workflow</option>
                                 <option value="start">○ Start</option>
                                 <option value="end">● End</option>
                             </select>
@@ -323,6 +323,14 @@
                             <label style="color: #a78bfa;">Tool Name</label>
                             <input type="text" id="node-tool-name" placeholder="e.g. get_balance" class="font-mono"
                                 style="background: rgba(0,0,0,0.5); color: white; border-color: var(--glass-border);">
+                        </div>
+                        <div id="node-workflow-config" class="input-group hidden"
+                            style="background: rgba(244, 63, 94, 0.1); padding: 10px; border-radius: 8px;">
+                            <label style="color: #fda4af;">Target Workflow</label>
+                            <select id="node-workflow-id"
+                                style="background: rgba(0,0,0,0.5); color: white; border-color: var(--glass-border); width: 100%; padding: 8px; border-radius: 4px;">
+                                <option value="" disabled selected>Select a workflow...</option>
+                            </select>
                         </div>
                         <div id="node-outcome-config" class="input-group hidden"
                             style="background: rgba(16, 185, 129, 0.1); padding: 10px; border-radius: 8px;">
@@ -554,13 +562,13 @@
             // Initialize empty workflow
             currentWorkflow = {
                 nodes: [
-                    { id: "start", label: "Start", type: "start" },
-                    { id: "step1", label: "First Step", type: "process" },
-                    { id: "end", label: "End", type: "end" }
+                    { id: "flow_start", label: "Start", type: "start" },
+                    { id: "step_1", label: "First Step", type: "process" },
+                    { id: "flow_end", label: "End", type: "end" }
                 ],
                 edges: [
-                    { from: "start", to: "step1" },
-                    { from: "step1", to: "end" }
+                    { from: "flow_start", to: "step_1" },
+                    { from: "step_1", to: "flow_end" }
                 ]
             };
 
@@ -647,7 +655,15 @@
                     // Actually, let's reverse look up by exact ID match if possible or clean the string.
 
                     // Let's iterate our nodes and see if the DOM ID contains our Node ID
-                    const matchedNode = currentWorkflow.nodes.find(n => node.id.includes(n.id));
+                    // Update: With safeId, the DOM ID might contain 'end_safe' instead of 'end'.
+                    // We need to reverse map or allow partial match.
+
+                    // Simple heuristic: check if DOM ID contains the raw ID OR the safe ID
+                    const matchedNode = currentWorkflow.nodes.find(n => {
+                        const safe = n.id === 'end' ? 'end_safe' : (n.id.match(/^[a-zA-Z0-9_]+$/) ? n.id : n.id.replace(/[^a-zA-Z0-9_]/g, '_'));
+                        return node.id.includes(n.id) || node.id.includes(safe);
+                    });
+
                     if (matchedNode) {
                         selectNode(matchedNode.id);
                         zoomToElement(node);
@@ -744,21 +760,35 @@
 
         function generateMermaid(data) {
             let def = 'flowchart TD\n';
+
+            // Helper to escape reserved keywords
+            const safeId = (id) => {
+                // Mermaid keywords that crash the parser if used as IDs
+                const reserved = ['end', 'subgraph', 'class', 'click', 'style'];
+                if (reserved.includes(id)) return id + '_safe';
+                if (!id.match(/^[a-zA-Z0-9_]+$/)) return id.replace(/[^a-zA-Z0-9_]/g, '_'); // Basic sanitization
+                return id;
+            };
+
             data.nodes.forEach(n => {
+                const sid = safeId(n.id);
                 const label = (n.label || n.id).replace(/"/g, "'").replace(/\n/g, '<br>');
                 let s = '[', e = ']', style = '';
 
                 if (n.type === 'start' || n.type === 'end') { s = '(['; e = '])'; style = 'fill:#1f2937,stroke:#3b82f6,color:#fff'; }
                 else if (n.type === 'decision') { s = '{'; e = '}'; style = 'fill:#374151,stroke:#f59e0b,color:#fff'; }
                 else if (n.type === 'tool') { s = '[['; e = ']]'; style = 'fill:#111827,stroke:#8b5cf6,color:#fff'; }
+                else if (n.type === 'workflow') { s = '{{'; e = '}}'; style = 'fill:#111827,stroke:#f43f5e,stroke-width:2px,color:#fff,stroke-dasharray: 5 5'; }
                 else { style = 'fill:#1f2937,stroke:#4b5563,color:#9ca3af'; }
 
-                def += `    ${n.id}${s}"${label}"${e}\n`;
-                def += `    style ${n.id} ${style}\n`;
+                def += `    ${sid}${s}"${label}"${e}\n`;
+                def += `    style ${sid} ${style}\n`;
+
+                // Add invisible link to original ID if needed, but interaction uses DOM ID mapping
             });
             data.edges.forEach(edge => {
                 const label = edge.label ? `|"${edge.label.replace(/"/g, "'")}"|` : '';
-                def += `    ${edge.from} -->${label} ${edge.to}\n`;
+                def += `    ${safeId(edge.from)} -->${label} ${safeId(edge.to)}\n`;
             });
             return def;
         }
@@ -831,6 +861,7 @@
 
             if (node.toolName) document.getElementById('node-tool-name').value = node.toolName;
             if (node.outcome) document.getElementById('node-outcome').value = node.outcome;
+            if (node.workflowId) document.getElementById('node-workflow-id').value = node.workflowId;
 
             renderEditorLists();
         }
@@ -875,13 +906,16 @@
                 if (node.type === 'tool') node.toolName = document.getElementById('node-tool-name').value;
                 else delete node.toolName;
 
+                if (node.type === 'workflow') node.workflowId = document.getElementById('node-workflow-id').value;
+                else delete node.workflowId;
+
                 if (node.type === 'end') node.outcome = document.getElementById('node-outcome').value;
                 else delete node.outcome;
 
                 renderEditorLists(); renderGraph();
             };
 
-            ['node-label', 'node-type', 'node-tool-name', 'node-outcome'].forEach(id => {
+            ['node-label', 'node-type', 'node-tool-name', 'node-outcome', 'node-workflow-id'].forEach(id => {
                 document.getElementById(id).addEventListener('input', updateNode);
             });
 
@@ -976,6 +1010,25 @@
         function updateNodeFormFields(type) {
             if (type === 'tool') document.getElementById('node-tool-config').classList.remove('hidden');
             else document.getElementById('node-tool-config').classList.add('hidden');
+
+            if (type === 'workflow') {
+                document.getElementById('node-workflow-config').classList.remove('hidden');
+                // Auto-populate dropdown if empty
+                const select = document.getElementById('node-workflow-id');
+                if (select.options.length <= 1) {
+                    // Populate from already loaded workflows list (reuse main select options)
+                    const mainSelect = document.getElementById('workflow-select');
+                    Array.from(mainSelect.options).forEach(opt => {
+                        if (opt.value === 'loading') return;
+                        const newOpt = document.createElement('option');
+                        newOpt.value = opt.value;
+                        newOpt.textContent = opt.textContent;
+                        select.appendChild(newOpt);
+                    });
+                }
+            } else {
+                document.getElementById('node-workflow-config').classList.add('hidden');
+            }
 
             if (type === 'end') document.getElementById('node-outcome-config').classList.remove('hidden');
             else document.getElementById('node-outcome-config').classList.add('hidden');
