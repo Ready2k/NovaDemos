@@ -198,6 +198,13 @@ class VoiceAssistant {
         this.startBtn.addEventListener('click', () => this.startRecording());
         this.stopBtn.addEventListener('click', () => this.stopRecording());
 
+        // Prompt Management
+        document.getElementById('save-btn')?.addEventListener('click', () => this.savePrompt());
+        document.getElementById('sync-btn')?.addEventListener('click', () => this.syncPrompts());
+
+        // Dirty Checking
+        this.systemPromptInput.addEventListener('input', () => this.checkForChanges());
+
         if (this.brainModeSelect) {
             this.brainModeSelect.addEventListener('change', () => {
                 this.updateAgentDescription();
@@ -299,41 +306,113 @@ class VoiceAssistant {
     }
 
     initializePresets(prompts) {
-        if (!this.presetSelect) return;
+        const selects = [];
+        if (this.presetSelect) selects.push(this.presetSelect);
+        if (this.promptPresetSelect) selects.push(this.promptPresetSelect);
 
-        // Capture current prompt text (from text area, which might be restored from localStorage)
+        if (selects.length === 0) return;
+
+        // Capture current prompt text
         let currentContent = this.systemPromptInput.value.trim();
 
-        // Clear existing options except default
-        this.presetSelect.innerHTML = '<option value="">Custom / Select Preset...</option>';
+        // Retrieve last selected prompt ID from storage
+        const storedPromptId = localStorage.getItem('selectedPromptId');
+
+        // Clear existing options except default for all selects
+        selects.forEach(select => {
+            select.innerHTML = '<option value="">Custom / Select Preset...</option>';
+        });
 
         prompts.forEach(prompt => {
             // Filter out core platform prompts from the Persona list - only show persona- prefixed prompts
-            if (prompt.id.startsWith('core-')) return;
+            // Filter out core platform prompts from the Persona list - only show persona- prefixed prompts
+            // if (prompt.id.startsWith('core-')) return; // ALLOW CORE PROMPTS per user request
 
-            const option = document.createElement('option');
-            option.value = prompt.content;
-            option.textContent = prompt.name;
-            option.setAttribute('data-id', prompt.id); // Store ID for retrieval
-            this.presetSelect.appendChild(option);
+            // Add option to each select
+            selects.forEach(select => {
+                const option = document.createElement('option');
+                option.value = prompt.content;
 
-            // Restore selection if content matches
-            if (currentContent && prompt.content.trim() === currentContent) {
-                option.selected = true;
-            }
-            // AUTO-SELECT DEFAULT: Banking Disputes Lite (if nothing else matched)
-            else if (!currentContent && prompt.id === 'persona-BankingDisputesLite.txt') {
-                option.selected = true;
-                this.systemPromptInput.value = prompt.content; // Populate text area
-                currentContent = prompt.content; // Prevent overwriting by subsequent defaults
+                // Add source indicator
+                const sourceIcon = prompt.source === 'langfuse' ? '☁️' : '💾';
+                option.textContent = `${sourceIcon} ${prompt.name}`;
 
-                // Trigger workflow/description updates if applicable
-                // (Deferred until next event loop to ensure DOM is ready)
-                setTimeout(() => {
-                    if (this.autoSelectWorkflowForPersona) this.autoSelectWorkflowForPersona();
-                    if (this.updateAgentDescription) this.updateAgentDescription();
-                }, 100);
-            }
+                option.setAttribute('data-id', prompt.id); // Store ID for retrieval
+                select.appendChild(option);
+
+                // Strategy 1: exact content match (Strongest signal)
+                if (currentContent && prompt.content.trim() === currentContent) {
+                    option.selected = true;
+                    localStorage.setItem('selectedPromptId', prompt.id);
+                }
+                // Strategy 2: Stored ID match
+                else if (storedPromptId && prompt.id === storedPromptId && !option.selected) {
+                    option.selected = true;
+                }
+                // AUTO-SELECT DEFAULT: Banking Disputes Lite (if nothing else matched)
+                else if (!currentContent && !storedPromptId && prompt.id === 'persona-BankingDisputesLite.txt') {
+                    option.selected = true;
+                    if (this.systemPromptInput.value !== prompt.content) {
+                        this.systemPromptInput.value = prompt.content;
+                        currentContent = prompt.content;
+                        localStorage.setItem('selectedPromptId', prompt.id);
+
+                        setTimeout(() => {
+                            if (this.autoSelectWorkflowForPersona) this.autoSelectWorkflowForPersona();
+                            if (this.updateAgentDescription) this.updateAgentDescription();
+                        }, 100);
+                    }
+                }
+            });
+        });
+
+        // Add change listeners to update storage
+        selects.forEach(select => {
+            select.addEventListener('change', () => {
+                const opt = select.options[select.selectedIndex];
+                const id = opt.getAttribute('data-id');
+                let selectedPrompt = null;
+
+                if (id) {
+                    localStorage.setItem('selectedPromptId', id);
+                    selectedPrompt = prompts.find(p => p.id === id); // Lookup full object
+
+                    // Sync values across dropdowns
+                    const otherSelects = selects.filter(s => s !== select);
+                    otherSelects.forEach(s => { s.value = select.value; });
+                } else {
+                    localStorage.removeItem('selectedPromptId');
+                }
+
+                // Update text area
+                if (opt.value) {
+                    this.systemPromptInput.value = opt.value;
+                    // Reset dirty state for the newly loaded preset
+                    this.originalPromptContent = opt.value.trim();
+                    this.checkForChanges();
+
+                    // COUPLING LOGIC: Apply Linked Workflows from Config (if matched)
+                    if (selectedPrompt && selectedPrompt.config && selectedPrompt.config.linkedWorkflows) {
+                        console.log('[Frontend] Applying linked workflows from config:', selectedPrompt.config.linkedWorkflows);
+
+                        // Uncheck all first
+                        const checkboxes = document.querySelectorAll('#workflow-coupler-list input[type="checkbox"]');
+                        checkboxes.forEach(cb => cb.checked = false);
+
+                        // Check matches
+                        selectedPrompt.config.linkedWorkflows.forEach(wfId => {
+                            const target = document.querySelector(`#workflow-coupler-list input[value="${wfId}"]`);
+                            if (target) target.checked = true;
+                        });
+
+                        // Update storage to persist current selection
+                        localStorage.setItem('nova_linked_workflows', JSON.stringify(selectedPrompt.config.linkedWorkflows));
+                    } else {
+                        // Fallback to auto-select logic (legacy mapping)
+                        this.autoSelectWorkflowForPersona();
+                    }
+                }
+            });
         });
     }
 
@@ -1114,6 +1193,14 @@ The user can see your response on a screen.
             console.error('Failed to load AWS credentials for session config', e);
         }
 
+        const guardrailsCheckbox = document.getElementById('enable-guardrails');
+        const enableGuardrails = guardrailsCheckbox ? guardrailsCheckbox.checked : true;
+        console.log('[Frontend] Guardrails Checkbox State:', {
+            elementFound: !!guardrailsCheckbox,
+            checked: guardrailsCheckbox?.checked,
+            finalValue: enableGuardrails
+        });
+
         return {
             type: 'sessionConfig',
             config: {
@@ -1125,7 +1212,7 @@ The user can see your response on a screen.
                 agentAliasId: agentAliasId,
                 selectedTools: selectedTools,
                 linkedWorkflows: linkedWorkflows,
-                enableGuardrails: document.getElementById('enable-guardrails')?.checked ?? true,
+                enableGuardrails: enableGuardrails,
                 // Pass AWS Credentials
                 ...awsCredentials
             }
@@ -1151,6 +1238,12 @@ The user can see your response on a screen.
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 wsUrl = `${protocol}//${window.location.host}/sonic`;
             }
+
+            // Generate a fresh Session ID for this connection
+            // This ensures state (like guardrails) is reset and traced correctly
+            const clientSessionId = crypto.randomUUID();
+            wsUrl += `?sessionId=${clientSessionId}`;
+            this.log(`Starting new session: ${clientSessionId}`);
 
             this.ws = new WebSocket(wsUrl);
             this.ws.binaryType = 'arraybuffer';
@@ -1193,7 +1286,7 @@ The user can see your response on a screen.
                 // Send session configuration immediately
                 try {
                     const config = this.getSessionConfig();
-                    this.ws.send(JSON.stringify(config));
+                    this.ws.send(new TextEncoder().encode(JSON.stringify(config)));
                     this.log('Sent persona configuration');
                     console.log('[Frontend] Sent config:', config);
 
@@ -2345,6 +2438,12 @@ The user can see your response on a screen.
 
                 this.updatePromptDropdown(visiblePrompts);
                 this.initializePresets(visiblePrompts);
+
+                // Store original content for dirty checking if a preset is selected
+                if (this.systemPromptInput.value) {
+                    this.originalPromptContent = this.systemPromptInput.value.trim();
+                    this.checkForChanges(); // Should disable save button
+                }
             } else {
                 console.error('[Frontend] Failed to fetch prompts:', response.status);
             }
@@ -2837,6 +2936,90 @@ The user can see your response on a screen.
         } catch (e) {
             console.error('Failed to delete KB:', e);
             this.showToast('Error deleting KB', 'error');
+        }
+    }
+    async savePrompt() {
+        const promptContent = this.systemPromptInput.value.trim();
+        if (!promptContent) {
+            this.showToast('Prompt content cannot be empty', 'error');
+            return;
+        }
+
+        // Identify which prompt file we are editing
+        let promptId = null;
+        if (this.presetSelect && this.presetSelect.selectedIndex > 0) {
+            promptId = this.presetSelect.options[this.presetSelect.selectedIndex].getAttribute('data-id');
+        } else if (this.promptPresetSelect && this.promptPresetSelect.selectedIndex > 0) {
+            promptId = this.promptPresetSelect.value;
+        }
+
+        // If no existing file selected, ask for name or default
+        if (!promptId) {
+            const name = prompt('Enter a filename for this prompt (e.g. customized-persona.txt):');
+            if (!name) return;
+            promptId = name.endsWith('.txt') ? name : name + '.txt';
+        }
+
+        try {
+            this.log(`Saving and syncing prompt: ${promptId}...`);
+            this.showToast('Saving and syncing...', 'info');
+
+            // Capture Linked Workflows
+            const linkedWorkflows = Array.from(document.querySelectorAll('#workflow-coupler-list input[type="checkbox"]:checked')).map(cb => cb.value);
+
+            // Send to backend with sync=true to push to Langfuse
+            const response = await fetch(`/api/prompts/${promptId}?sync=true`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    content: promptContent,
+                    config: { linkedWorkflows }
+                })
+            });
+
+            if (response.ok) {
+                this.showToast('Prompt saved and synced to Langfuse!', 'success');
+                this.log('Prompt saved successfully', 'success');
+
+                // Update original content to match new saved content
+                this.originalPromptContent = promptContent;
+                this.checkForChanges(); // Will disable save button
+
+                // Refresh list
+                this.loadPrompts();
+            } else {
+                throw new Error('Failed to save prompt');
+            }
+        } catch (err) {
+            console.error('[Frontend] Save failed:', err);
+            this.showToast('Failed to save/sync prompt', 'error');
+            this.log('Save failed', 'error');
+        }
+    }
+
+    async syncPrompts() {
+        this.showToast('Syncing from Langfuse...', 'info');
+        this.log('Syncing prompts from Langfuse...');
+        await this.loadPrompts();
+        this.showToast('Prompts synced!', 'success');
+        this.log('Prompts synced successfully', 'success');
+    }
+
+    checkForChanges() {
+        const saveBtn = document.getElementById('save-btn');
+        if (!saveBtn) return;
+
+        const currentContent = this.systemPromptInput.value.trim();
+        const hasChanges = currentContent !== (this.originalPromptContent || '');
+
+        if (hasChanges) {
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+            saveBtn.style.cursor = 'pointer';
+        } else {
+            saveBtn.disabled = true;
+            saveBtn.style.opacity = '0.5';
+            saveBtn.style.cursor = 'not-allowed';
         }
     }
 }

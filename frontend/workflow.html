@@ -76,9 +76,9 @@
                 <h2>View Settings</h2>
 
                 <div class="input-group">
-                    <label for="persona-select">Experience Context</label>
-                    <select id="persona-select">
-                        <option value="persona-BankingDisputes">Banking Disputes Analysis</option>
+                    <label for="workflow-select">Select Workflow</label>
+                    <select id="workflow-select"
+                        style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); color: white; border: var(--glass-border); border-radius: 6px;">
                         <option value="loading" disabled>Loading...</option>
                     </select>
                 </div>
@@ -147,11 +147,11 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            loadPersonas();
+            loadWorkflows();
 
             // Event Listeners
-            document.getElementById('refresh-btn').addEventListener('click', loadWorkflow);
-            document.getElementById('persona-select').addEventListener('change', loadWorkflow);
+            document.getElementById('refresh-btn').addEventListener('click', () => loadWorkflow(document.getElementById('workflow-select').value));
+            document.getElementById('workflow-select').addEventListener('change', (e) => loadWorkflow(e.target.value));
 
             // Zoom & Pan State
             let currentZoom = 1;
@@ -163,7 +163,7 @@
 
             const zoomStep = 0.2;
             const minZoom = 0.4;
-            const maxZoom = 2.0;
+            const maxZoom = 5.0;
 
             const graphContainer = document.getElementById('graph-container');
             const graph = document.getElementById('mermaid-graph');
@@ -226,50 +226,52 @@
             container.addEventListener('wheel', e => {
                 e.preventDefault();
                 currentZoom += e.deltaY * -0.001;
-                currentZoom = Math.min(Math.max(0.2, currentZoom), 3);
+                currentZoom = Math.min(Math.max(0.2, currentZoom), 5);
                 updateTransform();
             });
         });
 
-        async function loadPersonas() {
+        async function loadWorkflows() {
             try {
-                const response = await fetch('/api/personas');
-                if (!response.ok) throw new Error('Failed to load personas');
+                const response = await fetch('/api/workflows');
+                if (!response.ok) throw new Error('Failed to load workflows');
 
-                const personas = await response.json();
-                const select = document.getElementById('persona-select');
+                const workflows = await response.json();
+                const select = document.getElementById('workflow-select');
                 select.innerHTML = '';
 
-                personas.forEach(p => {
+                workflows.forEach(w => {
                     const option = document.createElement('option');
-                    option.value = p.id;
-                    option.textContent = p.name;
-                    // Default to banking disputes if available
-                    if (p.id === 'persona-BankingDisputes') option.selected = true;
+                    option.value = w.id;
+                    option.textContent = w.name + (w.id === 'banking' ? ' (Default)' : '');
+                    if (w.id === 'banking') option.selected = true;
                     select.appendChild(option);
                 });
 
-                // Load initial workflow
-                loadWorkflow();
-
+                if (workflows.length > 0) {
+                    loadWorkflow(select.value);
+                }
             } catch (e) {
-                console.error('Failed to list personas:', e);
-                const select = document.getElementById('persona-select');
-                select.innerHTML = '<option disabled>Error loading personas</option>';
+                console.error('Failed to list workflows:', e);
+                const select = document.getElementById('workflow-select');
+                select.innerHTML = '<option disabled>Error loading workflows</option>';
             }
         }
 
-        async function loadWorkflow() {
+        async function loadWorkflow(id) {
+            if (!id && document.getElementById('workflow-select')) {
+                id = document.getElementById('workflow-select').value;
+            }
+
             const container = document.getElementById('mermaid-graph');
             const loading = document.getElementById('loading');
-            const personaId = document.getElementById('persona-select').value;
 
             container.innerHTML = '';
             loading.style.display = 'block';
 
             try {
-                const response = await fetch(`/api/workflow/${personaId}`);
-                if (!response.ok) throw new Error(`Failed to load workflow config for ${personaId}`);
+                const response = await fetch(`/api/workflow/${id}`);
+                if (!response.ok) throw new Error(`Failed to load workflow config for ${id}`);
 
                 const data = await response.json();
                 const mermaidDef = generateMermaid(data);

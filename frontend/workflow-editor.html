@@ -377,13 +377,15 @@
                         ← Back
                     </a>
                     <div>
-                        <h1 style="font-size: 1.5rem; margin-bottom: .2rem;">Workflow Creator</h1>
+                        <h1 style="font-size: 1.5rem; margin-bottom: .2rem;">Workflow Editor</h1>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="color: #64748b; font-size: 0.9rem;">Editing Persona:</span>
-                            <select id="persona-select"
-                                style="padding: 4px 12px; font-size: 0.85rem; width: auto; background: rgba(0,0,0,0.3);">
+                            <span style="color: #64748b; font-size: 0.9rem;">Editing Workflow:</span>
+                            <select id="workflow-select"
+                                style="padding: 4px 12px; font-size: 0.85rem; width: auto; background: rgba(0,0,0,0.3); color: #e2e8f0; border: 1px solid #475569; border-radius: 4px;">
                                 <option value="loading">Loading...</option>
                             </select>
+                            <button id="new-workflow-btn" class="secondary-btn"
+                                style="padding: 4px 8px; font-size: 0.8rem; height: 30px;">+ New</button>
                         </div>
                     </div>
                 </div>
@@ -442,13 +444,15 @@
         let panX = 0, panY = 0;
 
         document.addEventListener('DOMContentLoaded', () => {
-            loadPersonas();
+            loadWorkflowsList();
             setupPanZoom();
             setupEditors();
             setupTabs();
 
             document.getElementById('save-btn').addEventListener('click', saveWorkflow);
-            document.getElementById('reset-btn').addEventListener('click', () => loadWorkflow(document.getElementById('persona-select').value));
+            document.getElementById('reset-btn').addEventListener('click', () => loadWorkflow(document.getElementById('workflow-select').value));
+            document.getElementById('new-workflow-btn').addEventListener('click', createNewWorkflow);
+
 
             // Guide Modal Logic
             const modal = document.getElementById('guide-modal');
@@ -496,24 +500,74 @@
         }
 
         // --- Loading Data ---
-        async function loadPersonas() {
+        async function loadWorkflowsList() {
             try {
-                const res = await fetch('/api/personas');
-                const personas = await res.json();
-                const select = document.getElementById('persona-select');
+                // Fetch independent workflows
+                const res = await fetch('/api/workflows');
+                const workflows = await res.json();
+                const select = document.getElementById('workflow-select');
                 select.innerHTML = '';
-                personas.forEach(p => {
+
+                workflows.forEach(w => {
                     const opt = document.createElement('option');
-                    opt.value = p.id;
-                    opt.textContent = p.name;
-                    if (p.id === 'persona-banking_bot') opt.selected = true;
+                    opt.value = w.id;
+                    opt.textContent = w.name + (w.id === 'banking' ? ' (Default)' : '');
+                    if (w.id === 'banking') opt.selected = true; // Default intent
                     select.appendChild(opt);
                 });
+
                 select.addEventListener('change', (e) => loadWorkflow(e.target.value));
-                if (personas.length > 0) loadWorkflow(select.value);
+                if (workflows.length > 0) {
+                    loadWorkflow(select.value);
+                } else {
+                    // No workflows found?
+                }
             } catch (e) {
                 console.error(e);
+                showError("Failed to load workflows list");
             }
+        }
+
+        async function createNewWorkflow() {
+            const name = prompt("Enter a name for the new workflow (e.g. 'SupportBot'):");
+            if (!name) return;
+
+            // Sanitize ID
+            const id = name.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            // Check availability (client-side check against dropdown)
+            const select = document.getElementById('workflow-select');
+            const exists = Array.from(select.options).some(o => o.value === id);
+
+            if (exists) {
+                alert("A workflow with this ID or name already exists.");
+                return;
+            }
+
+            // Create new option
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = name;
+            opt.selected = true;
+            select.appendChild(opt);
+
+            // Initialize empty workflow
+            currentWorkflow = {
+                nodes: [
+                    { id: "start", label: "Start", type: "start" },
+                    { id: "step1", label: "First Step", type: "process" },
+                    { id: "end", label: "End", type: "end" }
+                ],
+                edges: [
+                    { from: "start", to: "step1" },
+                    { from: "step1", to: "end" }
+                ]
+            };
+
+            // Render
+            renderEditorLists();
+            renderGraph();
+            showSuccess("New workflow created. Click Save to persist.");
         }
 
         async function loadWorkflow(id) {
@@ -535,7 +589,7 @@
             btn.disabled = true;
 
             try {
-                const id = document.getElementById('persona-select').value;
+                const id = document.getElementById('workflow-select').value;
                 const res = await fetch(`/api/workflow/${id}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

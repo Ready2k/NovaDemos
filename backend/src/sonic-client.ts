@@ -1188,6 +1188,10 @@ export class SonicClient {
                                 this.currentGeneration = null;
                                 this.currentGenerationStartTime = null;
                                 this.firstTokenTime = null;
+
+                                // FIX: Clear transcript after ending generation to prevent duplication/concatenation
+                                // in subsequent generations (e.g. if tool use triggers multiple gens per turn)
+                                this.currentTurnTranscript = '';
                             }
                         }
 

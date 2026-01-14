@@ -596,10 +596,38 @@ async function loadPrompt(filename: string): Promise<string> {
 
 async function listPrompts(): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local' }[]> {
     try {
-        const files = fs.readdirSync(PROMPTS_DIR);
+        // 1. Get Prompts from Langfuse
+        const cloudPrompts = new Set<string>();
+        try {
+            // @ts-ignore - accessing internal API if needed or public API
+            const response = await langfuse.api.promptsList({ limit: 100 });
+            // response.data is array of prompts with .name
+            if (response && response.data) {
+                response.data.forEach((p: any) => cloudPrompts.add(p.name));
+            }
+        } catch (e) {
+            console.warn('[Server] Failed to list prompts from Langfuse API, source "cloud" unavailable:', e);
+        }
+
+        // 2. Get Local Files
+        const localFiles = new Set<string>();
+        try {
+            if (!fs.existsSync(PROMPTS_DIR)) {
+                fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+            }
+            const files = fs.readdirSync(PROMPTS_DIR);
+            files.filter(f => f.endsWith('.txt')).forEach(f => localFiles.add(f.replace('.txt', '')));
+        } catch (e) {
+            console.error('[Server] Failed to read local prompts directory:', e);
+        }
+
+        // 3. Union of all prompt names
+        const allNames = new Set([...cloudPrompts, ...localFiles]);
+
         const promptsWithSource = await Promise.all(
-            files.filter(f => f.endsWith('.txt')).map(async f => {
-                let displayName = f.replace('.txt', '');
+            Array.from(allNames).map(async promptName => {
+                let displayName = promptName;
+                const filename = promptName + '.txt';
 
                 // Handle prefixed naming convention
                 if (displayName.startsWith('core-')) {
@@ -613,26 +641,81 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
                 // Capitalize words
                 displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
 
-                // Check if prompt exists in Langfuse
-                const promptName = f.replace('.txt', '');
                 let source: 'langfuse' | 'local' = 'local';
+                let content = '';
+                let config = {};
+
+                // Try to fetch from Langfuse first
                 try {
-                    await langfuse.getPrompt(promptName);
+                    const prompt = await langfuse.getPrompt(promptName);
+                    config = (prompt as any).config || {};
+
+                    // Extract content based on prompt type to avoid undesired formatting tags
+                    if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
+                        // For chat prompts, extract the text from the system message (or first message)
+                        const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
+                        content = systemMsg?.content || '';
+                    } else {
+                        // For text prompts, compile() is safe
+                        try {
+                            content = prompt.compile();
+                        } catch (compileErr) {
+                            console.warn(`[Server] Failed to compile Langfuse prompt ${promptName}, using local fallback:`, compileErr);
+                            throw compileErr; // Fallback to local
+                        }
+                    }
+
                     source = 'langfuse';
+
+                    // RESTORE/SYNC TO LOCAL DISK
+                    // If we successfully got content from Langfuse, ensure it exists/matches locally
+                    try {
+                        const localPath = path.join(PROMPTS_DIR, filename);
+                        let needsWrite = true;
+                        if (fs.existsSync(localPath)) {
+                            const localContent = fs.readFileSync(localPath, 'utf-8').trim();
+                            if (localContent === content.trim()) {
+                                needsWrite = false;
+                            }
+                        }
+
+                        if (needsWrite && content) {
+                            fs.writeFileSync(localPath, content.trim());
+                            console.log(`[Server] Synced (Restored) prompt to disk: ${filename}`);
+                        }
+                    } catch (writeErr) {
+                        console.error(`[Server] Failed to sync prompt ${filename} to disk:`, writeErr);
+                    }
+
                 } catch (err) {
-                    // Prompt not in Langfuse, use local
+                    // Prompt not in Langfuse or failed, use local
                     source = 'local';
+                    try {
+                        const localPath = path.join(PROMPTS_DIR, filename);
+                        if (fs.existsSync(localPath)) {
+                            content = fs.readFileSync(localPath, 'utf-8').trim();
+                        } else {
+                            // Listed in cloud loop but failed fetch? Or listed in union but phantom?
+                            content = '';
+                        }
+                    } catch (readErr) {
+                        content = '';
+                    }
                 }
 
+                if (!content) return null; // Skip invalid/empty prompts
+
                 return {
-                    id: f,
+                    id: filename,
                     name: displayName,
-                    content: fs.readFileSync(path.join(PROMPTS_DIR, f), 'utf-8').trim(),
-                    source
+                    content: content,
+                    source,
+                    config: config
                 };
             })
         );
-        return promptsWithSource;
+
+        return promptsWithSource.filter(p => p !== null) as { id: string, name: string, content: string, source: 'langfuse' | 'local' }[];
     } catch (err) {
         console.error('[Server] Failed to list prompts:', err);
         return [];
@@ -805,30 +888,64 @@ const server = http.createServer(async (req, res) => {
 
     // Save Prompt API
     if (req.method === 'POST' && req.url?.startsWith('/api/prompts/')) {
-        const id = req.url.substring(13); // Remove /api/prompts/
+        // Parse URL and Query Params
+        const [pathPart, queryPart] = req.url.split('?');
+        const id = pathPart.substring(13); // Remove /api/prompts/
+
+        const urlParams = new URLSearchParams(queryPart);
+        const syncParam = urlParams.get('sync');
+        const shouldSync = syncParam === 'true';
+
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
-        req.on('end', () => {
+        req.on('end', async () => {
             try {
                 // Determine filename
                 let filename = id;
                 if (!filename.endsWith('.txt')) filename += '.txt';
+
+                const { content, config } = JSON.parse(body);
+
+                // Save to local file system
                 const savePath = path.join(PROMPTS_DIR, filename);
 
-                // Write body directly (assuming text/plain or handle JSON wrapper)
-                let content = body;
-                // check if body is JSON with a 'content' field
-                try {
-                    const json = JSON.parse(body);
-                    if (json.content) content = json.content;
-                } catch (e) {
-                    // Not JSON, treat as raw text
+                // Ensure directory exists
+                if (!fs.existsSync(PROMPTS_DIR)) {
+                    fs.mkdirSync(PROMPTS_DIR, { recursive: true });
                 }
 
                 fs.writeFileSync(savePath, content);
                 console.log(`[Server] Saved prompt to ${savePath}`);
+
+                let syncMessage = '';
+                if (shouldSync) {
+                    try {
+                        const promptName = filename.replace('.txt', '');
+                        console.log(`[Server] Syncing prompt ${promptName} to Langfuse...`);
+
+                        await langfuse.createPrompt({
+                            name: promptName,
+                            type: "text",
+                            prompt: content,
+                            config: config || {},
+                            labels: ["production"],
+                            tags: ["voice-assistant-sync"]
+                        });
+
+                        console.log(`[Server] Successfully synced prompt ${promptName} to Langfuse`);
+                        syncMessage = ' and synced to Langfuse';
+                    } catch (syncErr: any) {
+                        console.error('[Server] Failed to sync to Langfuse:', syncErr);
+                        syncMessage = '. Warning: Failed to sync to Langfuse (' + syncErr.message + ')';
+                    }
+                }
+
+                if (!shouldSync) {
+                    syncMessage = ` (Sync skipped: param='${syncParam}')`;
+                }
+
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 'success' }));
+                res.end(JSON.stringify({ status: 'success', message: 'Prompt saved' + syncMessage }));
             } catch (error: any) {
                 console.error('[Server] Failed to save prompt:', error);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -952,21 +1069,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url?.startsWith('/api/workflow/')) {
         const id = req.url.substring(14); // Remove /api/workflow/
 
-        let filename = 'workflow-banking.json'; // Default
+        // Generic Load: simply look for workflow-{id}.json
+        let filename = `workflow-${id}.json`;
 
-        // Map persona ID to workflow JSON file
-        // Ideally these should be auto-generated or strictly mapped.
-        // For this demo, we map 'persona-BankingDisputes' to the existing file.
-        // Others will get a default 'Not Available' placeholder or generic flow.
-
+        // Compatibility fallbacks for existing hardcoded aliases
         if (id === 'persona-BankingDisputes' || id === 'banking') {
             filename = 'workflow-banking.json';
-        } else {
-            // For now, return a generic placeholder graph for unsupported personas
-            // or we could check if a specific json exists.
-            const potentialFile = `workflow-${id}.json`;
-            // Check existence in src/ or current dir logic below...
-            filename = potentialFile;
         }
 
         // Path resolution (dist/ vs src/)
@@ -980,16 +1088,17 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(workflow);
         } else {
-            // Return a default "Empty/Placeholder" graph if specific file not found
+            // Return a default "Empty/New" graph if specific file not found
+            // This allows the frontend to initialize a new workflow
             const placeholder = {
                 nodes: [
                     { id: "start", label: "Start", type: "start" },
-                    { id: "note", label: "No workflow defined\nfor this persona yet.", type: "process" },
-                    { id: "end_placeholder", label: "End", type: "end" }
+                    { id: "note", label: "New Workflow", type: "process" },
+                    { id: "end", label: "End", type: "end" }
                 ],
                 edges: [
                     { from: "start", to: "note" },
-                    { from: "note", to: "end_placeholder" }
+                    { from: "note", to: "end" }
                 ]
             };
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1038,6 +1147,7 @@ const server = http.createServer(async (req, res) => {
 
                 // Determine filename
                 let filename = `workflow-${id}.json`;
+                // Keep backward compatibility for 'banking' alias
                 if (id === 'persona-BankingDisputes' || id === 'banking') {
                     filename = 'workflow-banking.json';
                 }
@@ -1361,8 +1471,17 @@ console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);
 
 wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     const clientIp = req.socket.remoteAddress;
-    // Generate a longer session ID (UUID is 36 chars)
-    const sessionId = crypto.randomUUID();
+    // Parse query parameters to check for client-provided sessionId
+    // This allows the client to force a new session ID (or resume one if implemented later)
+    let sessionId: string = crypto.randomUUID();
+    const requestUrl = req.url ? new URL(req.url, `http://${req.headers.host || 'localhost'}`) : null;
+    if (requestUrl && requestUrl.searchParams.has('sessionId')) {
+        const clientSessionId = requestUrl.searchParams.get('sessionId')?.trim();
+        if (clientSessionId && clientSessionId.length > 0) {
+            sessionId = clientSessionId;
+            console.log(`[Server] Using Client-Provided Session ID: ${sessionId}`);
+        }
+    }
 
     logWithTimestamp('[Server]', `New client connected: ${clientIp} (${sessionId})`);
 
@@ -1482,13 +1601,31 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         const enableGuardrails = parsed.config.enableGuardrails ?? true; // Default enabled
 
                         if (enableGuardrails && parsed.config.systemPrompt) {
-                            const guardrails = await loadPrompt('core-guardrails.txt');
+                            const guardrails = await loadPrompt('core-guardrails-v2.txt');
                             if (guardrails) {
                                 console.log('[Server] ✅ Injecting Core Guardrails (enabled by config)');
-                                parsed.config.systemPrompt = guardrails + "\n\n" + "--- PERSONA-SPECIFIC INSTRUCTIONS BELOW ---\n\n" + parsed.config.systemPrompt;
+                                parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" + "--- CORE GUARDRAILS (SYSTEM OVERRIDES) ---\n" + guardrails;
                             }
                         } else if (!enableGuardrails) {
-                            console.log('[Server] ⚠️  Core Guardrails DISABLED (per config) - persona prompt only');
+                            console.log('[Server] ⚠️  Core Guardrails DISABLED (per config)');
+
+                            // DYNAMICALLY REMOVE THE "CRITICAL LANGUAGE LOCK" FROM THE PERSONA
+                            // This allows the agent to speak other languages when guardrails are off
+                            if (parsed.config.systemPrompt) {
+                                const languageLockRegex = /### CRITICAL LANGUAGE LOCK ###[\s\S]*?(- \*\*Glitch Prevention\*\*:[^\n]*)/;
+                                if (languageLockRegex.test(parsed.config.systemPrompt)) {
+                                    parsed.config.systemPrompt = parsed.config.systemPrompt.replace(languageLockRegex, '');
+                                    console.log('[Server] 🔓 REMOVED CRITICAL LANGUAGE LOCK from Persona (Multilingual Mode Active)');
+                                } else {
+                                    // Fallback simple search if regex misses (e.g. user edited content slightly)
+                                    const simpleLock = "### CRITICAL LANGUAGE LOCK ###";
+                                    if (parsed.config.systemPrompt.includes(simpleLock)) {
+                                        // Attempt to remove the block manually or just the header
+                                        // For now, let's just log warning that we couldn't strip cleanly
+                                        console.warn('[Server] Could not cleanly strip Language Lock regex, but header detected.');
+                                    }
+                                }
+                            }
                         }
 
 

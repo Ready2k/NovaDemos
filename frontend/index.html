@@ -119,11 +119,14 @@
             </select>
           </div>
 
-          <div class="input-group" style="display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
-            <input type="checkbox" id="enable-guardrails" checked style="width: auto; accent-color: var(--accent-color); cursor: pointer;">
+          <div class="input-group"
+            style="display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <input type="checkbox" id="enable-guardrails" checked
+              style="width: auto; accent-color: var(--accent-color); cursor: pointer;">
             <label for="enable-guardrails" style="margin: 0; cursor: pointer; flex: 1;">
               <div style="font-weight: 600; margin-bottom: 2px;">Enable Core Guardrails</div>
-              <div style="font-size: 0.75rem; color: #94a3b8; line-height: 1.3;">System-level quality and safety rules that apply to all personas</div>
+              <div style="font-size: 0.75rem; color: #94a3b8; line-height: 1.3;">System-level quality and safety rules
+                that apply to all personas</div>
             </label>
           </div>
         </div>
@@ -149,6 +152,17 @@
             <label for="speechPrompt">Speech Prompt (Optional)</label>
             <textarea id="speechPrompt" rows="4"
               placeholder="e.g. If the input audio/speech contains hindi..."></textarea>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button id="save-btn" class="primary-btn" disabled
+              style="flex: 1; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); opacity: 0.5; cursor: not-allowed;">
+              💾 Save
+            </button>
+            <button id="sync-btn" class="secondary-btn"
+              style="flex: 1; justify-content: center; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4);">
+              🔄 Sync
+            </button>
           </div>
         </div>
 
