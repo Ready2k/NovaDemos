@@ -12,6 +12,7 @@ import {
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Langfuse, LangfuseTraceClient, LangfuseGenerationClient } from 'langfuse';
 
 /**
  * Configuration for Nova 2 Sonic
@@ -59,8 +60,23 @@ export class SonicClient {
     private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
     private currentTurnTranscript: string = ''; // Accumulate text for the current turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
+    private lastUserTranscript: string = ''; // Track last user input for context
+
+    // Langfuse Tracing
+    private langfuse: Langfuse;
+    private trace: LangfuseTraceClient | null = null;
+    private currentGeneration: LangfuseGenerationClient | null = null;
     private inputStream: AsyncGenerator<any> | null = null;
     private outputStream: AsyncIterable<any> | null = null;
+
+    // Usage & Cost Tracking
+    private sessionTotalTokens: number = 0;
+    private sessionInputTokens: number = 0;
+    private sessionOutputTokens: number = 0;
+
+    // Latency Tracking
+    private currentGenerationStartTime: Date | null = null;
+    private firstTokenTime: Date | null = null;
     private isProcessing: boolean = false;
     private inputQueue: Buffer[] = [];
     private textQueue: string[] = [];
@@ -104,6 +120,13 @@ export class SonicClient {
 
         this.id = Math.random().toString(36).substring(7);
         this.client = new BedrockRuntimeClient(clientConfig);
+
+        // Initialize Langfuse
+        this.langfuse = new Langfuse({
+            publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+            secretKey: process.env.LANGFUSE_SECRET_KEY,
+            baseUrl: process.env.LANGFUSE_BASEURL || 'https://cloud.langfuse.com'
+        });
 
         console.log(`[SonicClient:${this.id}] Initialized with model: ${this.config.modelId} in region: ${this.config.region}`);
     }
@@ -163,6 +186,24 @@ export class SonicClient {
         this.isProcessing = true;
 
         console.log(`[SonicClient] Starting session: ${this.sessionId}`);
+
+        // Start Langfuse Trace
+        try {
+            this.trace = this.langfuse.trace({
+                id: this.sessionId,
+                name: "voice-session",
+                sessionId: this.sessionId,
+                metadata: {
+                    modelId: this.config.modelId,
+                    region: this.config.region,
+                    environment: process.env.NODE_ENV || 'development'
+                },
+                tags: ["voice", "nova-sonic"]
+            });
+            console.log(`[SonicClient] ✓ Langfuse trace created for session: ${this.sessionId}`);
+        } catch (e) {
+            console.error("[SonicClient] Failed to start Langfuse trace:", e);
+        }
 
         try {
             // Create async generator for input stream
@@ -844,6 +885,21 @@ export class SonicClient {
         this.isTurnComplete = true; // Mark previous turn as complete
 
         this.textQueue.push(text);
+        this.lastUserTranscript = text;
+
+        // Langfuse: Track User Input
+        if (this.trace) {
+            const userGen = this.trace.generation({
+                name: "user-input",
+                model: this.config.modelId,
+                startTime: new Date()
+            });
+            // End immediately with input/output
+            userGen.end({
+                input: text,
+                output: text  // Echo the input as output for user-input tracking
+            });
+        }
     }
 
     /**
@@ -880,8 +936,29 @@ export class SonicClient {
 
                     if (eventData.toolUse) {
                         const tu = eventData.toolUse;
-                        console.log(`[SonicClient] 🔧 NATIVE TOOL USE DETECTED: ${tu.name} (ID: ${tu.toolUseId})`);
+                        console.log(`[SonicClient] 🔧 NATIVE TOOL USE DETECTED: ${tu.toolName} (ID: ${tu.toolUseId})`);
                         console.log(`[SonicClient] Tool Use Data:`, JSON.stringify(tu, null, 2));
+
+                        // Langfuse: Track tool invocation as a span
+                        if (this.trace) {
+                            const toolSpan = this.trace.span({
+                                name: `tool-${tu.toolName}`,
+                                input: tu.content,
+                                startTime: new Date(),
+                                metadata: {
+                                    toolUseId: tu.toolUseId,
+                                    toolName: tu.toolName
+                                }
+                            });
+
+                            // End immediately since we don't track tool results separately yet
+                            toolSpan.end({
+                                output: "Tool invoked"
+                            });
+
+                            console.log(`[SonicClient] Langfuse: Tracked tool invocation for ${tu.toolName}`);
+                        }
+
                         this.eventCallback?.({
                             type: 'toolUse',
                             data: tu
@@ -916,6 +993,12 @@ export class SonicClient {
                         // FIXED: Reset on role change OR if previous turn ended OR if we detect a new TEXT block from Assistant that implies a new response structure
                         const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
 
+                        // Langfuse: Capture user transcript BEFORE reset when switching from USER to ASSISTANT
+                        if (this.trace && roleChanged && currentRoleNormalized === 'user' && normalizedRole === 'assistant' && this.currentTurnTranscript.length > 0) {
+                            this.lastUserTranscript = this.currentTurnTranscript;
+                            console.log(`[SonicClient] ✓ Captured user transcript BEFORE reset: "${this.lastUserTranscript.substring(0, 50)}..."`);
+                        }
+
                         // Debugging the "I apologize" ghost text
                         if (this.currentTurnTranscript.length > 0 && shouldReset) {
                             console.log(`[SonicClient] Resetting transcript. Prev content (chars: ${this.currentTurnTranscript.length}): "${this.currentTurnTranscript.substring(0, 50)}..."`);
@@ -943,7 +1026,41 @@ export class SonicClient {
                                 contentId: contentId
                             }
                         });
+
+                        // Langfuse: Capture user transcript when switching from USER to ASSISTANT
+                        // This must happen BEFORE we create the assistant generation
+                        console.log(`[SonicClient] Langfuse check: trace=${!!this.trace}, roleChanged=${roleChanged}, currentRole=${currentRoleNormalized}, newRole=${normalizedRole}, transcriptLen=${this.currentTurnTranscript.length}`);
+
+                        if (this.trace && roleChanged && currentRoleNormalized === 'user' && normalizedRole === 'assistant') {
+                            // User just finished speaking, capture their transcript
+                            if (this.currentTurnTranscript.length > 0) {
+                                this.lastUserTranscript = this.currentTurnTranscript;
+                                console.log(`[SonicClient] ✓ Captured user transcript on role change: "${this.lastUserTranscript.substring(0, 50)}..."`);
+                            } else {
+                                console.log(`[SonicClient] ✗ Role changed to ASSISTANT but currentTurnTranscript is empty!`);
+                            }
+                        }
+
+                        // Langfuse: Start Assistant Generation on Content Start
+                        // Only start if we don't already have an active generation for this turn
+                        if (this.trace && this.currentRole === 'ASSISTANT' && !this.currentGeneration) {
+                            console.log(`[SonicClient] Creating assistant generation with input: "${(this.lastUserTranscript || "[No user input captured]").substring(0, 50)}..."`);
+
+                            // Track start time for latency metrics
+                            this.currentGenerationStartTime = new Date();
+                            this.firstTokenTime = null; // Reset for this generation
+
+                            this.currentGeneration = this.trace.generation({
+                                name: "assistant-response",
+                                model: this.config.modelId,
+                                input: this.lastUserTranscript || "[No user input captured]",
+                                startTime: this.currentGenerationStartTime
+                            });
+                        }
                     }
+
+
+
 
                     if (eventData.audioOutput) {
                         const content = eventData.audioOutput.content;
@@ -960,6 +1077,13 @@ export class SonicClient {
                         const stage = this.contentStages.get(contentId) || 'UNKNOWN';
 
                         if (content && content.length > 0) {
+                            // Track first token time for latency metrics
+                            if (!this.firstTokenTime && this.currentGenerationStartTime && this.currentRole === 'ASSISTANT') {
+                                this.firstTokenTime = new Date();
+                                const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
+                                console.log(`[SonicClient] Time to first token: ${ttft}ms`);
+                            }
+
                             // Accumulate text for the current turn
                             this.currentTurnTranscript += content;
 
@@ -1005,6 +1129,66 @@ export class SonicClient {
                                     stage: stage
                                 },
                             });
+
+                            // Capture USER transcript for Langfuse
+                            if (this.currentRole === 'USER') {
+                                this.lastUserTranscript = this.currentTurnTranscript;
+                                console.log(`[SonicClient] Captured user voice transcript for Langfuse: "${this.lastUserTranscript.substring(0, 50)}..."`);
+
+                                // Langfuse: Track User Voice Input as a generation
+                                if (this.trace) {
+                                    const userGen = this.trace.generation({
+                                        name: "user-input",
+                                        model: this.config.modelId,
+                                        startTime: new Date()
+                                    });
+                                    userGen.end({
+                                        input: this.lastUserTranscript,
+                                        output: this.lastUserTranscript  // Echo for tracking
+                                    });
+                                }
+                            }
+
+                            // Langfuse: End Assistant Generation
+                            if (this.currentGeneration && this.currentRole === 'ASSISTANT') {
+                                const endTime = new Date();
+                                const metadata: any = {};
+
+                                // Add latency metrics
+                                if (this.currentGenerationStartTime) {
+                                    const totalDuration = endTime.getTime() - this.currentGenerationStartTime.getTime();
+                                    metadata.latency_ms = totalDuration;
+
+                                    if (this.firstTokenTime) {
+                                        const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
+                                        metadata.time_to_first_token_ms = ttft;
+
+                                        // Score: Latency (lower is better, normalize to some scale or just track raw)
+                                        // For now, we'll just track it as a score for visibility
+                                        this.trace?.score({
+                                            name: "latency-score",
+                                            value: ttft < 1000 ? 1 : (ttft < 3000 ? 0.7 : 0.3),
+                                            comment: `TTFT: ${ttft}ms`
+                                        });
+                                    }
+                                }
+
+                                // Score: Success/Accuracy (1 for successful turn completion)
+                                this.trace?.score({
+                                    name: "turn-success",
+                                    value: 1,
+                                    comment: "Turn completed successfully"
+                                });
+
+                                this.currentGeneration.end({
+                                    output: this.currentTurnTranscript,
+                                    completionStartTime: endTime,
+                                    metadata: metadata
+                                });
+                                this.currentGeneration = null;
+                                this.currentGenerationStartTime = null;
+                                this.firstTokenTime = null;
+                            }
                         }
 
                         // If interrupted, mark the current transcript as cancelled
@@ -1032,6 +1216,27 @@ export class SonicClient {
 
                         if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             console.log('[SonicClient] Interruption detected!');
+
+                            // Langfuse: Track interruption as an event
+                            if (this.trace) {
+                                this.trace.event({
+                                    name: "interruption",
+                                    metadata: {
+                                        role: this.currentRole,
+                                        transcriptLength: this.currentTurnTranscript.length,
+                                        partialTranscript: this.currentTurnTranscript.substring(0, 100)
+                                    },
+                                    level: "WARNING"
+                                });
+
+                                // Score: Turn Impact
+                                this.trace.score({
+                                    name: "turn-success",
+                                    value: 0,
+                                    comment: "Interrupted by user"
+                                });
+                            }
+
                             this.eventCallback?.({
                                 type: 'interruption',
                                 data: {}
@@ -1057,13 +1262,34 @@ export class SonicClient {
 
                     if (eventData.usageEvent) {
                         console.log('[SonicClient] Usage:', JSON.stringify(eventData.usageEvent));
+
+                        // Track token usage for Langfuse
+                        if (eventData.usageEvent.details?.total) {
+                            const total = eventData.usageEvent.details.total;
+                            const inputTokens = (total.input?.speechTokens || 0) + (total.input?.textTokens || 0);
+                            const outputTokens = (total.output?.speechTokens || 0) + (total.output?.textTokens || 0);
+
+                            this.sessionInputTokens = inputTokens;
+                            this.sessionOutputTokens = outputTokens;
+                            this.sessionTotalTokens = inputTokens + outputTokens;
+
+                            // Update current generation with usage if it exists
+                            if (this.currentGeneration) {
+                                this.currentGeneration.update({
+                                    usage: {
+                                        input: inputTokens,
+                                        output: outputTokens,
+                                        total: this.sessionTotalTokens
+                                    }
+                                });
+                            }
+                        }
+
                         this.eventCallback?.({
                             type: 'usageEvent',
                             data: eventData.usageEvent
                         });
                     }
-                } else {
-                    console.log('[SonicClient] Received unknown event structure:', event);
                 }
             }
         } catch (error) {

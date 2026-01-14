@@ -2381,16 +2381,24 @@ The user can see your response on a screen.
         const personaPrompts = prompts.filter(p => p.id.startsWith('persona-'));
         const otherPrompts = prompts.filter(p => !p.id.startsWith('core-') && !p.id.startsWith('persona-'));
 
+        // Helper function to create option with source indicator
+        const createOption = (prompt) => {
+            const option = document.createElement('option');
+            option.value = prompt.id;
+            // Add source indicator: 🟢 for Langfuse, ⚪ for local
+            const indicator = prompt.source === 'langfuse' ? '🟢' : '⚪';
+            option.textContent = `${indicator} ${prompt.name.replace('Core ', '').replace('Persona ', '')}`;
+            option.setAttribute('data-content', prompt.content);
+            option.setAttribute('data-source', prompt.source);
+            return option;
+        };
+
         // Add Core prompts group
         if (corePrompts.length > 0) {
             const coreGroup = document.createElement('optgroup');
             coreGroup.label = 'Core Platform';
             corePrompts.forEach(prompt => {
-                const option = document.createElement('option');
-                option.value = prompt.id;
-                option.textContent = prompt.name.replace('Core ', '');
-                option.setAttribute('data-content', prompt.content);
-                coreGroup.appendChild(option);
+                coreGroup.appendChild(createOption(prompt));
             });
             this.promptPresetSelect.appendChild(coreGroup);
         }
@@ -2400,11 +2408,7 @@ The user can see your response on a screen.
             const personaGroup = document.createElement('optgroup');
             personaGroup.label = 'Personas';
             personaPrompts.forEach(prompt => {
-                const option = document.createElement('option');
-                option.value = prompt.id;
-                option.textContent = prompt.name.replace('Persona ', '');
-                option.setAttribute('data-content', prompt.content);
-                personaGroup.appendChild(option);
+                personaGroup.appendChild(createOption(prompt));
             });
             this.promptPresetSelect.appendChild(personaGroup);
         }
@@ -2414,11 +2418,7 @@ The user can see your response on a screen.
             const otherGroup = document.createElement('optgroup');
             otherGroup.label = 'Other';
             otherPrompts.forEach(prompt => {
-                const option = document.createElement('option');
-                option.value = prompt.id;
-                option.textContent = prompt.name;
-                option.setAttribute('data-content', prompt.content);
-                otherGroup.appendChild(option);
+                otherGroup.appendChild(createOption(prompt));
             });
             this.promptPresetSelect.appendChild(otherGroup);
         }

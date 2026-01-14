@@ -13,7 +13,9 @@ import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
+
 import * as dotenv from 'dotenv';
+import { Langfuse } from 'langfuse';
 
 // Load environment variables
 dotenv.config();
@@ -75,7 +77,18 @@ try {
     console.log('[Server] AgentCore Gateway Client initialized successfully');
 } catch (error) {
     console.warn('[Server] AgentCore Gateway Client initialization failed:', error);
+
 }
+
+// Initialize Langfuse Client
+const langfuse = new Langfuse({
+    publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+    secretKey: process.env.LANGFUSE_SECRET_KEY,
+    baseUrl: process.env.LANGFUSE_BASEURL || 'https://cloud.langfuse.com'
+});
+langfuse.on("error", (error) => {
+    console.error("Langfuse error:", error);
+});
 
 
 
@@ -564,39 +577,62 @@ function saveTranscript(session: ClientSession) {
 // Initialize Tool Manager
 const toolManager = new ToolManager(TOOLS_DIR);
 
-function loadPrompt(filename: string): string {
+async function loadPrompt(filename: string): Promise<string> {
+    const promptName = filename.replace('.txt', '');
     try {
-        return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+        console.log(`[Server] Fetching prompt from Langfuse: ${promptName}`);
+        const prompt = await langfuse.getPrompt(promptName);
+        return prompt.compile();
     } catch (err) {
-        console.error(`[Server] Failed to load prompt ${filename}:`, err);
-        return '';
+        console.warn(`[Server] Failed to fetch prompt ${promptName} from Langfuse, falling back to local file:`, err);
+        try {
+            return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+        } catch (localErr) {
+            console.error(`[Server] Failed to load prompt ${filename} locally:`, localErr);
+            return '';
+        }
     }
 }
 
-function listPrompts(): { id: string, name: string, content: string }[] {
+async function listPrompts(): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local' }[]> {
     try {
         const files = fs.readdirSync(PROMPTS_DIR);
-        return files.filter(f => f.endsWith('.txt')).map(f => {
-            let displayName = f.replace('.txt', '');
+        const promptsWithSource = await Promise.all(
+            files.filter(f => f.endsWith('.txt')).map(async f => {
+                let displayName = f.replace('.txt', '');
 
-            // Handle prefixed naming convention
-            if (displayName.startsWith('core-')) {
-                displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
-            } else if (displayName.startsWith('persona-')) {
-                displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
-            } else {
-                displayName = displayName.replace(/_/g, ' ');
-            }
+                // Handle prefixed naming convention
+                if (displayName.startsWith('core-')) {
+                    displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
+                } else if (displayName.startsWith('persona-')) {
+                    displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
+                } else {
+                    displayName = displayName.replace(/_/g, ' ');
+                }
 
-            // Capitalize words
-            displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+                // Capitalize words
+                displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
 
-            return {
-                id: f,
-                name: displayName,
-                content: loadPrompt(f)
-            };
-        });
+                // Check if prompt exists in Langfuse
+                const promptName = f.replace('.txt', '');
+                let source: 'langfuse' | 'local' = 'local';
+                try {
+                    await langfuse.getPrompt(promptName);
+                    source = 'langfuse';
+                } catch (err) {
+                    // Prompt not in Langfuse, use local
+                    source = 'local';
+                }
+
+                return {
+                    id: f,
+                    name: displayName,
+                    content: fs.readFileSync(path.join(PROMPTS_DIR, f), 'utf-8').trim(),
+                    source
+                };
+            })
+        );
+        return promptsWithSource;
     } catch (err) {
         console.error('[Server] Failed to list prompts:', err);
         return [];
@@ -761,7 +797,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/api/prompts') {
-        const prompts = listPrompts();
+        const prompts = await listPrompts();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(prompts));
         return;
@@ -795,6 +831,36 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ status: 'success' }));
             } catch (error: any) {
                 console.error('[Server] Failed to save prompt:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
+
+    // Feedback API
+    if (req.method === 'POST' && req.url === '/api/feedback') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { traceId, score, comment, name } = JSON.parse(body);
+
+                if (traceId && (score !== undefined || comment)) {
+                    await langfuse.score({
+                        traceId,
+                        name: name || "user-feedback",
+                        value: score,
+                        comment: comment
+                    });
+                    console.log(`[Server] Recorded feedback for trace ${traceId}: score=${score}, comment=${comment}`);
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'success' }));
+            } catch (error: any) {
+                console.error('[Server] Failed to record feedback:', error);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: error.message }));
             }
@@ -870,7 +936,7 @@ const server = http.createServer(async (req, res) => {
 
     // List available personas (files in prompts directory)
     if (req.url === '/api/personas') {
-        const prompts = listPrompts();
+        const prompts = await listPrompts();
         // Filter mainly for persona-* but allow generic files if they map to flows
         // For visualizer, we want simple IDs
         const personas = prompts.map(p => ({
@@ -1357,8 +1423,26 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     const parsed = JSON.parse(message);
 
                     if (parsed.type === 'getPrompts') {
-                        const prompts = listPrompts();
+                        const prompts = await listPrompts();
                         ws.send(JSON.stringify({ type: 'promptsList', prompts }));
+                        return;
+                    }
+
+                    if (parsed.type === 'savePrompt') {
+                        try {
+                            const { id, content } = parsed;
+                            if (id && content) {
+                                let filename = id;
+                                if (!filename.endsWith('.txt')) filename += '.txt';
+                                const savePath = path.join(PROMPTS_DIR, filename);
+                                fs.writeFileSync(savePath, content);
+                                console.log(`[Server] Saved prompt to ${savePath}`);
+                                ws.send(JSON.stringify({ type: 'operationSuccess', message: 'Prompt saved' }));
+                            }
+                        } catch (e: any) {
+                            console.error('[Server] Failed to save prompt:', e);
+                            ws.send(JSON.stringify({ type: 'error', message: e.message }));
+                        }
                         return;
                     }
 
@@ -1398,7 +1482,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         const enableGuardrails = parsed.config.enableGuardrails ?? true; // Default enabled
 
                         if (enableGuardrails && parsed.config.systemPrompt) {
-                            const guardrails = loadPrompt('core-guardrails.txt');
+                            const guardrails = await loadPrompt('core-guardrails.txt');
                             if (guardrails) {
                                 console.log('[Server] ✅ Injecting Core Guardrails (enabled by config)');
                                 parsed.config.systemPrompt = guardrails + "\n\n" + "--- PERSONA-SPECIFIC INSTRUCTIONS BELOW ---\n\n" + parsed.config.systemPrompt;
@@ -1417,7 +1501,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                             // If Agent Mode, override system prompt to be a TTS engine
                             if (session.brainMode === 'bedrock_agent') {
-                                parsed.config.systemPrompt = loadPrompt('core-agent_echo.txt');
+                                parsed.config.systemPrompt = await loadPrompt('core-agent_echo.txt');
                                 console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
                                 console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
 
