@@ -145,7 +145,134 @@
         </div>
     </div>
 
+    <!-- Live Status Overlay -->
+    <div id="live-status-panel"
+        style="position: absolute; top: 100px; right: 30px; width: 280px; background: rgba(15, 23, 42, 0.9); border: 1px solid var(--glass-border); border-radius: 12px; padding: 15px; display: none; backdrop-filter: blur(10px); box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0; font-size: 1rem; color: white;">⚡ Live Status</h3>
+            <span id="live-indicator"
+                style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 10px #22c55e;"></span>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+            <div
+                style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
+                Current Step</div>
+            <div id="current-step-name" style="font-size: 1.1rem; color: #cbd5e1; font-weight: 600;">Waiting...</div>
+        </div>
+
+        <div id="requirements-section" style="display: none;">
+            <div
+                style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                Requirements</div>
+            <div id="requirements-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Items: Account Number ✅, etc -->
+            </div>
+        </div>
+    </div>
+    </div>
+
     <script>
+        // --- LIVE WEBSOCKET LOGIC ---
+        let socket;
+        function connectLive() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            socket = new WebSocket(`${protocol}//${window.location.host}`);
+
+            socket.onopen = () => {
+                console.log('[Visualizer] Connected to Live Session');
+                document.getElementById('live-status-panel').style.display = 'block';
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === 'workflow_update') {
+                        handleWorkflowUpdate(msg);
+                    }
+                } catch (e) {
+                    console.error('[Visualizer] Message error', e);
+                }
+            };
+
+            socket.onclose = () => {
+                console.log('[Visualizer] Disconnected');
+                setTimeout(connectLive, 3000);
+            };
+        }
+
+        function handleWorkflowUpdate(data) {
+            const { activeNodeId, context } = data;
+
+            // 1. Highlight Node in Graph
+            highlightNode(activeNodeId);
+
+            // 2. Update Status Panel
+            document.getElementById('current-step-name').innerText = activeNodeId;
+            document.getElementById('current-step-name').style.color = '#3b82f6'; // Active Blue
+
+            // 3. Check Requirements
+            updateRequirements(activeNodeId, context.extractedKeys || []);
+        }
+
+        // Global map of workflow nodes (populated during render)
+        let workflowNodesData = {};
+
+        function updateRequirements(nodeId, foundKeys) {
+            const node = workflowNodesData[nodeId];
+            const list = document.getElementById('requirements-list');
+            const section = document.getElementById('requirements-section');
+            list.innerHTML = '';
+
+            if (node && node.required_context && node.required_context.length > 0) {
+                section.style.display = 'block';
+
+                node.required_context.forEach(key => {
+                    const isFound = foundKeys.includes(key);
+                    const icon = isFound ? '✅' : '❌'; // Green Check or Red X
+                    const color = isFound ? '#22c55e' : '#ef4444';
+                    const label = key.replace(/([A-Z])/g, ' $1').trim(); // camelCase to Normal
+
+                    const item = document.createElement('div');
+                    item.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; border-left: 3px solid ${color};`;
+                    item.innerHTML = `
+                        <span style="font-size: 0.9rem; color: #e2e8f0;">${label}</span>
+                        <span style="font-size: 1.2rem;">${icon}</span>
+                    `;
+                    list.appendChild(item);
+                });
+            } else {
+                section.style.display = 'none';
+            }
+        }
+
+        function highlightNode(nodeId) {
+            // Reset previous styles (naive reset)
+            // Ideally we iterate known nodes. For now we rely on Mermaid's class manipulation capabilities if accessible
+            // Actually, manipulating SVG DOM directly is easier.
+            const allNodes = document.querySelectorAll('.node');
+            allNodes.forEach(n => {
+                n.querySelector('rect, circle, polygon, path').style.stroke = '';
+                n.querySelector('rect, circle, polygon, path').style.strokeWidth = '';
+            });
+
+            // Find active node by ID text (Mermaid puts ID in data-id or similar)
+            // Mermaid 10+ uses complex IDs. We often look for the text label or matching ID attr.
+            // We'll try to find the element with [id^="flowchart-${nodeId}-"]
+            const activeEl = document.querySelector(`[id*="${nodeId}"]`); // Loose match
+            if (activeEl) {
+                const shape = activeEl.querySelector('rect, circle, polygon, path');
+                if (shape) {
+                    shape.style.stroke = '#22c55e'; // Green highlight
+                    shape.style.strokeWidth = '4px';
+                    shape.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        connectLive();
+        // -----------------------------
         document.addEventListener('DOMContentLoaded', () => {
             loadWorkflows();
 
@@ -274,6 +401,15 @@
                 if (!response.ok) throw new Error(`Failed to load workflow config for ${id}`);
 
                 const data = await response.json();
+
+                // Populate Global Node Map for Live Tracking
+                workflowNodesData = {};
+                if (data.nodes) {
+                    data.nodes.forEach(n => {
+                        workflowNodesData[n.id] = n;
+                    });
+                }
+
                 const mermaidDef = generateMermaid(data);
 
                 loading.style.display = 'none';

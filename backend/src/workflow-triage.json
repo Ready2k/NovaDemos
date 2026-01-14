@@ -1,0 +1,82 @@
+{
+    "title": "Account & Vulnerability Triage",
+    "nodes": [
+        {
+            "id": "triage_start",
+            "label": "Start Triage Protocol",
+            "type": "start"
+        },
+        {
+            "id": "check_vuln",
+            "label": "Check Memory: Is 'marker_Vunl' > 5 (High Risk)?",
+            "type": "decision"
+        },
+        {
+            "id": "handoff_vuln",
+            "label": "Say: 'I can see you have a priority account marker. I am connecting you to a Specialist Agent who can best assist you right now.'",
+            "type": "process"
+        },
+        {
+            "id": "end_vuln",
+            "label": "Handoff to Specialist",
+            "type": "end",
+            "outcome": "VULNERABILITY_HANDOFF"
+        },
+        {
+            "id": "check_status",
+            "label": "Check Memory: Is 'account_status' == 'FROZEN'?",
+            "type": "decision"
+        },
+        {
+            "id": "handoff_frozen",
+            "label": "Say: 'I see your account is currently frozen. I need to transfer you to the Security Team to resolve this.'",
+            "type": "process"
+        },
+        {
+            "id": "end_frozen",
+            "label": "Handoff to Security Team",
+            "type": "end",
+            "outcome": "ACCOUNT_FROZEN_HANDOFF"
+        },
+        {
+            "id": "triage_success",
+            "label": "Account Safe (Open & Low Risk). Proceed to Step 3.",
+            "type": "end",
+            "outcome": "PROCEED"
+        }
+    ],
+    "edges": [
+        {
+            "from": "triage_start",
+            "to": "check_vuln"
+        },
+        {
+            "from": "check_vuln",
+            "to": "handoff_vuln",
+            "label": "Yes (>5)"
+        },
+        {
+            "from": "handoff_vuln",
+            "to": "end_vuln"
+        },
+        {
+            "from": "check_vuln",
+            "to": "check_status",
+            "label": "No (<=5)"
+        },
+        {
+            "from": "check_status",
+            "to": "handoff_frozen",
+            "label": "Yes (FROZEN)"
+        },
+        {
+            "from": "handoff_frozen",
+            "to": "end_frozen"
+        },
+        {
+            "from": "check_status",
+            "to": "triage_success",
+            "label": "No (OPEN)"
+        }
+    ]
+}

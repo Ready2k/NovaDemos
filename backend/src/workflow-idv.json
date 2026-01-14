@@ -1,0 +1,167 @@
+{
+    "title": "Identity & Verification (Iron Gate)",
+    "nodes": [
+        {
+            "id": "idv_start",
+            "label": "Start ID&V Security Protocol",
+            "type": "start"
+        },
+        {
+            "id": "check_intent",
+            "label": "Is this a GENERAL QUERY (public info, e.g. rates, hours) or an ACCOUNT SPECIFIC query?",
+            "type": "decision"
+        },
+        {
+            "id": "answer_public",
+            "label": "Answer using Knowledge Base / Tools. DO NOT ask for ID.",
+            "type": "process"
+        },
+        {
+            "id": "end_public",
+            "label": "General Query Resolved (Bypass ID&V)",
+            "type": "end",
+            "outcome": "GENERAL_QUERY"
+        },
+        {
+            "id": "check_auth_status",
+            "label": "Check Memory: Is 'auth_status' already 'VERIFIED'?",
+            "type": "decision"
+        },
+        {
+            "id": "already_verified",
+            "label": "User is already verified. Return to Main Flow.",
+            "type": "end",
+            "outcome": "VERIFIED"
+        },
+        {
+            "id": "analyze_input",
+            "label": "Check Input: Are valid Account Number (8 digits) AND Sort Code (6 digits) present?",
+            "type": "decision",
+            "required_context": [
+                "accountNumber",
+                "sortCode"
+            ]
+        },
+        {
+            "id": "handle_typo",
+            "label": "I heard 9 digits (Account) or 7 digits (Sort). Ask user to repeat digit-by-digit.",
+            "type": "process"
+        },
+        {
+            "id": "end_typo",
+            "label": "Waiting for correction...",
+            "type": "end",
+            "outcome": "WAITing_FOR_INPUT"
+        },
+        {
+            "id": "ask_details",
+            "label": "Say: 'For security, I need to verify your identity. Please provide your Account Number and Sort Code.'",
+            "type": "process"
+        },
+        {
+            "id": "end_ask",
+            "label": "Waiting for details...",
+            "type": "end",
+            "outcome": "WAITING_FOR_INPUT"
+        },
+        {
+            "id": "perform_idv",
+            "label": "Call 'perform_idv_check' with detected details.",
+            "type": "tool",
+            "toolName": "perform_idv_check"
+        },
+        {
+            "id": "check_result",
+            "label": "Did 'perform_idv_check' return account_status='OPEN'?",
+            "type": "decision"
+        },
+        {
+            "id": "idv_success",
+            "label": "Verification Successful. Proceed to fulfill request.",
+            "type": "end",
+            "outcome": "SUCCESS"
+        },
+        {
+            "id": "idv_fail",
+            "label": "Inform user verification failed.",
+            "type": "process"
+        },
+        {
+            "id": "end_fail",
+            "label": "Verification Failed",
+            "type": "end",
+            "outcome": "FAILURE"
+        }
+    ],
+    "edges": [
+        {
+            "from": "idv_start",
+            "to": "check_intent"
+        },
+        {
+            "from": "check_intent",
+            "to": "answer_public",
+            "label": "General Query"
+        },
+        {
+            "from": "answer_public",
+            "to": "end_public"
+        },
+        {
+            "from": "check_intent",
+            "to": "check_auth_status",
+            "label": "Account Specific"
+        },
+        {
+            "from": "check_auth_status",
+            "to": "already_verified",
+            "label": "Yes (Verified)"
+        },
+        {
+            "from": "check_auth_status",
+            "to": "analyze_input",
+            "label": "No (Unverified)"
+        },
+        {
+            "from": "analyze_input",
+            "to": "perform_idv",
+            "label": "Yes (Valid Details)"
+        },
+        {
+            "from": "analyze_input",
+            "to": "ask_details",
+            "label": "Missing Details"
+        },
+        {
+            "from": "analyze_input",
+            "to": "handle_typo",
+            "label": "Typo (9 or 7 digits)"
+        },
+        {
+            "from": "handle_typo",
+            "to": "end_typo"
+        },
+        {
+            "from": "ask_details",
+            "to": "end_ask"
+        },
+        {
+            "from": "perform_idv",
+            "to": "check_result"
+        },
+        {
+            "from": "check_result",
+            "to": "idv_success",
+            "label": "OPEN"
+        },
+        {
+            "from": "check_result",
+            "to": "idv_fail",
+            "label": "CLOSED/FROZEN"
+        },
+        {
+            "from": "idv_fail",
+            "to": "end_fail"
+        }
+    ]
+}

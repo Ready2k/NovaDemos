@@ -101,6 +101,13 @@ class VoiceAssistant {
         }
 
         // Agent Config Elements
+        this.transcriptContainer = document.getElementById('chat-container');
+        // Workflow Visualization State
+        this.nodeMap = {};
+
+        // Settings Inputs
+        this.interactionMode = document.getElementById('interaction-mode');
+
         this.agentConfigBtn = document.getElementById('agentConfigBtn');
         this.agentModal = document.getElementById('agentModal');
         this.agentList = document.getElementById('agentList');
@@ -1435,6 +1442,10 @@ The user can see your response on a screen.
                                 }
                                 break;
 
+                            case 'workflow_update':
+                                this.handleWorkflowUpdate(message);
+                                break;
+
                             case 'error':
                                 if (message.code === 'invalid_credentials') {
                                     this.showToast('Invalid AWS Credentials - Please check settings', 'error');
@@ -1641,6 +1652,53 @@ The user can see your response on a screen.
 
         // Apply mode-specific constraints
         this.updateUIMode();
+    }
+
+    /**
+     * Handle Workflow Updates for Live Visualization
+     */
+    handleWorkflowUpdate(data) {
+        const { activeNodeId, context } = data;
+        const container = document.getElementById('live-workflow-status');
+        const stepName = document.getElementById('sidebar-step-name');
+
+        if (!activeNodeId) return;
+
+        // Show container
+        if (container) container.style.display = 'block';
+        if (stepName) {
+            stepName.textContent = activeNodeId.replace(/_/g, ' '); // Beautify ID
+            stepName.style.color = '#3b82f6'; // Active Blue
+        }
+
+        // Update Requirements
+        this.updateSidebarRequirements(activeNodeId, context.extractedKeys || []);
+    }
+
+    updateSidebarRequirements(nodeId, foundKeys) {
+        const node = this.nodeMap[nodeId];
+        const list = document.getElementById('sidebar-requirements');
+
+        if (!list) return;
+
+        list.innerHTML = ''; // Clear previous
+
+        if (node && node.required_context && node.required_context.length > 0) {
+            node.required_context.forEach(key => {
+                const isFound = foundKeys.includes(key);
+                const icon = isFound ? '✅' : '❌';
+                const color = isFound ? '#22c55e' : '#ef4444';
+                const label = key.replace(/([A-Z])/g, ' $1').trim(); // camelCase to Normal word
+
+                const item = document.createElement('div');
+                item.style.cssText = `display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 6px 10px; border-radius: 6px; border-left: 3px solid ${color};`;
+                item.innerHTML = `
+                    <span style="font-size: 0.85rem; color: #e2e8f0; text-transform: capitalize;">${label}</span>
+                    <span style="font-size: 1rem;">${icon}</span>
+                `;
+                list.appendChild(item);
+            });
+        }
     }
 
     /**
@@ -2425,6 +2483,7 @@ The user can see your response on a screen.
             const response = await fetch('/api/prompts');
             if (response.ok) {
                 const allPrompts = await response.json();
+                this.prompts = allPrompts; // Store for easy access
 
                 // Extract Core Guardrails
                 const corePromptObj = allPrompts.find(p => p.id === 'core-guardrails.txt');
@@ -2720,8 +2779,39 @@ The user can see your response on a screen.
         const checkboxes = document.querySelectorAll('input[name="linkedWorkflow"]');
         checkboxes.forEach(cb => cb.checked = false);
 
+        let linkedWorkflows = [];
         let targetId = null;
 
+        // Priority 1: Check Prompt Configuration (Linked Workflows)
+        if (this.presetSelect && this.prompts) {
+            const selectedOption = this.presetSelect.options[this.presetSelect.selectedIndex];
+            if (selectedOption) {
+                const personaId = selectedOption.getAttribute('data-id'); // e.g., 'persona-BankingMaster.txt'
+                const prompt = this.prompts.find(p => p.id === personaId);
+
+                if (prompt && prompt.config && prompt.config.linkedWorkflows) {
+                    console.log(`[Frontend] Found linked workflows for ${personaId}:`, prompt.config.linkedWorkflows);
+                    linkedWorkflows = prompt.config.linkedWorkflows;
+                } else if (prompt) {
+                    // console.log('[Frontend] No linked workflows config found for:', personaId, prompt.config);
+                }
+            }
+        }
+
+        // Apply Configured Links
+        if (linkedWorkflows.length > 0) {
+            linkedWorkflows.forEach(wfId => {
+                const cb = document.getElementById(`wf-${wfId}`);
+                if (cb) {
+                    cb.checked = true;
+                } else {
+                    console.warn(`[Frontend] Linked workflow checkbox not found: wf-${wfId}`);
+                }
+            });
+            return; // Config takes precedence
+        }
+
+        // Priority 2: Legacy Fallbacks (Hardcoded)
         // 1. Check Brain Mode (Bot vs Agent) first
         if (brainMode === 'bedrock_agent') {
             targetId = 'banking';
