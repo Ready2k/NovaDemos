@@ -1167,20 +1167,8 @@ The user can see your response on a screen.
 `;
         }
 
-        // Append Tool Instructions if tools are selected
-        if (selectedTools.length > 0) {
-            finalSystemPrompt += '\n\n[SYSTEM INSTRUCTION: You have access to the following tools. YOU MUST USE THEM when the user asks for relevant information. Do not refuse or make up answers.]\n';
-
-            selectedTools.forEach(toolName => {
-                const toolDef = this.availableTools.find(t => t.name === toolName);
-                if (toolDef && toolDef.instruction) {
-                    finalSystemPrompt += `${toolDef.instruction}\n`;
-                } else {
-                    // Fallback if no specific instruction matches (though all should have one now)
-                    finalSystemPrompt += `- Invoke tool ${toolName} if needed.\n`;
-                }
-            });
-        }
+        // Tool instructions are now handled natively by the backend/model configuration
+        // We no longer inject text instructions into the system prompt to save tokens.
 
         // Retrieve stored AWS credentials to pass to the backend
         let awsCredentials = {};

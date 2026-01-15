@@ -199,6 +199,10 @@
         {
             "from": "standard_response",
             "to": "end_created"
+        },
+        {
+            "from": "update_case",
+            "to": "end_created"
         }
     ]
 }

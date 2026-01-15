@@ -154,6 +154,13 @@ export class SonicClient {
     }
 
     /**
+     * Get current Session Config
+     */
+    public getSessionConfig() {
+        return this.sessionConfig;
+    }
+
+    /**
      * Get current AWS credentials
      */
     getCredentials() {

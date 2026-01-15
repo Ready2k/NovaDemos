@@ -428,6 +428,20 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
 
         // Loop limit to prevent infinite recursion
         for (let turn = 1; turn <= 5; turn++) {
+            // --- Helper for Broadcasting Workflow State ---
+            function broadcastWorkflowStatus(session: ClientSession) {
+                if (session.ws.readyState === WebSocket.OPEN) {
+                    session.ws.send(JSON.stringify({
+                        type: 'workflowStatus',
+                        data: {
+                            workflowName: session.currentWorkflowId || 'Not Started',
+                            checks: session.workflowChecks || {}
+                        }
+                    }));
+                }
+            }
+
+            // --- Serve Frontend ---
             console.log(`[AgentCore] --- Turn ${turn} ---`);
 
             const payloadObj = { prompt: currentPrompt };
@@ -842,6 +856,7 @@ interface ClientSession {
     // Tools
     tools?: Tool[];
     allowedTools?: string[]; // Tools permitted for execution (checked server-side)
+    isAuthenticated?: boolean; // Tracks if IDV check passed
     // Audio Buffering (Lookahead)
     isBufferingAudio?: boolean;
     audioBufferQueue?: Buffer[];
@@ -886,6 +901,8 @@ interface ClientSession {
 
     // Workflow State
     activeWorkflowStepId?: string;
+    currentWorkflowId?: string; // Track active workflow name
+    workflowChecks?: { [key: string]: any }; // Track collected variables for UI
 }
 
 const activeSessions = new Map<WebSocket, ClientSession>();
@@ -1762,103 +1779,79 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 availableWorkflows['MAIN'] = filename;
                             }
 
-                            // MERGE WORKFLOWS
+                            // Declarations needed for downstream logic
                             let mergedNodes: any[] = [];
                             let mergedEdges: any[] = [];
                             let validedTools: string[] = [];
 
-                            const processingQueue = Object.entries(availableWorkflows);
-                            const processedPrefixes = new Set(Object.keys(availableWorkflows));
+                            // MERGE WORKFLOWS - DISABLED FOR DRIP FEED
+                            // We now only load the ACTIVE workflow (defaulting to MAIN)
+                            // Other workflows are loaded on-demand via start_workflow
 
-                            while (processingQueue.length > 0) {
-                                const entry = processingQueue.shift();
-                                if (!entry) break;
-                                const [prefix, filename] = entry;
+                            /* RECURSIVE MERGING - DISABLED
+                            while (processingQueue.length > 0) { ... }
+                            */
 
-                                const workflowPath = path.join(__dirname, '../src/', filename as string);
-                                const localPath = path.join(__dirname, filename as string);
-                                let wfData;
+                            // 1. Identify the Entry Point (Main)
+                            let currentWorkflowFilename = availableWorkflows['MAIN']; // Default
+                            let currentPrefix = 'MAIN';
 
-                                if (fs.existsSync(workflowPath)) {
-                                    wfData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
-                                } else if (fs.existsSync(localPath)) {
-                                    wfData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
-                                }
+                            // If we have an active sub-workflow? Not at start.
+                            // But if we are "restarting" the session, we might pass a target workflow in.
+                            // For now, let's assume valid start is always the MAIN entry point.
 
-                                if (wfData) {
-                                    console.log(`[Server] Merging workflow: ${filename} (Prefix: ${prefix})`);
+                            const workflowPath = path.join(__dirname, '../src/', currentWorkflowFilename as string);
+                            const localPath = path.join(__dirname, currentWorkflowFilename as string);
+                            let wfData;
 
-                                    // Namespace Nodes & Edges
-                                    const namespacedNodes = wfData.nodes.map((node: any) => ({
-                                        ...node,
-                                        id: `${prefix}_${node.id}`
-                                    }));
-
-                                    const namespacedEdges = wfData.edges.map((edge: any) => ({
-                                        ...edge,
-                                        from: `${prefix}_${edge.from}`,
-                                        to: `${prefix}_${edge.to}`
-                                    }));
-
-                                    mergedNodes = [...mergedNodes, ...namespacedNodes];
-                                    mergedEdges = [...mergedEdges, ...namespacedEdges];
-
-                                    if (wfData.tools) {
-                                        validedTools = [...validedTools, ...wfData.tools];
-                                    }
-
-                                    // AUTO-DETECT TOOLS FROM NODES
-                                    if (wfData.nodes) {
-                                        wfData.nodes.forEach((node: any) => {
-                                            if (node.type === 'tool' && node.toolName) {
-                                                validedTools.push(node.toolName);
-                                            }
-                                            // AUTO-DETECT SUB-WORKFLOWS
-                                            if (node.type === 'workflow' && node.workflowId) {
-                                                const depId = node.workflowId;
-                                                const depPrefix = depId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-                                                // Handle potential collision or infinite loop
-                                                if (!processedPrefixes.has(depPrefix)) {
-                                                    const depFilename = `workflow-${depId}.json`;
-                                                    console.log(`[Server] Discovered dependency: ${depPrefix} -> ${depFilename}`);
-                                                    processedPrefixes.add(depPrefix);
-                                                    processingQueue.push([depPrefix, depFilename]);
-
-                                                    // Add to master map so Master Router knows about it if needed
-                                                    availableWorkflows[depPrefix] = depFilename;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
+                            if (fs.existsSync(workflowPath)) {
+                                wfData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                            } else if (fs.existsSync(localPath)) {
+                                wfData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
                             }
 
-                            if (mergedNodes.length > 0) {
-                                // Create Virtual Master Workflow
+                            if (wfData) {
+                                console.log(`[Server] Loading SINGLE Active Workflow: ${currentWorkflowFilename}`);
+
+                                // Namespace Nodes & Edges (Optional for single mode, but good for consistency)
+                                mergedNodes = wfData.nodes.map((node: any) => ({
+                                    ...node,
+                                    id: node.id // Keep original IDs for clarity in single mode
+                                }));
+
+                                mergedEdges = wfData.edges.map((edge: any) => ({
+                                    ...edge,
+                                    from: edge.from,
+                                    to: edge.to
+                                }));
+
+                                if (wfData.tools) {
+                                    validedTools = [...validedTools, ...wfData.tools];
+                                }
+
+                                // AUTO-DETECT TOOLS
+                                if (wfData.nodes) {
+                                    wfData.nodes.forEach((node: any) => {
+                                        if (node.type === 'tool' && node.toolName) {
+                                            validedTools.push(node.toolName);
+                                        }
+                                    });
+                                }
+
                                 const masterWorkflow = {
                                     nodes: mergedNodes,
                                     edges: mergedEdges
                                 };
 
                                 workflowSystemPrompt = convertWorkflowToText(masterWorkflow);
-                                workflowTools = [...new Set(validedTools)]; // Dedupe tools
+                                workflowTools = [...new Set(validedTools)];
+                                console.log(`[Server] Workflow Text Generated. Tools: ${workflowTools.length}`);
 
-                                // INJECT MASTER ROUTER
+                                // INJECT CONTEXT SWITCH TOOL if multiple workflows exist
                                 if (Object.keys(availableWorkflows).length > 1) {
-                                    const routerInstruction = `
-### MASTER ROUTER INSTRUCTION
-You are orchestrating multiple workflows.
-1. ASSESS USER INTENT: Determine what the user wants to do.
-2. ROUTE TO START NODE:
-   - If User wants to Query a Transaction or Dispute: GOTO [DISPUTE_start]
-   - If User wants a Mortgage or Home Loan: GOTO [MORTGAGE_start]
-   - If Unclear: Ask clarifying question.
-
-`;
-                                    workflowSystemPrompt = routerInstruction + workflowSystemPrompt;
+                                    console.log('[Server] Multiple workflows detected. Injecting "start_workflow" tool.');
+                                    // We will add this to the tool list later
                                 }
-
-                                console.log(`[Server] Dynamic Workflow Generated. Nodes: ${mergedNodes.length}, Tools: ${workflowTools.length}`);
                             }
                         } catch (e) {
                             console.error("[Server] Failed to load dynamic workflow:", e);
@@ -1892,6 +1885,29 @@ You are orchestrating multiple workflows.
                             console.log('[Server] No workflow tools specified. Sending ALL tools to model to encourage native use.');
                         }
 
+                        // INJECT GLOBAL TOOLS (Like start_workflow)
+                        const startWorkflowTool = {
+                            toolSpec: {
+                                name: "start_workflow",
+                                description: "Use this tool to load a new workflow or sub-process when explicitly required by your instructions. This triggers a context switch.",
+                                inputSchema: {
+                                    json: JSON.stringify({
+                                        type: "object",
+                                        properties: {
+                                            workflowId: {
+                                                type: "string",
+                                                description: "The ID of the workflow to load (e.g., 'dispute', 'mortgage')"
+                                            }
+                                        },
+                                        required: ["workflowId"]
+                                    })
+                                }
+                            },
+                            instruction: "Call start_workflow when you need to enter a specific sub-process."
+                        };
+                        tools.push(startWorkflowTool);
+                        console.log('[Server] Injected "start_workflow" tool for dynamic loading.');
+
                         // Store user's allowed tools preference
                         if (parsed.config.selectedTools !== undefined && Array.isArray(parsed.config.selectedTools)) {
                             session.allowedTools = parsed.config.selectedTools;
@@ -1906,31 +1922,11 @@ You are orchestrating multiple workflows.
                         logWithTimestamp('[Server]', `Loaded ${tools.length}/${allTools.length} tools: ${tools.map(t => t.toolSpec.name).join(', ') || 'NONE'}`);
                         logWithTimestamp('[Server]', `Tools array: ${JSON.stringify(tools.map(t => t.toolSpec.name))}`);
 
-                        // --- PROMPT ENGINEERING: Inject Tool Instructions ---
-                        // AWS Models usually need explicit instructions to use tools reliably.
-                        const toolInstructions = tools
-                            .map(t => t.instruction)
-                            .filter(i => i) // Remove undefined
-                            .join('\n');
-
-                        // CONDITIONAL NATIVE TOOL INSTRUCTION - only if tools are enabled
-                        const nativeToolInstruction = tools.length > 0 ? `
-You have access to helpful tools. Available tools: ${tools.map(t => t.toolSpec.name).join(', ')}. 
-
-CRITICAL TOOL USAGE RULE: 
-- ONLY use a tool if the user's request EXPLICITLY requires it or if the current workflow instruction DEMANDS it.
-- DO NOT use tools for general conversation or greetings.
-- If the user did not ask for the information provided by a tool, DO NOT call it.
-
-When you do use a tool, wait patiently for the result.
-` : `
-You do not have access to any tools. Answer questions directly based on your knowledge and maintain your personality.
-`;
-
-
-                        if (toolInstructions || nativeToolInstruction) {
-                            parsed.config.systemPrompt = (parsed.config.systemPrompt || "") + "\n" + nativeToolInstruction + "\n\nAlso follow these tool use guidelines:\n" + (toolInstructions || "");
-                            console.log('[Server] Injected tool instructions into System Prompt.');
+                        // --- PROMPT ENGINEERING: Tool Instructions ---
+                        // We now rely on native tool definitions passed to Nova 2 Sonic via toolSpec.
+                        // Removed manual text injection to reduce token usage.
+                        if (tools.length > 0) {
+                            console.log('[Server] Tools enabled for this session (Native Mode).');
                         }
 
                         // --- WORKFLOW INJECTION (System Prompt Append) ---
@@ -2331,6 +2327,18 @@ You do not have access to any tools. Answer questions directly based on your kno
             // Save Chat History
             saveTranscript(session);
 
+            // GUARDRAIL: Auto-save History if Authenticated
+            // If the user was verified (IDV Check), we must save this interaction to their record.
+            if (session.isAuthenticated && agentCoreGatewayClient) {
+                console.log('[Server] 🔐 Authenticated Session Ended. Auto-Saving Interaction History (Guardrail Active)...');
+                try {
+                    await agentCoreGatewayClient.callTool('manage_recent_interactions', { action: 'PUBLISH' });
+                    console.log('[Server] ✅ History Auto-Saved Successfully.');
+                } catch (err) {
+                    console.error('[Server] ❌ Failed to auto-save history:', err);
+                }
+            }
+
             activeSessions.delete(ws);
         }
     });
@@ -2559,13 +2567,17 @@ function convertWorkflowToText(workflow: any): string {
             text += `   -> ACTION: Call Tool "${node.toolName}"\n`;
         }
 
-        // Sub-Workflow Config
+        // Sub-Workflow Config - MODIFIED FOR DRIP FEED
         if (node.type === 'workflow' && node.workflowId) {
             // Generate the target start node ID based on standard prefixing logic
             // We assume the prefix is the UPPERCASE workflowId (e.g., idv -> IDV_start)
-            // This relies on the loader using the same naming convention.
             const prefix = node.workflowId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-            text += `   -> SUB-PROCESS CALL: Jump to [${prefix}_start]. Execute that workflow until it ends, then RETURN here and proceed to the next step.\n`;
+
+            // DRIP FEED: Instead of "Jump to", we instruct the agent to use the Context Switch Tool
+            // This loads the new workflow into the system prompt.
+            text += `   -> SUB-PROCESS REQUIRED: You must load the "${node.workflowId}" workflow to proceed.\n`;
+            text += `   -> ACTION: Call Tool "start_workflow" with workflowId="${node.workflowId}"\n`;
+            text += `   -> WAIT for the system to reload with new instructions.\n`;
         }
 
         // Transitions
@@ -2626,6 +2638,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
             }
             break;
+
 
 
 
@@ -3294,6 +3307,102 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+
+            // --- DRIP FEED: Handle start_workflow ---
+            if (actualToolName === 'start_workflow') {
+                const workflowId = toolUse.input?.workflowId || (toolUse.content && toolUse.content[0]?.json?.workflowId); // Handle possible content structure
+                if (workflowId) {
+                    console.log(`[Server] 🔄 CONTEXT SWITCH TRIGGERED: Loading workflow "${workflowId}"...`);
+
+                    // 1. Load the requested workflow
+                    const filename = `workflow-${workflowId}.json`;
+                    const workflowPath = path.join(__dirname, '../src/', filename);
+                    const localPath = path.join(__dirname, filename);
+
+                    let wfData;
+                    if (fs.existsSync(workflowPath)) {
+                        wfData = JSON.parse(fs.readFileSync(workflowPath, 'utf-8'));
+                    } else if (fs.existsSync(localPath)) {
+                        wfData = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
+                    }
+
+                    if (wfData) {
+                        try {
+                            // 2. Generate new System Prompt
+                            const masterWorkflow = {
+                                nodes: wfData.nodes,
+                                edges: wfData.edges
+                            };
+
+                            const workflowText = convertWorkflowToText(masterWorkflow);
+                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
+
+                            const newSystemPrompt = strictHeader + workflowText;
+
+                            // 3. Update Session Config (Triggers Restart)
+                            const currentConfig = session.sonicClient.getSessionConfig() || {};
+                            let basePrompt = currentConfig.systemPrompt || "";
+
+                            // Strip previous workflow override if present
+                            if (basePrompt.includes("########## CRITICAL WORKFLOW OVERRIDE")) {
+                                basePrompt = basePrompt.split("########## CRITICAL WORKFLOW OVERRIDE")[0];
+                            }
+
+                            const finalPrompt = basePrompt + newSystemPrompt;
+
+                            console.log(`[Server] Switching to workflow: ${workflowId}`);
+
+                            session.sonicClient.updateSessionConfig({
+                                systemPrompt: finalPrompt,
+                            });
+
+                            // CRITICAL: Explicitly Restart Session to apply new prompt
+                            // The updateSessionConfig method only updates the object, it doesn't restart the stream.
+                            if (session.sonicClient.getSessionId()) {
+                                console.log('[Server] Context Switch: Stopping current session...');
+                                await session.sonicClient.stopSession();
+                                console.log('[Server] Context Switch: Session stopped.');
+                            }
+
+                            // Start new session with new prompt
+                            console.log('[Server] Context Switch: Starting new session...');
+                            await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                            console.log('[Server] Context Switch: New session started (ID: ' + session.sonicClient.getSessionId() + ')');
+
+                            // CRITIES: The model needs to know it should speak first in the new context.
+                            // We inject a "fake" user message to trigger the model to start the workflow.
+                            // increased timeout to 1500ms to ensure connection is stable.
+                            setTimeout(async () => {
+                                try {
+                                    if (session.sonicClient.getSessionId()) {
+                                        const startTrigger = `[SYSTEM] The user has entered the "${workflowId}" workflow. Please begin the process immediately according to step [${workflowId.toUpperCase()}_start].`;
+                                        console.log('[Server] Sending Workflow Start Trigger:', startTrigger);
+                                        // We send this as TEXT input to the model (User Role)
+                                        await session.sonicClient.sendText(startTrigger);
+                                    } else {
+                                        console.warn('[Server] Context Switch: Session ID missing during trigger attempt.');
+                                    }
+                                } catch (err) {
+                                    console.error('[Server] Context Switch: Failed to send start trigger:', err);
+                                }
+                            }, 1500);
+
+                            // Return early - context switch handles the rest
+                            return;
+
+                        } catch (e) {
+                            console.error(`[Server] Failed to perform context switch:`, e);
+                        }
+                    } else {
+                        console.error(`[Server] Workflow file not found: ${filename}`);
+                        // Fall through to standard specific handling or just return tool failure?
+                        // Better to fail the tool call so model knows.
+                        // But for now we just log.
+                    }
+                }
+            }
+            // ----------------------------------------
+
             console.log(`[DEBUG] Tool use validation:`);
             console.log(`[DEBUG] - toolUse exists:`, !!toolUse);
             console.log(`[DEBUG] - has name/toolName:`, !!(toolUse.name || toolUse.toolName));
@@ -3321,6 +3430,30 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             false // Not an API error, just a logical refusal
                         );
                         logWithTimestamp('[Server]', `Sent disabled tool rejection to Nova Sonic for: ${actualToolName}`);
+                    }
+                    return;
+                }
+
+                // SECURITY FIX: Sensitive Tool Guardrail
+                const SENSITIVE_TOOLS = [
+                    'agentcore_balance',
+                    'get_account_transactions',
+                    'agentcore_transactions',
+                    'create_dispute_case',
+                    'update_dispute_case'
+                ];
+
+                if (SENSITIVE_TOOLS.includes(actualToolName) && !session.isAuthenticated) {
+                    console.log(`[Server] 🛑 SECURITY BLOCK: Attempted sensitive tool '${actualToolName}' without authentication!`);
+                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                        await session.sonicClient.sendToolResult(
+                            toolUse.toolUseId,
+                            {
+                                text: `[SYSTEM] PERMISSION DENIED. You cannot use the tool '${actualToolName}' because the user has not been authenticated via 'perform_idv_check'. Stop what you are doing. You MUST reply with: "I need to verify your identity before I can access that information. Can I take your full name please?"`
+                            },
+                            false
+                        );
+                        logWithTimestamp('[Server]', `Sent SECURITY BLOCK to Nova Sonic for: ${actualToolName}`);
                     }
                     return;
                 }
@@ -3382,6 +3515,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         try {
                             const gatewayTarget = toolDef ? toolDef.gatewayTarget : undefined;
                             const gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
+
+                            // GUARDRAIL: Track Authentication
+                            if (actualToolName === 'perform_idv_check') {
+                                try {
+                                    const parsedResult = typeof gatewayResult === 'string' ? JSON.parse(gatewayResult) : gatewayResult;
+                                    // Accept "verified": true or auth_status: "VERIFIED"
+                                    if (parsedResult.verified === true || parsedResult.auth_status === 'VERIFIED') {
+                                        session.isAuthenticated = true;
+                                        console.log('[Server] 🔐 IDV Check Validated: Session marked as Authenticated (Guardrail Active)');
+                                    }
+                                } catch (e) {
+                                    // ignore parse error
+                                }
+                            }
+
                             result = {
                                 status: "success",
                                 data: gatewayResult
