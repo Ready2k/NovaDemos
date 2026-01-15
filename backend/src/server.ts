@@ -3186,18 +3186,24 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         if (session.recentAgentReplies) {
                             for (const recentMsg of session.recentAgentReplies) {
                                 // Exact duplicate
+                                // CRITICAL FIX: Only block if very recent (< 3s). 
+                                // Allows AI to repeat itself (e.g. after interruption) but blocks rapid system echoes.
                                 if (recentMsg.text === displayText) {
-                                    isDuplicateOrSimilar = true;
-                                    skipReason = 'exact duplicate';
-                                    break;
+                                    if ((now - recentMsg.time) < 3000) {
+                                        isDuplicateOrSimilar = true;
+                                        skipReason = 'exact duplicate (recent)';
+                                        break;
+                                    }
                                 }
 
-                                // Shorter version
+                                // Shorter version (e.g. streaming artifact)
                                 if (displayText.length <= recentMsg.text.length &&
                                     recentMsg.text.startsWith(displayText)) {
-                                    isDuplicateOrSimilar = true;
-                                    skipReason = 'shorter version';
-                                    break;
+                                    if ((now - recentMsg.time) < 3000) {
+                                        isDuplicateOrSimilar = true;
+                                        skipReason = 'shorter version (recent)';
+                                        break;
+                                    }
                                 }
 
                                 // Overlapping content
@@ -3446,29 +3452,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     return;
                 }
 
-                // SECURITY FIX: Sensitive Tool Guardrail
-                const SENSITIVE_TOOLS = [
-                    'agentcore_balance',
-                    'get_account_transactions',
-                    'agentcore_transactions',
-                    'create_dispute_case',
-                    'update_dispute_case'
-                ];
+                // SECURITY FIX: Sensitive Tool Guardrail - REMOVED PER USER REQUEST
+                // SENSITIVE_TOOLS check removed to allow demo flexibility.
 
-                if (SENSITIVE_TOOLS.includes(actualToolName) && !session.isAuthenticated) {
-                    console.log(`[Server] 🛑 SECURITY BLOCK: Attempted sensitive tool '${actualToolName}' without authentication!`);
-                    if (session.sonicClient && session.sonicClient.getSessionId()) {
-                        await session.sonicClient.sendToolResult(
-                            toolUse.toolUseId,
-                            {
-                                text: `[SYSTEM] PERMISSION DENIED. You cannot use the tool '${actualToolName}' because the user has not been authenticated via 'perform_idv_check'. Stop what you are doing. You MUST reply with: "I need to verify your identity before I can access that information. Can I take your full name please?"`
-                            },
-                            false
-                        );
-                        logWithTimestamp('[Server]', `Sent SECURITY BLOCK to Nova Sonic for: ${actualToolName}`);
-                    }
-                    return;
-                }
 
                 // Execute the tool call against AWS AgentCore
                 console.log(`[Server] Executing native tool call: ${actualToolName}`);
@@ -3539,7 +3525,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                         try {
                             const gatewayTarget = toolDef ? toolDef.gatewayTarget : undefined;
-                            const gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
+                            let gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
 
                             // GUARDRAIL: Track Authentication
                             if (actualToolName === 'perform_idv_check') {
@@ -3556,6 +3542,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                         if (!session.workflowChecks) session.workflowChecks = {};
                                         session.workflowChecks['ID&V Status'] = 'Failed ❌';
                                         broadcastWorkflowStatus(session);
+                                    }
+
+                                    // CRITICAL SECURITY FIX: Sanitize PII Unconditionally
+                                    // The tool result often contains the *actual* customer name. We remove it ALWAYS.
+                                    if (parsedResult.customer_name) {
+                                        console.log('[Server] 🔐 Sanitizing IDV Result: Removing customer_name from auth response.');
+                                        delete parsedResult.customer_name;
+
+                                        // Update the gatewayResult to be the sanitized version
+                                        if (typeof gatewayResult === 'string') {
+                                            gatewayResult = JSON.stringify(parsedResult);
+                                        } else {
+                                            gatewayResult = parsedResult;
+                                        }
                                     }
                                 } catch (e) {
                                     // ignore parse error

@@ -1225,6 +1225,17 @@ The user can see your response on a screen.
                 this.ws.close();
             }
 
+            // Reset Live Session Panel Data
+            if (this.liveMomentsList) {
+                this.liveMomentsList.innerHTML = '<div style="padding: 15px; text-align: center; color: #64748b; font-style: italic;">Waiting for events...</div>';
+            }
+
+            // Hide previous workflow status
+            const workflowStatus = document.getElementById('live-workflow-status');
+            if (workflowStatus) {
+                workflowStatus.style.display = 'none';
+            }
+
             this.updateState('connecting');
             this.log('Connecting to server...');
 

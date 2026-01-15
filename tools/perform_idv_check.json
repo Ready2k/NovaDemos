@@ -1,7 +1,7 @@
 {
   "name": "perform_idv_check",
   "description": "Validates credentials. Returns 'auth_status' (VERIFIED/FAILED), 'account_status' (OPEN/FROZEN), and 'marker_Vunl' (0-10 vulnerability score).",
-  "parameters": {
+  "input_schema": {
     "type": "object",
     "properties": {
       "accountNumber": {
@@ -18,6 +18,8 @@
       "sortCode"
     ]
   },
+  "instruction": "only ask for data that listed in the Input Parameters",
+  "agentPrompt": "",
   "gatewayTarget": "perform-idv-check___perform_idv_check",
   "category": "Banking"
 }

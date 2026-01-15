@@ -7,6 +7,15 @@
             "type": "start"
         },
         {
+            "id": "check_credentials",
+            "label": "Are 'accountNumber' and 'sortCode' present in context?",
+            "type": "decision",
+            "required_context": [
+                "accountNumber",
+                "sortCode"
+            ]
+        },
+        {
             "id": "retrieve_history",
             "label": "Call 'manage_recent_interactions' with action='RETRIEVE'.",
             "type": "tool",
@@ -32,7 +41,17 @@
     "edges": [
         {
             "from": "context_start",
-            "to": "retrieve_history"
+            "to": "check_credentials"
+        },
+        {
+            "from": "check_credentials",
+            "to": "retrieve_history",
+            "label": "Yes (Credentials Present)"
+        },
+        {
+            "from": "check_credentials",
+            "to": "context_end",
+            "label": "No (Missing Credentials)"
         },
         {
             "from": "retrieve_history",
