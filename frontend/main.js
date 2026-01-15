@@ -1389,6 +1389,34 @@ The user can see your response on a screen.
                                 this.renderTTSOutput(message);
                                 break;
 
+                            case 'workflowStatus':
+                                // LIVE WORKFLOW UI UPDATE
+                                const statusContainer = document.getElementById('live-workflow-status');
+                                const stepNameEl = document.getElementById('sidebar-step-name');
+                                const reqContainer = document.getElementById('sidebar-requirements');
+
+                                if (statusContainer && stepNameEl && reqContainer) {
+                                    statusContainer.style.display = 'block';
+
+                                    // Update Workflow Name
+                                    if (message.data.workflowName) {
+                                        stepNameEl.textContent = `Workflow: ${message.data.workflowName}`;
+                                    }
+
+                                    // Update Checks
+                                    if (message.data.checks) {
+                                        let html = '';
+                                        for (const [key, value] of Object.entries(message.data.checks)) {
+                                            html += `<div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                                <span style="color: #94a3b8;">${key}:</span>
+                                                <span style="color: #e2e8f0; font-weight: 500;">${value}</span>
+                                            </div>`;
+                                        }
+                                        reqContainer.innerHTML = html;
+                                    }
+                                }
+                                break;
+
                             case 'debugInfo':
                                 this.renderDebugInfo(message.data);
                                 // NEW: Visual feedback for Tool Calls with deduplication

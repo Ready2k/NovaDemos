@@ -428,20 +428,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
 
         // Loop limit to prevent infinite recursion
         for (let turn = 1; turn <= 5; turn++) {
-            // --- Helper for Broadcasting Workflow State ---
-            function broadcastWorkflowStatus(session: ClientSession) {
-                if (session.ws.readyState === WebSocket.OPEN) {
-                    session.ws.send(JSON.stringify({
-                        type: 'workflowStatus',
-                        data: {
-                            workflowName: session.currentWorkflowId || 'Not Started',
-                            checks: session.workflowChecks || {}
-                        }
-                    }));
-                }
-            }
 
-            // --- Serve Frontend ---
             console.log(`[AgentCore] --- Turn ${turn} ---`);
 
             const payloadObj = { prompt: currentPrompt };
@@ -905,6 +892,20 @@ interface ClientSession {
     workflowChecks?: { [key: string]: any }; // Track collected variables for UI
 }
 
+// --- Helper for Broadcasting Workflow State ---
+function broadcastWorkflowStatus(session: ClientSession) {
+    if (session.ws.readyState === WebSocket.OPEN) {
+        session.ws.send(JSON.stringify({
+            type: 'workflowStatus',
+            data: {
+                workflowName: session.currentWorkflowId || 'Not Started',
+                checks: session.workflowChecks || {}
+            }
+        }));
+    }
+}
+
+// --- Serve Frontend ---
 const activeSessions = new Map<WebSocket, ClientSession>();
 
 // Create HTTP server
@@ -1546,6 +1547,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
         userLocation: "Unknown Location",
         userTimezone: "UTC",
+
+        // Workflow State
+        activeWorkflowStepId: 'start',
+        currentWorkflowId: 'Banking (General)',
+        workflowChecks: {},
 
         // Chat History
         transcript: []
@@ -3310,13 +3316,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
             // --- DRIP FEED: Handle start_workflow ---
             if (actualToolName === 'start_workflow') {
-                const workflowId = toolUse.input?.workflowId || (toolUse.content && toolUse.content[0]?.json?.workflowId); // Handle possible content structure
+                const workflowId = toolUse.input?.workflowId || (toolUse.content && toolUse.content[0]?.json?.workflowId);
                 if (workflowId) {
                     console.log(`[Server] 🔄 CONTEXT SWITCH TRIGGERED: Loading workflow "${workflowId}"...`);
 
-                    // 1. Load the requested workflow
+                    // 1. UI UPDATE: Set current workflow name
+                    if (session.currentWorkflowId !== workflowId) {
+                        session.currentWorkflowId = workflowId.charAt(0).toUpperCase() + workflowId.slice(1);
+                        session.workflowChecks = {}; // Reset checks for new workflow
+                        broadcastWorkflowStatus(session);
+                    }
+
+                    // 2. Load the requested workflow
                     const filename = `workflow-${workflowId}.json`;
-                    const workflowPath = path.join(__dirname, '../src/', filename);
+                    const srcDir = path.join(__dirname, '../src/');
+                    const workflowPath = path.join(srcDir, filename);
                     const localPath = path.join(__dirname, filename);
 
                     let wfData;
@@ -3328,7 +3342,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     if (wfData) {
                         try {
-                            // 2. Generate new System Prompt
+                            // 3. Generate new System Prompt
                             const masterWorkflow = {
                                 nodes: wfData.nodes,
                                 edges: wfData.edges
@@ -3339,7 +3353,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                             const newSystemPrompt = strictHeader + workflowText;
 
-                            // 3. Update Session Config (Triggers Restart)
+                            // 4. Update Session Config (Triggers Restart)
                             const currentConfig = session.sonicClient.getSessionConfig() || {};
                             let basePrompt = currentConfig.systemPrompt || "";
 
@@ -3395,11 +3409,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }
                     } else {
                         console.error(`[Server] Workflow file not found: ${filename}`);
-                        // Fall through to standard specific handling or just return tool failure?
-                        // Better to fail the tool call so model knows.
-                        // But for now we just log.
                     }
                 }
+
             }
             // ----------------------------------------
 
@@ -3460,6 +3472,19 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 // Execute the tool call against AWS AgentCore
                 console.log(`[Server] Executing native tool call: ${actualToolName}`);
+
+                // WORKFLOW UI UPDATE: Capture inputs for ID&V
+                if (actualToolName === 'perform_idv_check') {
+                    const input: any = toolUse.content || toolUse.input || {};
+                    if (!session.workflowChecks) session.workflowChecks = {};
+
+                    // Store inputs for UI
+                    if (input.accountNumber) session.workflowChecks['Account Number'] = input.accountNumber;
+                    if (input.sortCode) session.workflowChecks['Sort Code'] = input.sortCode;
+                    session.workflowChecks['ID&V Status'] = 'Verifying...';
+
+                    broadcastWorkflowStatus(session);
+                }
 
                 // Notify UI of tool usage (Visual Feedback)
                 if (ws.readyState === WebSocket.OPEN) {
@@ -3523,7 +3548,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     // Accept "verified": true or auth_status: "VERIFIED"
                                     if (parsedResult.verified === true || parsedResult.auth_status === 'VERIFIED') {
                                         session.isAuthenticated = true;
+                                        if (!session.workflowChecks) session.workflowChecks = {};
+                                        session.workflowChecks['ID&V Status'] = 'Verified ✅';
+                                        broadcastWorkflowStatus(session);
                                         console.log('[Server] 🔐 IDV Check Validated: Session marked as Authenticated (Guardrail Active)');
+                                    } else {
+                                        if (!session.workflowChecks) session.workflowChecks = {};
+                                        session.workflowChecks['ID&V Status'] = 'Failed ❌';
+                                        broadcastWorkflowStatus(session);
                                     }
                                 } catch (e) {
                                     // ignore parse error
