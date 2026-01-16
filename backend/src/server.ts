@@ -16,6 +16,8 @@ import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/
 
 import * as dotenv from 'dotenv';
 import { Langfuse } from 'langfuse';
+import { detectPhantomAction, logPhantomAction } from './phantom-action-watcher';
+
 
 // Load environment variables
 dotenv.config();
@@ -900,6 +902,10 @@ interface ClientSession {
     activeWorkflowStepId?: string;
     currentWorkflowId?: string; // Track active workflow name
     workflowChecks?: { [key: string]: any }; // Track collected variables for UI
+
+    // Phantom Action Watcher
+    toolsCalledThisTurn?: string[]; // Track tools called in current turn
+    phantomCorrectionCount?: number; // Track number of corrections attempted
 }
 
 // --- Helper for Broadcasting Workflow State ---
@@ -3385,6 +3391,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+
+            // PHANTOM WATCHER: Track tool calls for this turn
+            if (!session.toolsCalledThisTurn) {
+                session.toolsCalledThisTurn = [];
+            }
+            session.toolsCalledThisTurn.push(actualToolName);
+            console.log(`[PhantomWatcher] Tool called: ${actualToolName} (total this turn: ${session.toolsCalledThisTurn.length})`);
+
 
             // --- DRIP FEED: Handle start_workflow ---
             if (actualToolName === 'start_workflow') {

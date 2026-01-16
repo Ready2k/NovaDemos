@@ -119,19 +119,25 @@
     },
     {
       "id": "contacted_merch",
-      "label": "Contacted Merchant?",
-      "type": "decision"
+      "label": "CRITICAL CHECKPOINT: Before proceeding, you MUST confirm whether the user has contacted the merchant. If you don't already know from the conversation, ASK: 'Before I can raise a dispute case, have you already contacted [Merchant Name] about this issue?' WAIT for their answer. If they say Yes/confirmed → create_dispute. If they say No/not yet → advise_contact. If unclear, ask again for clarification. DO NOT assume or guess - you must have explicit confirmation.",
+      "type": "decision",
+      "required_context": [
+        "merchantContacted"
+      ]
     },
     {
       "id": "advise_contact",
-      "label": "Advise Customer to\nContact Merchant",
+      "label": "STOP. User has NOT contacted merchant. Say: 'I recommend contacting [Merchant Name] directly first to try to resolve this issue. If they don't help or resolve it, please call us back and we can raise a formal dispute for you.' Then END the dispute flow. Do NOT create a dispute case.",
       "type": "process"
     },
     {
       "id": "create_dispute",
-      "label": "Call 'create_dispute_case'\n(Apply Vuln Promise if eligible)",
+      "label": "PREREQUISITE: User confirmed they contacted merchant. EXECUTE NOW: Call 'create_dispute_case' tool IMMEDIATELY with merchantContacted=true. Do NOT say 'I will create' without calling the tool. After calling, say: 'I've opened a dispute case about the [Merchant] charge. Your Barclays reference is [case ID]. We'll investigate this with the merchant and keep you updated.' AVOID words like 'unauthorized', 'fraud', 'raised with merchant' - use 'opened a case about' or 'started an investigation regarding'.",
       "type": "tool",
-      "toolName": "create_dispute_case"
+      "toolName": "create_dispute_case",
+      "required_context": [
+        "merchantContacted"
+      ]
     },
     {
       "id": "publish_summary",
