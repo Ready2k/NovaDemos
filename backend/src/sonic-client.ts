@@ -205,6 +205,11 @@ export class SonicClient {
                     region: this.config.region,
                     environment: process.env.NODE_ENV || 'development'
                 },
+                input: {
+                    type: "session-start",
+                    config: this.sessionConfig, // Include system prompt, tools, etc.
+                    timestamp: new Date()
+                },
                 tags: ["voice", "nova-sonic"]
             });
             console.log(`[SonicClient] ✓ Langfuse trace created for session: ${this.sessionId}`);
@@ -1203,7 +1208,10 @@ export class SonicClient {
                                 this.currentGeneration.end({
                                     output: this.currentTurnTranscript,
                                     completionStartTime: endTime,
-                                    metadata: metadata
+                                    metadata: {
+                                        ...metadata, // Include latency metrics
+                                        stage: stage // OVERWRITE 'SPECULATIVE' with 'FINAL' (or whatever stage we ended on)
+                                    }
                                 });
                                 this.currentGeneration = null;
                                 this.currentGenerationStartTime = null;
@@ -1338,6 +1346,23 @@ export class SonicClient {
 
         // Stop processing
         this.isProcessing = false;
+
+        // Langfuse: Finalize Trace Output
+        if (this.trace) {
+            this.trace.update({
+                output: {
+                    type: "session-end",
+                    status: "completed",
+                    transcriptLength: this.recentOutputs.length, // or some other metric
+                    tokenUsage: {
+                        input: this.sessionInputTokens,
+                        output: this.sessionOutputTokens,
+                        total: this.sessionTotalTokens
+                    }
+                }
+            });
+            console.log(`[SonicClient] ✓ Finalized Langfuse trace output`);
+        }
 
         // Clear input queue
         this.inputQueue = [];

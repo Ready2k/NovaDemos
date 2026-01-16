@@ -3635,12 +3635,12 @@ window.addEventListener('beforeunload', () => {
 function loadCostConfig() {
     const config = {
         nova: {
-            input: parseFloat(localStorage.getItem('nova_input_cost') || '0.000003'),
-            output: parseFloat(localStorage.getItem('nova_output_cost') || '0.000012')
+            input: parseFloat(localStorage.getItem('nova_input_cost') || '0.0034'),
+            output: parseFloat(localStorage.getItem('nova_output_cost') || '0.0136')
         },
         agent: {
-            input: parseFloat(localStorage.getItem('agent_input_cost') || '0.000003'),
-            output: parseFloat(localStorage.getItem('agent_output_cost') || '0.000012')
+            input: parseFloat(localStorage.getItem('agent_input_cost') || '0.00006'),
+            output: parseFloat(localStorage.getItem('agent_output_cost') || '0.00024')
         }
     };
     return config;
