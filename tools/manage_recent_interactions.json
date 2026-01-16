@@ -1,6 +1,6 @@
 {
   "name": "manage_recent_interactions",
-  "description": "Retrieves history/disputes at start, OR publishes summary at end.",
+  "description": "Retrieves history/disputes or publishes summary. Use only when instructed.",
   "parameters": {
     "type": "object",
     "properties": {

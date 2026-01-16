@@ -587,7 +587,13 @@ async function loadPrompt(filename: string): Promise<string> {
     } catch (err) {
         console.warn(`[Server] Failed to fetch prompt ${promptName} from Langfuse, falling back to local file:`, err);
         try {
-            return fs.readFileSync(path.join(PROMPTS_DIR, filename), 'utf-8').trim();
+            const promptPath = path.join(PROMPTS_DIR, filename);
+            console.log(`[Server] DEBUG: Loading local prompt from ${promptPath}`);
+            console.log(`[Server] DEBUG: PROMPTS_DIR contents:`, fs.readdirSync(PROMPTS_DIR));
+            if (!fs.existsSync(promptPath)) {
+                console.error(`[Server] CRITICAL: File does not exist at ${promptPath}`);
+            }
+            return fs.readFileSync(promptPath, 'utf-8').trim();
         } catch (localErr) {
             console.error(`[Server] Failed to load prompt ${filename} locally:`, localErr);
             return '';
@@ -648,6 +654,10 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
 
                 // Try to fetch from Langfuse first
                 try {
+                    // Check cloud set first to avoid 404s/Errors for local-only files
+                    if (!cloudPrompts.has(promptName)) {
+                        throw new Error("Skipping Langfuse fetch (not in list)");
+                    }
                     const prompt = await langfuse.getPrompt(promptName);
                     config = (prompt as any).config || {};
 
@@ -1214,6 +1224,40 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: error.message }));
             }
         });
+    }
+
+    // Delete Workflow API
+    if (req.method === 'DELETE' && req.url?.startsWith('/api/workflow/')) {
+        const id = req.url.substring(14); // Remove /api/workflow/
+        console.log(`[Server] Request to DELETE workflow: ${id}`);
+
+        // Security / Validation
+        if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid workflow ID' }));
+            return;
+        }
+
+        const filename = `workflow-${id}.json`;
+        // Target src directory where workflows are stored
+        const safePath = path.join(__dirname, '../src/', filename);
+
+        try {
+            if (fs.existsSync(safePath)) {
+                fs.unlinkSync(safePath);
+                console.log(`[Server] Deleted workflow file: ${filename}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else {
+                console.warn(`[Server] Workflow file not found for deletion: ${safePath}`);
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Workflow not found' }));
+            }
+        } catch (error: any) {
+            console.error('[Server] Error deleting workflow:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to delete workflow: ' + error.message }));
+        }
         return;
     }
 
@@ -1645,7 +1689,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         const enableGuardrails = parsed.config.enableGuardrails ?? true; // Default enabled
 
                         if (enableGuardrails && parsed.config.systemPrompt) {
-                            const guardrails = await loadPrompt('core-guardrails-v2.txt');
+                            const guardrails = await loadPrompt('core-guardrails.txt');
                             if (guardrails) {
                                 console.log('[Server] ✅ Injecting Core Guardrails (enabled by config)');
                                 parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" + "--- CORE GUARDRAILS (SYSTEM OVERRIDES) ---\n" + guardrails;
@@ -1801,6 +1845,16 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // 1. Identify the Entry Point (Main)
                             let currentWorkflowFilename = availableWorkflows['MAIN']; // Default
                             let currentPrefix = 'MAIN';
+
+                            // CRITICAL FIX: If no MAIN workflow is defined (e.g. custom linked workflows), use the first one available
+                            if (!currentWorkflowFilename || currentWorkflowFilename === undefined) {
+                                const keys = Object.keys(availableWorkflows);
+                                if (keys.length > 0) {
+                                    currentPrefix = keys[0];
+                                    currentWorkflowFilename = availableWorkflows[currentPrefix];
+                                    console.log(`[Server] No MAIN workflow found. defaulting to first available: ${currentPrefix} -> ${currentWorkflowFilename}`);
+                                }
+                            }
 
                             // If we have an active sub-workflow? Not at start.
                             // But if we are "restarting" the session, we might pass a target workflow in.
@@ -2013,9 +2067,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     // Check if user has already spoken (Smart Start)
                                     // Check if user has already spoken (Smart Start)
                                     if (sonicClient.getSessionId() && !session.lastUserTranscript) {
-                                        // Changed "Hi" to a system instruction to force the Start Node execution
-                                        // This prevents the model from just saying "Hi" back and missing the workflow start.
-                                        await sonicClient.sendText("[SYSTEM: User Connected. Execute the Start Node of the workflow now.]");
+                                        // CRITICAL: Instruct the model to GREET ONLY, not execute workflow
+                                        // This prevents premature tool calls before user speaks
+                                        await sonicClient.sendText("[SYSTEM: User Connected. Greet the user warmly and wait for their request. DO NOT call any tools or execute workflow steps until the user speaks.]");
                                         console.log('[Server] Initial greeting trigger sent to AI');
                                     } else if (session.lastUserTranscript) {
                                         console.log('[Server] User already spoke, skipping initial greeting (Smart Start active)');
@@ -2390,6 +2444,10 @@ function cleanTextForSonic(text: string): string {
     if (!text || typeof text !== 'string') return text;
 
     let clean = text;
+
+    // Remove workflow step tags (internal markers, not for user)
+    clean = clean.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
+
     // Remove markdown formatting while preserving spaces
     // First, handle bold and italic (preserve the text, remove markers)
     clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');  // **text** -> text
@@ -2565,12 +2623,17 @@ function convertWorkflowToText(workflow: any): string {
     text += "CRITICAL: The descriptions below are INSTRUCTIONS for your behavior/persona. DO NOT read them aloud to the user.\n\n";
 
     // 1. Map Nodes
+    const startNode = workflow.nodes.find((n: any) => n.type === 'start');
+    if (startNode) {
+        text += `ENTRY POINT: Begin execution at step [${startNode.id}].\n`;
+    }
+
     workflow.nodes.forEach((node: any) => {
         text += `STEP [${node.id}] (${node.type}):\n   INSTRUCTION: ${node.label || 'No instruction'}\n`;
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {
-            text += `   -> ACTION: Call Tool "${node.toolName}"\n`;
+            text += `   -> ACTION REQUIRED: You MUST call the tool "${node.toolName}" NOW. Do not just say you will call it - actually invoke it.\n`;
         }
 
         // Sub-Workflow Config - MODIFIED FOR DRIP FEED
@@ -3080,6 +3143,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 if (displayText) {
+                    // Remove workflow step tags from user-visible text
+                    displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
+
                     // --- HEURISTIC INTERCEPTOR (Updated for AgentCore Gateway) ---
                     // Matches: XML hallucinations <tool_ call...> ONLY.
                     // NOTE: get_server_time now handled via AgentCore Gateway like other tools
@@ -3567,6 +3633,19 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 data: gatewayResult
                             };
                             console.log(`[Server] AgentCore Gateway result: ${gatewayResult}`);
+
+                            // MIDDLEWARE INTERCEPTOR: Sanitize "Transport for London" Test Data
+                            // The Lambda function has a hardcoded test case that triggers the "runaway" dispute scenario.
+                            // We intercept and block it here to force a clean slate.
+                            if (typeof gatewayResult === 'string' && gatewayResult.includes('Transport for London')) {
+                                console.log('[Server] 🛡️ INTERCEPTOR ACTIVE: Blocking hardcoded "Transport for London" test case.');
+                                gatewayResult = JSON.stringify({
+                                    interactions: [],
+                                    message: "No recent interactions found."
+                                });
+                                console.log('[Server] 🛡️ Replaced with empty history.');
+                            }
+
                         } catch (error: any) {
                             console.error(`[Server] AgentCore Gateway error:`, error);
                             result = {

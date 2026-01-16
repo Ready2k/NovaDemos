@@ -35,7 +35,7 @@
         },
         {
             "id": "analyze_input",
-            "label": "Check Input: Are valid Account Number (8 digits) AND Sort Code (6 digits) present?",
+            "label": "CRITICAL GUARDRAIL: Extract EXACT digits from user speech. NEVER pad, invent, or add digits. Check: (1) If BOTH valid 8-digit Account Number AND 6-digit Sort Code present → perform_idv. (2) If ONLY valid 8-digit Account Number present → ask_sortcode_only. (3) If ONLY valid 6-digit Sort Code present → ask_account_only. (4) If NEITHER or INVALID lengths → ask_details. NEVER call perform_idv unless you have EXACTLY 8 digits for account AND EXACTLY 6 digits for sort code.",
             "type": "decision",
             "required_context": [
                 "accountNumber",
@@ -51,7 +51,29 @@
             "id": "end_typo",
             "label": "Waiting for correction...",
             "type": "end",
-            "outcome": "WAITing_FOR_INPUT"
+            "outcome": "WAITING_FOR_INPUT"
+        },
+        {
+            "id": "ask_sortcode_only",
+            "label": "User provided valid 8-digit Account Number. Say: 'Thank you. Now I just need your 6-digit Sort Code to complete verification.'",
+            "type": "process"
+        },
+        {
+            "id": "end_ask_sortcode",
+            "label": "Waiting for sort code...",
+            "type": "end",
+            "outcome": "WAITING_FOR_SORTCODE"
+        },
+        {
+            "id": "ask_account_only",
+            "label": "User provided valid 6-digit Sort Code. Say: 'Thank you. Now I just need your 8-digit Account Number to complete verification.'",
+            "type": "process"
+        },
+        {
+            "id": "end_ask_account",
+            "label": "Waiting for account number...",
+            "type": "end",
+            "outcome": "WAITING_FOR_ACCOUNT"
         },
         {
             "id": "ask_details",
@@ -125,12 +147,22 @@
         {
             "from": "analyze_input",
             "to": "perform_idv",
-            "label": "Yes (Valid Details)"
+            "label": "Both Valid (8 + 6 digits)"
+        },
+        {
+            "from": "analyze_input",
+            "to": "ask_sortcode_only",
+            "label": "Only Account (8 digits)"
+        },
+        {
+            "from": "analyze_input",
+            "to": "ask_account_only",
+            "label": "Only Sort Code (6 digits)"
         },
         {
             "from": "analyze_input",
             "to": "ask_details",
-            "label": "Missing Details"
+            "label": "Missing Both or Invalid"
         },
         {
             "from": "analyze_input",
@@ -140,6 +172,14 @@
         {
             "from": "handle_typo",
             "to": "end_typo"
+        },
+        {
+            "from": "ask_sortcode_only",
+            "to": "end_ask_sortcode"
+        },
+        {
+            "from": "ask_account_only",
+            "to": "end_ask_account"
         },
         {
             "from": "ask_details",

@@ -398,6 +398,8 @@
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px;">
+                    <button id="delete-workflow-btn" class="secondary-btn"
+                        style="border-color: #ef4444; color: #fca5a5; display: none;">🗑️ Delete</button>
                     <button id="guide-btn" class="secondary-btn" style="border-color: #6366f1; color: #a5b4fc;">📖
                         Guide</button>
                     <button id="reset-btn" class="secondary-btn">Revert</button>
@@ -460,6 +462,7 @@
             document.getElementById('save-btn').addEventListener('click', saveWorkflow);
             document.getElementById('reset-btn').addEventListener('click', () => loadWorkflow(document.getElementById('workflow-select').value));
             document.getElementById('new-workflow-btn').addEventListener('click', createNewWorkflow);
+            document.getElementById('delete-workflow-btn').addEventListener('click', deleteWorkflow);
 
 
             // Guide Modal Logic
@@ -576,6 +579,7 @@
             renderEditorLists();
             renderGraph();
             showSuccess("New workflow created. Click Save to persist.");
+            document.getElementById('delete-workflow-btn').style.display = 'inline-block';
         }
 
         async function loadWorkflow(id) {
@@ -585,8 +589,66 @@
                 currentWorkflow = data;
                 renderEditorLists();
                 renderGraph();
+                document.getElementById('delete-workflow-btn').style.display = 'inline-block';
             } catch (e) {
                 showError("Failed to load workflow: " + e.message);
+            }
+        }
+
+        async function deleteWorkflow() {
+            const id = document.getElementById('workflow-select').value;
+            if (!id) return;
+
+            if (!confirm(`Are you sure you want to delete the workflow "${id}"? This cannot be undone.`)) {
+                return;
+            }
+
+            const btn = document.getElementById('delete-workflow-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Deleting...';
+            btn.disabled = true;
+
+            try {
+                // If it's a freshly created workflow (not saved), just remove from UI
+                // We can't easily know if it's saved or not without tracking, but DELETE API returns 404 if not found
+                // So we can try calling API, and if 404, just remove from UI.
+
+                const res = await fetch(`/api/workflow/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    showSuccess("Workflow deleted successfully");
+                    removeWorkflowFromUI(id);
+                } else if (res.status === 404) {
+                    // Not found on server, just remove local
+                    showSuccess("Removed (was not saved)");
+                    removeWorkflowFromUI(id);
+                } else {
+                    const err = await res.json();
+                    throw new Error(err.error || "Failed to delete");
+                }
+            } catch (e) {
+                showError("Delete Error: " + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function removeWorkflowFromUI(id) {
+            const select = document.getElementById('workflow-select');
+            const option = select.querySelector(`option[value="${id}"]`);
+            if (option) option.remove();
+
+            if (select.options.length > 0) {
+                select.selectedIndex = 0;
+                loadWorkflow(select.value);
+            } else {
+                currentWorkflow = { nodes: [], edges: [] };
+                renderGraph();
+                renderEditorLists();
+                document.getElementById('delete-workflow-btn').style.display = 'none';
             }
         }
 

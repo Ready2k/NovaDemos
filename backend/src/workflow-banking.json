@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "start",
-      "label": "Customer Contact\n(Start)",
+      "label": "Welcome lets check if its a general enquiry (public information) or account specific",
       "type": "start"
     },
     {
@@ -79,8 +79,9 @@
     },
     {
       "id": "query_txn",
-      "label": "ASK the user what transaction they want to query. WAIT for user response. DO NOT proceed until user responds.",
-      "type": "process"
+      "label": "FIRST: Call 'get_account_transactions' to show the user their recent transactions. THEN: ASK the user which specific transaction they want to query or dispute. WAIT for user response.",
+      "type": "tool",
+      "toolName": "get_account_transactions"
     },
     {
       "id": "lookup_alias",
@@ -101,7 +102,7 @@
     },
     {
       "id": "classify",
-      "label": "Classify Issue Type",
+      "label": "Classify Issue Type: If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
       "type": "decision"
     },
     {
