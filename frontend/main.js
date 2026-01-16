@@ -935,19 +935,53 @@ class VoiceAssistant {
         const nonSpeculative = transcript.filter(msg => msg.type !== 'speculative');
 
         // 2. Filter out consecutive user messages (keep only the last one)
+        // AND consecutive assistant messages (keep the longest/last one if duplicates)
         const result = [];
+
         for (let i = 0; i < nonSpeculative.length; i++) {
             const current = nonSpeculative[i];
             const next = (i + 1 < nonSpeculative.length) ? nonSpeculative[i + 1] : null;
 
+            // Handle User Messages: Only keep the last one in a sequence
             if (current.role === 'user') {
-                // Check if next message is also user
                 if (next && next.role === 'user') {
-                    continue; // Skip this one, it's an intermediate update
+                    continue; // Skip, next one is newer version
                 }
+                result.push(current);
+                continue;
             }
+
+            // Handle Assistant Messages: Deduplicate identical or subset/superset messages
+            if (current.role === 'assistant') {
+                if (next && next.role === 'assistant') {
+                    // Check for exact duplicate or subset
+                    const cleanCurrent = (current.text || '').trim();
+                    const cleanNext = (next.text || '').trim();
+
+                    if (cleanCurrent === cleanNext) {
+                        continue; // Skip duplicate
+                    }
+                    if (cleanNext.includes(cleanCurrent)) {
+                        continue; // Skip subset (Extension case: Short -> Long)
+                    }
+                    if (cleanCurrent.includes(cleanNext)) {
+                        // Interruption Case: Current is Long, Next is Short (Truncated).
+                        // We want to show what was successfully spoken (the interruption point).
+                        continue;
+                    }
+                }
+                result.push(current);
+                continue;
+            }
+
+            // Keep others (tools, etc)
             result.push(current);
         }
+
+        // Second pass: sometimes we have [Final, Final] where 2nd is subset of 1st (rare, but possible if out of order)
+        // or [Final A, Final A] separated by nothing.
+        // The above loop handles immediate neighbours.
+
         return result;
     }
 
