@@ -567,8 +567,20 @@ function saveTranscript(session: ClientSession) {
             endTime: Date.now(),
             brainMode: session.brainMode,
             transcript: session.transcript,
-            tools: session.allowedTools || [] // Save allowed tools list
+            tools: session.allowedTools || [], // Save allowed tools list
+            // Save Usage Stats
+            usage: {
+                inputTokens: session.sonicClient?.getSessionInputTokens() || 0,
+                outputTokens: session.sonicClient?.getSessionOutputTokens() || 0,
+                totalTokens: session.sonicClient?.getSessionTotalTokens() || 0,
+                cost: 0 // Will need to calculate if not available directly, or add getter
+            }
         };
+
+        if (data.usage) {
+            // Cost is calculated dynamically on the frontend based on User Settings
+            data.usage.cost = 0;
+        }
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         console.log(`[Server] Saved chat history to ${filename}`);

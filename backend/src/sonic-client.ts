@@ -1362,5 +1362,17 @@ export class SonicClient {
         return this.sessionId !== null && this.isProcessing;
     }
 
+    public getSessionInputTokens(): number {
+        return this.sessionInputTokens;
+    }
+
+    public getSessionOutputTokens(): number {
+        return this.sessionOutputTokens;
+    }
+
+    public getSessionTotalTokens(): number {
+        return this.sessionTotalTokens;
+    }
+
 
 }

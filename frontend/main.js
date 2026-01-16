@@ -1145,6 +1145,69 @@ class VoiceAssistant {
         // Filter messages based on toggle state
         const messagesToShow = this.getFilteredMessages(data.transcript, showFinalOnly);
 
+        // Update Stats Bar (Historical)
+        // Duration
+        if (data.startTime && data.endTime) {
+            const diff = data.endTime - data.startTime;
+            const minutes = Math.floor(diff / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+            const durationStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            if (this.statsDurationEl) this.statsDurationEl.textContent = durationStr;
+        }
+
+        // Token Usage & Cost (If available)
+        if (data.usage) {
+            if (this.statsInputTokensEl) this.statsInputTokensEl.textContent = data.usage.inputTokens || 0;
+            if (this.statsOutputTokensEl) this.statsOutputTokensEl.textContent = data.usage.outputTokens || 0;
+
+            // Calculate Cost using User Settings
+            // This ensures cost reflects current configuration (as per user request)
+            const costConfig = loadCostConfig();
+
+            // Determine pricing scheme (assume Nova unless specified otherwise)
+            // Note: History data might need to store agent vs nova mode more explicitly if not already
+            const isAgent = data.brainMode && (data.brainMode === 'bedrock_agent' || data.brainMode.startsWith('agent:'));
+            const pricing = isAgent ? costConfig.agent : costConfig.nova;
+
+            const inputCost = ((data.usage.inputTokens || 0) / 1000) * pricing.input;
+            const outputCost = ((data.usage.outputTokens || 0) / 1000) * pricing.output;
+            const cost = inputCost + outputCost;
+
+            if (this.statsCostEl) this.statsCostEl.textContent = `$${cost.toFixed(3)}`;
+        } else {
+            // Reset to -- or 0 if no data
+            if (this.statsInputTokensEl) this.statsInputTokensEl.textContent = '-';
+            if (this.statsOutputTokensEl) this.statsOutputTokensEl.textContent = '-';
+            if (this.statsCostEl) this.statsCostEl.textContent = '$0.0000';
+        }
+
+        // Sentiment (Average)
+        let totalScore = 0;
+        let count = 0;
+        data.transcript.forEach(msg => {
+            if (msg.sentiment) {
+                totalScore += msg.sentiment.comparative;
+                count++;
+            }
+        });
+
+        if (count > 0 && this.mainSentimentLabel && this.mainSentimentScore) {
+            const avg = totalScore / count;
+            let label = 'Neutral';
+            if (avg > 0.05) label = 'Positive';
+            else if (avg < -0.05) label = 'Negative';
+
+            this.mainSentimentLabel.textContent = label;
+            this.mainSentimentLabel.style.color = avg > 0.05 ? '#10b981' : avg < -0.05 ? '#ef4444' : '#94a3b8';
+            this.mainSentimentScore.textContent = `(${avg.toFixed(2)})`;
+            if (this.mainSentimentStat) this.mainSentimentStat.style.display = 'flex';
+        } else if (this.mainSentimentStat) {
+            this.mainSentimentStat.style.display = 'flex';
+            this.mainSentimentLabel.textContent = 'Neutral';
+            this.mainSentimentScore.textContent = '(0.00)';
+            this.mainSentimentLabel.style.color = '#94a3b8';
+        }
+
         // Clear current transcript
         this.transcriptEl.innerHTML = `
             <div style="padding: 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
@@ -2424,7 +2487,7 @@ The user can see your response on a screen.
 
         // Update display
         if (this.statCost) {
-            this.statCost.textContent = `$${totalCost.toFixed(4)}`;
+            this.statCost.textContent = `$${totalCost.toFixed(3)}`;
         }
     }
 
