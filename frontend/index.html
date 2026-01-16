@@ -21,7 +21,7 @@
         </div>
 
         <div id="nav-voice" class="nav-item" data-tooltip="Voice / General">
-          <span style="font-size: 1.2rem;">⚙️</span>
+          <span style="font-size: 1.2rem;">🎚️</span>
         </div>
         <div id="nav-personas" class="nav-item" data-tooltip="Personas / Prompts">
           <span style="font-size: 1.2rem;">👤</span>
@@ -46,9 +46,6 @@
         </div>
         <div id="nav-action-new" class="nav-item action-item" data-tooltip="New Session">
           <span style="font-size: 1.2rem;">✨</span>
-        </div>
-        <div id="nav-logout" class="nav-item" data-tooltip="Logout/Exit">
-          <span style="font-size: 1.2rem;">↪️</span>
         </div>
       </div>
 
@@ -332,8 +329,42 @@
           </button>
 
           <button id="agentConfigBtn" class="secondary-btn"
-            style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4);">
+            style="width: 100%; justify-content: center; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); margin-bottom: 20px;">
             🤖 Configure Custom Agents
+          </button>
+
+          <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+
+          <h3 style="margin: 0 0 15px 0; font-size: 1rem; color: #e2e8f0;">💰 Cost Configuration</h3>
+          <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 15px; line-height: 1.4;">Configure pricing per
+            1,000 tokens to track session costs in real-time.</p>
+
+          <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #cbd5e1;">Nova Sonic (Direct)</h4>
+          <div class="input-group" style="margin-bottom: 10px;">
+            <label for="nova-input-cost">Input Cost (per 1K tokens)</label>
+            <input type="number" id="nova-input-cost" step="0.000001" placeholder="0.000003" value="0.000003"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; font-size: 0.9rem;">
+          </div>
+          <div class="input-group" style="margin-bottom: 20px;">
+            <label for="nova-output-cost">Output Cost (per 1K tokens)</label>
+            <input type="number" id="nova-output-cost" step="0.000001" placeholder="0.000012" value="0.000012"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; font-size: 0.9rem;">
+          </div>
+
+          <h4 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #cbd5e1;">Bedrock Agent (with LLM)</h4>
+          <div class="input-group" style="margin-bottom: 10px;">
+            <label for="agent-input-cost">Input Cost (per 1K tokens)</label>
+            <input type="number" id="agent-input-cost" step="0.000001" placeholder="0.000003" value="0.000003"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; font-size: 0.9rem;">
+          </div>
+          <div class="input-group" style="margin-bottom: 20px;">
+            <label for="agent-output-cost">Output Cost (per 1K tokens)</label>
+            <input type="number" id="agent-output-cost" step="0.000001" placeholder="0.000012" value="0.000012"
+              style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: white; font-size: 0.9rem;">
+          </div>
+
+          <button id="saveCostConfigBtn" class="primary-btn" style="width: 100%; justify-content: center;">
+            💾 Save Cost Configuration
           </button>
         </div>
 
@@ -368,8 +399,8 @@
               id="statInputTokens">0</span></div>
           <div class="stat-item" title="Output Tokens">📤 <span class="stat-label">Output:</span> <span
               id="statOutputTokens">0</span></div>
-          <div class="stat-item" title="Latency">⚡ <span class="stat-label">Latency:</span> <span
-              id="statLatency">-</span></div>
+          <div class="stat-item" title="Session Cost">💰 <span class="stat-label">Cost:</span> <span
+              id="statCost">$0.00</span></div>
         </div>
         <canvas id="visualizer"></canvas>
       </div>
@@ -406,10 +437,6 @@
       <!-- Persistent Metrics Panel (Sticky) -->
       <div id="live-metrics-panel"
         style="margin-bottom: 15px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.8rem; display: none;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-          <span style="color: #94a3b8;">Latency:</span>
-          <span id="debug-latency" style="color: #86efac;">--</span>
-        </div>
         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
           <span style="color: #94a3b8;">Tokens (Total):</span>
           <span id="debug-tokens" style="color: #cbd5e1;">0</span>

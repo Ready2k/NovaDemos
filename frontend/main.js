@@ -146,6 +146,7 @@ class VoiceAssistant {
         this.statInputTokens = document.getElementById('statInputTokens');
         this.statOutputTokens = document.getElementById('statOutputTokens');
         this.statLatency = document.getElementById('statLatency');
+        this.statCost = document.getElementById('statCost');
 
         this.sessionStartTime = null;
         this.statsInterval = null;
@@ -2012,6 +2013,7 @@ The user can see your response on a screen.
         if (this.statInputTokens) this.statInputTokens.textContent = '0';
         if (this.statOutputTokens) this.statOutputTokens.textContent = '0';
         if (this.statDuration) this.statDuration.textContent = '00:00';
+        if (this.statCost) this.statCost.textContent = '$0.00';
         this.stopSessionTimer();
     }
 
@@ -2021,6 +2023,27 @@ The user can see your response on a screen.
         }
         if (usageData.totalOutputTokens) {
             this.statOutputTokens.textContent = usageData.totalOutputTokens;
+        }
+
+        // Calculate and update cost
+        const inputTokens = usageData.totalInputTokens || 0;
+        const outputTokens = usageData.totalOutputTokens || 0;
+
+        // Load cost configuration
+        const costConfig = loadCostConfig();
+
+        // Determine which pricing to use based on brain mode
+        const brainMode = this.brainModeSelect ? this.brainModeSelect.value : 'raw_nova';
+        const pricing = (brainMode === 'bedrock_agent') ? costConfig.agent : costConfig.nova;
+
+        // Calculate cost: (tokens / 1000) * cost_per_1k
+        const inputCost = (inputTokens / 1000) * pricing.input;
+        const outputCost = (outputTokens / 1000) * pricing.output;
+        const totalCost = inputCost + outputCost;
+
+        // Update display
+        if (this.statCost) {
+            this.statCost.textContent = `$${totalCost.toFixed(4)}`;
         }
     }
 
@@ -3158,6 +3181,73 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
     if (window.app) {
         window.app.disconnect();
+    }
+});
+
+
+// ===== COST TRACKING SYSTEM =====
+
+// Load cost configuration from localStorage
+function loadCostConfig() {
+    const config = {
+        nova: {
+            input: parseFloat(localStorage.getItem('nova_input_cost') || '0.000003'),
+            output: parseFloat(localStorage.getItem('nova_output_cost') || '0.000012')
+        },
+        agent: {
+            input: parseFloat(localStorage.getItem('agent_input_cost') || '0.000003'),
+            output: parseFloat(localStorage.getItem('agent_output_cost') || '0.000012')
+        }
+    };
+    return config;
+}
+
+// Save cost configuration to localStorage
+function saveCostConfig(config) {
+    localStorage.setItem('nova_input_cost', config.nova.input);
+    localStorage.setItem('nova_output_cost', config.nova.output);
+    localStorage.setItem('agent_input_cost', config.agent.input);
+    localStorage.setItem('agent_output_cost', config.agent.output);
+}
+
+// Initialize cost configuration UI
+document.addEventListener('DOMContentLoaded', () => {
+    const saveCostConfigBtn = document.getElementById('saveCostConfigBtn');
+    const novaInputCost = document.getElementById('nova-input-cost');
+    const novaOutputCost = document.getElementById('nova-output-cost');
+    const agentInputCost = document.getElementById('agent-input-cost');
+    const agentOutputCost = document.getElementById('agent-output-cost');
+
+    // Load saved values
+    const config = loadCostConfig();
+    if (novaInputCost) novaInputCost.value = config.nova.input;
+    if (novaOutputCost) novaOutputCost.value = config.nova.output;
+    if (agentInputCost) agentInputCost.value = config.agent.input;
+    if (agentOutputCost) agentOutputCost.value = config.agent.output;
+
+    // Save button handler
+    if (saveCostConfigBtn) {
+        saveCostConfigBtn.addEventListener('click', () => {
+            const newConfig = {
+                nova: {
+                    input: parseFloat(novaInputCost.value),
+                    output: parseFloat(novaOutputCost.value)
+                },
+                agent: {
+                    input: parseFloat(agentInputCost.value),
+                    output: parseFloat(agentOutputCost.value)
+                }
+            };
+            saveCostConfig(newConfig);
+
+            // Show toast notification
+            const toast = document.createElement('div');
+            toast.className = 'toast success';
+            toast.textContent = '💾 Cost configuration saved!';
+            toast.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: rgba(16, 185, 129, 0.9); color: white; padding: 12px 20px; border-radius: 8px; z-index: 10000; animation: slideIn 0.3s ease;';
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        });
     }
 });
 
