@@ -89,6 +89,18 @@
                 <!-- Moments will be injected here -->
               </div>
             </div>
+
+            <!-- Sentiment Analysis Micro-Widget -->
+            <div id="live-sentiment-container" style="margin-top: 15px; display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <h4 style="font-size: 0.8rem; color: #e2e8f0; margin: 0;">💭 Sentiment</h4>
+                <span id="sentiment-score" style="font-size: 0.75rem; font-weight: 600;">Neutral</span>
+              </div>
+              <div
+                style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                <canvas id="live-sentiment-chart" height="50"></canvas>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -395,6 +407,10 @@
         <div id="sessionStats" class="session-stats">
           <div class="stat-item" title="Session Duration">⏱️ <span class="stat-label">Duration:</span> <span
               id="statDuration">00:00</span></div>
+          <div class="stat-item" id="main-sentiment-stat" title="Current Sentiment" style="display: none;">💭 <span
+              class="stat-label">Sentiment:</span> <span id="mainSentimentLabel"
+              style="font-weight: 600;">Neutral</span> <span id="mainSentimentScore"
+              style="font-size: 0.8em; opacity: 0.7;">(0.0)</span></div>
           <div class="stat-item" title="Input Tokens">📥 <span class="stat-label">Input:</span> <span
               id="statInputTokens">0</span></div>
           <div class="stat-item" title="Output Tokens">📤 <span class="stat-label">Output:</span> <span
@@ -408,6 +424,18 @@
       <div class="transcript-container" id="transcript">
         <div id="chat-container">
           <!-- Messages will appear here -->
+        </div>
+
+        <!-- Historical Sentiment Analysis Graph -->
+        <div id="history-sentiment-container"
+          style="display: none; margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+          <h4 style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 10px; margin-top: 0;">
+            💭 Conversation Sentiment Analysis
+          </h4>
+          <div
+            style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <canvas id="history-sentiment-chart" height="150"></canvas>
+          </div>
         </div>
       </div>
 
@@ -448,6 +476,9 @@
 
     <div id="toast-container"></div>
   </div>
+
+  <!-- Chart.js for sentiment visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <script src="audio.js"></script>
   <script type="module" src="main.js"></script>

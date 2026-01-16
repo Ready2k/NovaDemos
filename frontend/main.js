@@ -7,6 +7,8 @@
  * - Integration between audio processing and WebSocket
  */
 
+import { SentimentLite } from './sentiment-lite.js';
+
 
 
 // Voice presets will be loaded dynamically from the backend
@@ -147,6 +149,26 @@ class VoiceAssistant {
         this.statOutputTokens = document.getElementById('statOutputTokens');
         this.statLatency = document.getElementById('statLatency');
         this.statCost = document.getElementById('statCost');
+
+        // Sentiment Analysis
+        // Using local lightweight analyzer to avoid CDN issues
+        this.sentimentAnalyzer = new SentimentLite();
+        console.log('[Sentiment] Initialized local SentimentLite analyzer');
+        this.sentimentData = []; // Store real-time sentiment scores
+        this.liveSentimentChart = null;
+        this.historySentimentChart = null;
+
+        // UI elements for sentiment
+        this.liveSentimentContainer = document.getElementById('live-sentiment-container');
+        this.liveSentimentCanvas = document.getElementById('live-sentiment-chart');
+        this.sentimentScoreEl = document.getElementById('sentiment-score');
+        this.historySentimentContainer = document.getElementById('history-sentiment-container');
+        this.historySentimentCanvas = document.getElementById('history-sentiment-chart');
+
+        // Main screen sentiment stat
+        this.mainSentimentStat = document.getElementById('main-sentiment-stat');
+        this.mainSentimentLabel = document.getElementById('mainSentimentLabel');
+        this.mainSentimentScore = document.getElementById('mainSentimentScore');
 
         this.sessionStartTime = null;
         this.statsInterval = null;
@@ -602,6 +624,304 @@ class VoiceAssistant {
         this.liveMomentsList.prepend(item); // Add to top
     }
 
+    /**
+     * Analyze sentiment of text and return score
+     * @param {string} text - Text to analyze
+     * @returns {object} - {score: number, label: string, comparative: number}
+     */
+    analyzeSentiment(text) {
+        if (!this.sentimentAnalyzer) {
+            // Should not happen with local import, but safe fallback
+            this.sentimentAnalyzer = new SentimentLite();
+        }
+
+        if (!text || text.trim().length === 0) {
+            return { score: 0, label: 'Neutral', comparative: 0 };
+        }
+
+        const result = this.sentimentAnalyzer.analyze(text);
+        console.log(`[Sentiment] Analyzed: "${text.substring(0, 50)}..." -> Score: ${result.score}, Comparative: ${result.comparative.toFixed(3)}`);
+
+        // Map score to label
+
+
+
+        // Map score to label
+        let label = 'Neutral';
+        if (result.comparative > 0.2) label = 'Positive';
+        else if (result.comparative < -0.2) label = 'Negative';
+        else if (result.comparative > 0.05) label = 'Slightly Positive';
+        else if (result.comparative < -0.05) label = 'Slightly Negative';
+
+        return {
+            score: result.score,
+            comparative: result.comparative,
+            label: label
+        };
+    }
+
+    /**
+     * Initialize the live sentiment chart
+     */
+    initializeLiveSentimentChart() {
+        if (!this.liveSentimentCanvas || typeof Chart === 'undefined') return;
+
+        const ctx = this.liveSentimentCanvas.getContext('2d');
+        this.liveSentimentChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sentiment Score',
+                    data: [],
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: -1,
+                        max: 1,
+                        ticks: {
+                            color: '#94a3b8',
+                            callback: function (value) {
+                                if (value > 0.5) return 'Very Positive';
+                                if (value > 0) return 'Positive';
+                                if (value === 0) return 'Neutral';
+                                if (value > -0.5) return 'Negative';
+                                return 'Very Negative';
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#94a3b8',
+                            maxRotation: 0,
+                            autoSkip: true,
+                            maxTicksLimit: 10
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#cbd5e1',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Update live sentiment chart with new data
+     * @param {string} text - Text to analyze
+     * @param {string} role - Role (user/assistant)
+     */
+    updateLiveSentiment(text, role) {
+        console.log(`[Sentiment] updateLiveSentiment called - Role: ${role}, Text: "${text?.substring(0, 50)}..."`);
+        if (!text || role === 'system') return;
+
+        const sentiment = this.analyzeSentiment(text);
+        const timestamp = new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        // Store sentiment data
+        this.sentimentData.push({
+            timestamp,
+            score: sentiment.comparative,
+            label: sentiment.label,
+            role,
+            text: text.substring(0, 50) + '...'
+        });
+
+        // Keep only last 20 data points
+        if (this.sentimentData.length > 20) {
+            this.sentimentData.shift();
+        }
+
+        // Initialize chart if not already done
+        if (!this.liveSentimentChart && this.liveSentimentCanvas) {
+            this.initializeLiveSentimentChart();
+        }
+
+        // Update chart
+        if (this.liveSentimentChart) {
+            this.liveSentimentChart.data.labels = this.sentimentData.map(d => d.timestamp);
+            this.liveSentimentChart.data.datasets[0].data = this.sentimentData.map(d => d.score);
+            this.liveSentimentChart.update('none'); // No animation for real-time
+        }
+
+        // Send sentiment to server for historical storage
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(new TextEncoder().encode(JSON.stringify({
+                type: 'update_sentiment',
+                data: {
+                    text: text,
+                    role: role,
+                    sentiment: {
+                        score: sentiment.score,
+                        label: sentiment.label,
+                        comparative: sentiment.comparative
+                    }
+                }
+            })));
+        }
+
+        // Update summary
+        if (this.sentimentScoreEl) {
+            const avgScore = this.sentimentData.reduce((sum, d) => sum + d.score, 0) / this.sentimentData.length;
+            let overallLabel = 'Neutral';
+            if (avgScore > 0.2) overallLabel = 'Positive';
+            else if (avgScore < -0.2) overallLabel = 'Negative';
+
+            this.sentimentScoreEl.textContent = overallLabel;
+            this.sentimentScoreEl.style.color = avgScore > 0 ? '#10b981' : avgScore < 0 ? '#ef4444' : '#94a3b8';
+
+            // Update main screen sentiment stat
+            if (this.mainSentimentLabel && this.mainSentimentScore) {
+                this.mainSentimentLabel.textContent = sentiment.label;
+                this.mainSentimentLabel.style.color = sentiment.comparative > 0 ? '#10b981' : sentiment.comparative < 0 ? '#ef4444' : '#94a3b8';
+                this.mainSentimentScore.textContent = `(${sentiment.comparative.toFixed(2)})`;
+            }
+
+            // Show main sentiment stat if hidden
+            if (this.mainSentimentStat && this.mainSentimentStat.style.display === 'none') {
+                this.mainSentimentStat.style.display = 'flex';
+            }
+        }
+
+        // Show container if hidden
+        if (this.liveSentimentContainer && this.liveSentimentContainer.style.display === 'none') {
+            this.liveSentimentContainer.style.display = 'block';
+        }
+    }
+
+    /**
+     * Render historical sentiment visualization
+     * @param {Array} transcript - Array of transcript messages
+     */
+    renderHistorySentiment(transcript) {
+        if (!transcript || transcript.length === 0 || !this.historySentimentCanvas || typeof Chart === 'undefined') {
+            if (this.historySentimentContainer) {
+                this.historySentimentContainer.style.display = 'none';
+            }
+            return;
+        }
+
+        // Analyze all messages
+        const sentimentHistory = transcript.map((msg, index) => {
+            const sentiment = this.analyzeSentiment(msg.text);
+            return {
+                index: index + 1,
+                score: sentiment.comparative,
+                label: sentiment.label,
+                role: msg.role,
+                timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })
+            };
+        });
+
+        // Destroy existing chart if present
+        if (this.historySentimentChart) {
+            this.historySentimentChart.destroy();
+        }
+
+        // Create new chart
+        const ctx = this.historySentimentCanvas.getContext('2d');
+        this.historySentimentChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: sentimentHistory.map(d => `#${d.index}`),
+                datasets: [{
+                    label: 'Sentiment',
+                    data: sentimentHistory.map(d => d.score),
+                    borderColor: 'rgb(139, 92, 246)',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointBackgroundColor: sentimentHistory.map(d =>
+                        d.role === 'user' ? 'rgb(16, 185, 129)' : 'rgb(59, 130, 246)'
+                    )
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: -1,
+                        max: 1,
+                        ticks: {
+                            color: '#94a3b8'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: '#94a3b8'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                const item = sentimentHistory[context.dataIndex];
+                                return [
+                                    `Sentiment: ${item.label}`,
+                                    `Score: ${item.score.toFixed(2)}`,
+                                    `Role: ${item.role}`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Show container
+        if (this.historySentimentContainer) {
+            this.historySentimentContainer.style.display = 'block';
+        }
+    }
+
 
 
     getFilteredMessages(transcript, showFinalOnly) {
@@ -854,6 +1174,9 @@ class VoiceAssistant {
             this.appendTranscriptMessage(msg);
         });
 
+        // Render sentiment analysis for the session
+        this.renderHistorySentiment(data.transcript);
+
         // Add exit handler
         document.getElementById('exit-history-btn').addEventListener('click', () => {
             this.currentHistoryData = null; // Clear view state
@@ -933,10 +1256,20 @@ class VoiceAssistant {
 
         const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
+        // Add Sentiment Marker (Historical)
+        let sentimentMarker = '';
+        if (!isSpeculative && !isTool) {
+            const sentiment = this.analyzeSentiment(text);
+            if (sentiment.comparative > 0.05) {
+                sentimentMarker = `<span title="Positive (${sentiment.comparative.toFixed(2)})" style="cursor: help;"> 😊</span>`;
+            } else if (sentiment.comparative < -0.05) {
+                sentimentMarker = `<span title="Negative (${sentiment.comparative.toFixed(2)})" style="cursor: help;"> 😠</span>`;
+            }
+        }
 
         msgDiv.innerHTML = `
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; display: flex; justify-content: space-between;">
-                <span>${isUser ? 'You' : (isSpeculative ? '🤖 Assistant (Plan)' : '🤖 Assistant')}</span>
+                <span>${isUser ? 'You' : (isSpeculative ? '🤖 Assistant (Plan)' : '🤖 Assistant')}${sentimentMarker}</span>
                 <span>${timeStr}</span>
             </div>
             <div>${isUser ? this.parseMarkdown(text) : this.parseMarkdown(text)}</div>
@@ -971,6 +1304,20 @@ class VoiceAssistant {
 
         // Reset stats
         this.resetStats();
+
+        // Reset sentiment data
+        this.sentimentData = [];
+        if (this.liveSentimentChart) {
+            this.liveSentimentChart.data.labels = [];
+            this.liveSentimentChart.data.datasets[0].data = [];
+            this.liveSentimentChart.update();
+        }
+        if (this.liveSentimentContainer) {
+            this.liveSentimentContainer.style.display = 'none';
+        }
+        if (this.mainSentimentStat) {
+            this.mainSentimentStat.style.display = 'none';
+        }
 
         // Save the reset settings
         this.saveSettings(false);
@@ -1237,6 +1584,17 @@ The user can see your response on a screen.
                 workflowStatus.style.display = 'none';
             }
 
+            // Reset Sentiment Data on Connect
+            if (this.sentimentData) this.sentimentData = [];
+            if (this.liveSentimentChart) {
+                this.liveSentimentChart.data.labels = [];
+                this.liveSentimentChart.data.datasets[0].data = [];
+                this.liveSentimentChart.update();
+            }
+            if (this.mainSentimentStat) {
+                this.mainSentimentStat.style.display = 'none';
+            }
+
             this.updateState('connecting');
             this.log('Connecting to server...');
 
@@ -1387,6 +1745,11 @@ The user can see your response on a screen.
                             case 'transcript':
                                 this.displayTranscript(message.role || 'assistant', message.text, message.isFinal, message.isStreaming);
                                 this.log(`Transcript[${message.role}]: ${message.text} `);
+
+                                // Analyze sentiment for final transcripts
+                                if (message.text && message.isFinal) {
+                                    this.updateLiveSentiment(message.text, message.role || 'assistant');
+                                }
                                 break;
 
                             case 'transcriptCancelled':
@@ -1911,6 +2274,24 @@ The user can see your response on a screen.
             const nameSpan = document.createElement('span');
             nameSpan.style.fontWeight = '600';
             nameSpan.textContent = role === 'assistant' ? '🤖 Assistant' : 'You';
+
+            // Add Sentiment Marker
+            if (isFinal && !isStreaming) {
+                const sentiment = this.analyzeSentiment(text);
+                if (sentiment.comparative > 0.05) {
+                    const marker = document.createElement('span');
+                    marker.textContent = ' 😊';
+                    marker.title = `Positive (${sentiment.comparative.toFixed(2)})`;
+                    marker.style.cursor = 'help';
+                    nameSpan.appendChild(marker);
+                } else if (sentiment.comparative < -0.05) {
+                    const marker = document.createElement('span');
+                    marker.textContent = ' 😠';
+                    marker.title = `Negative (${sentiment.comparative.toFixed(2)})`;
+                    marker.style.cursor = 'help';
+                    nameSpan.appendChild(marker);
+                }
+            }
 
             const timeSpan = document.createElement('span');
             timeSpan.style.opacity = '0.7';

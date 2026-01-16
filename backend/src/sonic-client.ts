@@ -1050,19 +1050,32 @@ export class SonicClient {
 
                         // Langfuse: Start Assistant Generation on Content Start
                         // Only start if we don't already have an active generation for this turn
+                        // AND only for SPECULATIVE content (not FINAL re-renders)
                         if (this.trace && this.currentRole === 'ASSISTANT' && !this.currentGeneration) {
-                            console.log(`[SonicClient] Creating assistant generation with input: "${(this.lastUserTranscript || "[No user input captured]").substring(0, 50)}..."`);
+                            const stage = this.contentStages.get(eventData.contentStart.contentId) || 'UNKNOWN';
 
-                            // Track start time for latency metrics
-                            this.currentGenerationStartTime = new Date();
-                            this.firstTokenTime = null; // Reset for this generation
+                            // Only create generation for SPECULATIVE content or if stage is unknown
+                            // This prevents creating duplicate generations for FINAL re-renders
+                            if (stage === 'SPECULATIVE' || stage === 'UNKNOWN') {
+                                console.log(`[SonicClient] Creating assistant generation (stage: ${stage}) with input: "${(this.lastUserTranscript || "[No user input captured]").substring(0, 50)}..."`);
 
-                            this.currentGeneration = this.trace.generation({
-                                name: "assistant-response",
-                                model: this.config.modelId,
-                                input: this.lastUserTranscript || "[No user input captured]",
-                                startTime: this.currentGenerationStartTime
-                            });
+                                // Track start time for latency metrics
+                                this.currentGenerationStartTime = new Date();
+                                this.firstTokenTime = null; // Reset for this generation
+
+                                this.currentGeneration = this.trace.generation({
+                                    name: "assistant-response",
+                                    model: this.config.modelId,
+                                    input: this.lastUserTranscript || "[No user input captured]",
+                                    startTime: this.currentGenerationStartTime,
+                                    metadata: {
+                                        stage: stage,
+                                        contentId: eventData.contentStart.contentId
+                                    }
+                                });
+                            } else {
+                                console.log(`[SonicClient] Skipping generation creation for ${stage} content (already have active generation)`);
+                            }
                         }
                     }
 

@@ -889,6 +889,7 @@ interface ClientSession {
         text: string;
         timestamp: number;
         type?: 'speculative' | 'final'; // New: Track type of transcript
+        sentiment?: any; // New: Store sentiment metadata
     }[];
 
     // AWS Credentials (Per Session)
@@ -1634,6 +1635,25 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 // Additional validation: must be valid UTF-8 and contain common JSON patterns
                 if (message.includes('"type"') || message.includes('"config"')) {
                     const parsed = JSON.parse(message);
+
+                    if (parsed.type === 'update_sentiment') {
+                        const { text, role, sentiment } = parsed.data;
+                        console.log(`[Server] Received sentiment for ${role}: ${sentiment.label} (${sentiment.score})`);
+
+                        // Find matching message in transcript to update metadata
+                        // We search backwards as it's likely the most recent message
+                        if (session.transcript) {
+                            for (let i = session.transcript.length - 1; i >= 0; i--) {
+                                const item = session.transcript[i];
+                                // Match on role and text content (checking endsWith to handle potential prefixing/streaming diffs)
+                                if (item.role === role && (item.text === text || text.includes(item.text) || item.text.includes(text))) {
+                                    item.sentiment = sentiment;
+                                    break;
+                                }
+                            }
+                        }
+                        return;
+                    }
 
                     if (parsed.type === 'getPrompts') {
                         const prompts = await listPrompts();
@@ -2398,7 +2418,17 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
             if (session.isAuthenticated && agentCoreGatewayClient) {
                 console.log('[Server] 🔐 Authenticated Session Ended. Auto-Saving Interaction History (Guardrail Active)...');
                 try {
-                    await agentCoreGatewayClient.callTool('manage_recent_interactions', { action: 'PUBLISH' });
+                    // Extract account details from session context (captured during IDV check)
+                    const accountNumber = session.workflowChecks?.['Account Number'] || '00000000';
+                    const sortCode = session.workflowChecks?.['Sort Code'] || '000000';
+
+                    console.log(`[Server] Auto-save parameters: accountNumber=${accountNumber}, sortCode=${sortCode}`);
+
+                    await agentCoreGatewayClient.callTool('manage_recent_interactions', {
+                        action: 'PUBLISH',
+                        accountNumber: accountNumber,
+                        sortCode: sortCode
+                    });
                     console.log('[Server] ✅ History Auto-Saved Successfully.');
                 } catch (err) {
                     console.error('[Server] ❌ Failed to auto-save history:', err);
