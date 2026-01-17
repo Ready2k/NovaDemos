@@ -7,8 +7,6 @@
  * - Integration between audio processing and WebSocket
  */
 
-import { SentimentLite } from './sentiment-lite.js';
-
 
 
 // Voice presets will be loaded dynamically from the backend
@@ -150,10 +148,8 @@ class VoiceAssistant {
         this.statLatency = document.getElementById('statLatency');
         this.statCost = document.getElementById('statCost');
 
-        // Sentiment Analysis
-        // Using local lightweight analyzer to avoid CDN issues
-        this.sentimentAnalyzer = new SentimentLite();
-        console.log('[Sentiment] Initialized local SentimentLite analyzer');
+        // Sentiment Analysis (LLM-Driven)
+        // Sentiment data is now extracted from LLM responses via [SENTIMENT: score] tags
         this.sentimentData = []; // Store real-time sentiment scores
         this.liveSentimentChart = null;
         this.historySentimentChart = null;
@@ -626,38 +622,13 @@ class VoiceAssistant {
 
     /**
      * Analyze sentiment of text and return score
+     * @deprecated This method is deprecated. Using LLM-driven sentiment instead.
      * @param {string} text - Text to analyze
      * @returns {object} - {score: number, label: string, comparative: number}
      */
     analyzeSentiment(text) {
-        if (!this.sentimentAnalyzer) {
-            // Should not happen with local import, but safe fallback
-            this.sentimentAnalyzer = new SentimentLite();
-        }
-
-        if (!text || text.trim().length === 0) {
-            return { score: 0, label: 'Neutral', comparative: 0 };
-        }
-
-        const result = this.sentimentAnalyzer.analyze(text);
-        console.log(`[Sentiment] Analyzed: "${text.substring(0, 50)}..." -> Score: ${result.score}, Comparative: ${result.comparative.toFixed(3)}`);
-
-        // Map score to label
-
-
-
-        // Map score to label
-        let label = 'Neutral';
-        if (result.comparative > 0.2) label = 'Positive';
-        else if (result.comparative < -0.2) label = 'Negative';
-        else if (result.comparative > 0.05) label = 'Slightly Positive';
-        else if (result.comparative < -0.05) label = 'Slightly Negative';
-
-        return {
-            score: result.score,
-            comparative: result.comparative,
-            label: label
-        };
+        console.warn('[Sentiment] analyzeSentiment() is deprecated. Using LLM-driven sentiment instead.');
+        return { score: 0, label: 'Neutral', comparative: 0 };
     }
 
     /**
@@ -735,27 +706,40 @@ class VoiceAssistant {
 
     /**
      * Update live sentiment chart with new data
-     * @param {string} text - Text to analyze
+     * @param {string} text - Text to analyze (optional, for display purposes)
      * @param {string} role - Role (user/assistant)
+     * @param {number} score - Sentiment score from -1 to 1 (from LLM tag)
      */
-    updateLiveSentiment(text, role) {
-        console.log(`[Sentiment] updateLiveSentiment called - Role: ${role}, Text: "${text?.substring(0, 50)}..."`);
-        if (!text || role === 'system') return;
+    updateLiveSentiment(text, role, score = null) {
+        console.log(`[Sentiment] updateLiveSentiment called - Role: ${role}, Score: ${score}`);
+        if (role === 'system') return;
 
-        const sentiment = this.analyzeSentiment(text);
+        // If no score provided, skip (LLM-driven mode requires explicit score)
+        if (score === null) {
+            console.warn('[Sentiment] No score provided, skipping update');
+            return;
+        }
+
         const timestamp = new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit'
         });
 
+        // Map score to label
+        let label = 'Neutral';
+        if (score > 0.2) label = 'Positive';
+        else if (score < -0.2) label = 'Negative';
+        else if (score > 0.05) label = 'Slightly Positive';
+        else if (score < -0.05) label = 'Slightly Negative';
+
         // Store sentiment data
         this.sentimentData.push({
             timestamp,
-            score: sentiment.comparative,
-            label: sentiment.label,
+            score: score,
+            label: label,
             role,
-            text: text.substring(0, 50) + '...'
+            text: text ? text.substring(0, 50) + '...' : 'N/A'
         });
 
         // Keep only last 20 data points
@@ -783,9 +767,9 @@ class VoiceAssistant {
                     text: text,
                     role: role,
                     sentiment: {
-                        score: sentiment.score,
-                        label: sentiment.label,
-                        comparative: sentiment.comparative
+                        score: score,
+                        label: label,
+                        comparative: score
                     }
                 }
             })));
@@ -803,9 +787,9 @@ class VoiceAssistant {
 
             // Update main screen sentiment stat
             if (this.mainSentimentLabel && this.mainSentimentScore) {
-                this.mainSentimentLabel.textContent = sentiment.label;
-                this.mainSentimentLabel.style.color = sentiment.comparative > 0 ? '#10b981' : sentiment.comparative < 0 ? '#ef4444' : '#94a3b8';
-                this.mainSentimentScore.textContent = `(${sentiment.comparative.toFixed(2)})`;
+                this.mainSentimentLabel.textContent = label;
+                this.mainSentimentLabel.style.color = score > 0 ? '#10b981' : score < 0 ? '#ef4444' : '#94a3b8';
+                this.mainSentimentScore.textContent = `(${score.toFixed(2)})`;
             }
 
             // Show main sentiment stat if hidden
@@ -817,6 +801,39 @@ class VoiceAssistant {
         // Show container if hidden
         if (this.liveSentimentContainer && this.liveSentimentContainer.style.display === 'none') {
             this.liveSentimentContainer.style.display = 'block';
+        }
+    }
+
+    /**
+     * Update sentiment marker on an existing message bubble
+     * @param {HTMLElement} messageElement - The message bubble DOM element
+     * @param {number} score - Sentiment score from -1 to 1
+     */
+    updateSentimentMarker(messageElement, score) {
+        if (!messageElement) return;
+
+        const nameSpan = messageElement.querySelector('div > span:first-child');
+        if (!nameSpan) return;
+
+        // Remove existing sentiment marker if present
+        const existingMarker = nameSpan.querySelector('span[title*="Positive"], span[title*="Negative"]');
+        if (existingMarker) {
+            existingMarker.remove();
+        }
+
+        // Add new marker based on score
+        if (score > 0.05) {
+            const marker = document.createElement('span');
+            marker.textContent = ' 😊';
+            marker.title = `Positive (${score.toFixed(2)})`;
+            marker.style.cursor = 'help';
+            nameSpan.appendChild(marker);
+        } else if (score < -0.05) {
+            const marker = document.createElement('span');
+            marker.textContent = ' 😠';
+            marker.title = `Negative (${score.toFixed(2)})`;
+            marker.style.cursor = 'help';
+            nameSpan.appendChild(marker);
         }
     }
 
@@ -2305,6 +2322,33 @@ The user can see your response on a screen.
      * Display transcript in UI with streaming support
      */
     displayTranscript(role, text, isFinal = true, isStreaming = false) {
+        // 1. Parse & Capture Sentiment Score (LLM-Driven)
+        let parsedSentimentScore = null;
+        // More forgiving regex that handles malformed tags:
+        // - Proper: [SENTIMENT: 0.5]  - Missing bracket: SENTIMENT: 0.5]  - Extra brackets: [[SENTIMENT: 0.5]]
+        const sentimentMatch = text.match(/(?:\[{1,2}\s*)?SENTIMENT:\s*(-?[\d\.]+)\s*(?:\]{1,2})?/i);
+
+        if (sentimentMatch) {
+            const score = parseFloat(sentimentMatch[1]);
+            parsedSentimentScore = score;
+
+            // Update Graph (Live) - only for final assistant messages
+            if (isFinal && role === 'assistant') {
+                this.updateLiveSentiment(text, role, score);
+            }
+
+            // Strip Tag from display - handle all variations with multiple passes
+            // First pass: Standard tags with or without brackets
+            text = text.replace(/(?:\[{1,2}\s*)?SENTIMENT:\s*-?[\d\.]+\s*(?:\]{1,2})?/gi, '');
+            // Second pass: Catch any remaining partial tags (e.g., "TIMENT:", "ENTIMENT:")
+            text = text.replace(/[A-Z]*TIMENT:\s*-?[\d\.]+\s*\]?/gi, '');
+            // Third pass: Clean up any orphaned brackets or fragments
+            text = text.replace(/\[\s*SENTIMENT[^\]]*\]/gi, '');
+            text = text.replace(/SENTIMENT[^\]]*\]/gi, '');
+            // Final cleanup: trim whitespace
+            text = text.trim();
+        }
+
         // Filter out JSON-like strings or interruption signals that might have leaked into text
         if (typeof text === 'string' && (text.includes('"interrupted"') || text.trim().startsWith('{'))) {
             return;
@@ -2349,6 +2393,11 @@ The user can see your response on a screen.
         if (lastMessage && isSameRole && !isStreaming) {
             const lastText = lastMessage.querySelector('.text').textContent;
             if (lastText === text && isFinal && !isTemporary) {
+                // 2. Late Packet Handling (Race Condition Guard)
+                // If sentiment tag arrived in a separate packet, update the existing bubble
+                if (parsedSentimentScore !== null) {
+                    this.updateSentimentMarker(lastMessage, parsedSentimentScore);
+                }
                 return; // Don't create duplicate final message
             }
         }
@@ -2372,19 +2421,19 @@ The user can see your response on a screen.
             nameSpan.style.fontWeight = '600';
             nameSpan.textContent = role === 'assistant' ? '🤖 Assistant' : 'You';
 
-            // Add Sentiment Marker
-            if (isFinal && !isStreaming) {
-                const sentiment = this.analyzeSentiment(text);
-                if (sentiment.comparative > 0.05) {
+
+            // Add Sentiment Marker (using LLM score if available)
+            if (isFinal && !isStreaming && parsedSentimentScore !== null) {
+                if (parsedSentimentScore > 0.05) {
                     const marker = document.createElement('span');
                     marker.textContent = ' 😊';
-                    marker.title = `Positive (${sentiment.comparative.toFixed(2)})`;
+                    marker.title = `Positive (${parsedSentimentScore.toFixed(2)})`;
                     marker.style.cursor = 'help';
                     nameSpan.appendChild(marker);
-                } else if (sentiment.comparative < -0.05) {
+                } else if (parsedSentimentScore < -0.05) {
                     const marker = document.createElement('span');
                     marker.textContent = ' 😠';
-                    marker.title = `Negative (${sentiment.comparative.toFixed(2)})`;
+                    marker.title = `Negative (${parsedSentimentScore.toFixed(2)})`;
                     marker.style.cursor = 'help';
                     nameSpan.appendChild(marker);
                 }

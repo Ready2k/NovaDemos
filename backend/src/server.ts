@@ -1755,6 +1755,41 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         }
 
 
+                        // 1.9.5 Inject Sentiment Tagging Instruction
+                        if (parsed.config.systemPrompt) {
+                            const sentimentInstruction = "\n\n" +
+                                "########## SENTIMENT TAGGING (CRITICAL REQUIREMENT) ##########\n" +
+                                "MANDATORY: You MUST append a sentiment tag to EVERY response.\n" +
+                                "Format: [SENTIMENT: X] where X is a number from -1 to 1\n" +
+                                "- Use square brackets: [ and ]\n" +
+                                "- Include the word SENTIMENT followed by a colon\n" +
+                                "- Then a space and the score\n" +
+                                "- Score: -1 (very negative) to 1 (very positive)\n" +
+                                "\n" +
+                                "FEW-SHOT EXAMPLES (Study these carefully):\n" +
+                                "1. User: \"Hello, how are you?\"\n" +
+                                "   Assistant: \"I'm doing great, thanks for asking! How can I help you today? [SENTIMENT: 0.7]\"\n" +
+                                "\n" +
+                                "2. User: \"This is terrible! I'm very upset!\"\n" +
+                                "   Assistant: \"I sincerely apologize for the frustration you're experiencing. Let me help resolve this right away. [SENTIMENT: -0.4]\"\n" +
+                                "\n" +
+                                "3. User: \"Can you check my account balance?\"\n" +
+                                "   Assistant: \"Of course, I can help you with that. [SENTIMENT: 0.1]\"\n" +
+                                "\n" +
+                                "4. User: \"Thank you so much! You've been wonderful!\"\n" +
+                                "   Assistant: \"You're very welcome! I'm so glad I could help. [SENTIMENT: 0.9]\"\n" +
+                                "\n" +
+                                "5. User: \"I need to make a complaint.\"\n" +
+                                "   Assistant: \"I understand, and I'm here to listen. Please tell me what happened. [SENTIMENT: -0.1]\"\n" +
+                                "\n" +
+                                "CRITICAL RULES:\n" +
+                                "- The tag is HIDDEN from the user. NEVER mention it in your response.\n" +
+                                "- ALWAYS include the tag, even for short responses.\n" +
+                                "- Match the sentiment to YOUR tone, not the user's.\n" +
+                                "- FAILURE TO INCLUDE THIS TAG WILL BREAK THE SYSTEM.\n";
+                            parsed.config.systemPrompt += sentimentInstruction;
+                        }
+
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
                             session.brainMode = parsed.config.brainMode;
@@ -2133,7 +2168,12 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
 
-
+                            // Add user message to transcript for chat history
+                            session.transcript.push({
+                                role: 'user',
+                                text: parsed.text,
+                                timestamp: Date.now()
+                            });
 
                             // Send user message to transcript display
                             ws.send(JSON.stringify({

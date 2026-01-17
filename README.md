@@ -1,312 +1,545 @@
-# Real-Time Voice-to-Voice Assistant
+# Voice S2S - Real-Time Voice-to-Voice Assistant
 
-A minimal, clean implementation of real-time speech-to-speech interaction using WebSocket audio streaming, designed for integration with Amazon Nova Sonic.
+A comprehensive, production-ready real-time speech-to-speech interaction platform powered by Amazon Nova 2 Sonic, featuring advanced tool execution, workflow automation, sentiment analysis, and enterprise-grade banking capabilities.
 
-## Architecture
+## 🎯 Overview
+
+Voice S2S is a full-stack WebSocket-based voice assistant that enables natural, real-time conversations with AI. Built on Amazon Nova 2 Sonic's bidirectional streaming capabilities, it supports both direct AI interactions and complex agent-based workflows for enterprise applications like banking.
+
+### Architecture
 
 ```
 Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic → Backend Server → WebSocket → Browser (Speakers)
+                                          ↓
+                                    Tool Execution
+                                    Agent Workflows
+                                    Knowledge Bases
 ```
 
-### Current Implementation
+## ✨ Core Features
 
-- **Frontend**: Captures microphone audio, converts to PCM16, streams via WebSocket, displays transcripts, and visualizes audio
-- **Backend**: Routes audio to Amazon Nova 2 Sonic via AWS Bedrock, streams responses back
-- **Audio Format**: PCM16, mono, 16kHz sample rate
-- **AI Model**: Amazon Nova 2 Sonic (released December 2025) - bidirectional speech-to-speech with 1M token context
+### 🎙️ **Real-Time Voice Interaction**
+- **Bidirectional Streaming**: True real-time speech-to-speech with <500ms latency
+- **Multiple Voices**: Choose from Nova's expressive voice library (Matthew, Tiffany, Amy, etc.)
+- **Audio Visualization**: Dynamic waveform display for both user input and AI output
+- **PCM16 Audio**: High-quality 16kHz mono audio streaming
+- **Interruption Handling**: Natural conversation flow with mid-sentence interruptions
 
-### Key Features
+### 🧠 **Dual Architecture Modes**
 
-- **🎯 100% Native Nova 2 Sonic Tool Capability**: Complete native tool integration with visual and audible feedback
-- **🏗️ Dual Architecture Support**: 
-  - Nova Sonic Direct Mode (fast, natural tool calls)
-  - Bedrock Agent Mode (complex banking workflows)
-- **Real-time Audio Visualizer**: Dynamic, reactive waveform visualization of both user input and AI output
-- **Text Interface**: Full chat functionality allowing users to type questions and receive voice/text responses
-- **Interaction Modes**: Switch between "Chat + Voice", "Voice Only", and "Chat Only" to suit your environment
-- **Persona Presets**: Switch between different system prompts (e.g., Coding Assistant, Pirate, French Tutor)
-- **Voice Selection**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
-- **Session Stats**: Real-time tracking of latency, token usage, and session duration
-- **Configuration Persistence**: Settings are automatically saved to `localStorage`
-- **Dynamic AWS Configuration**: Set AWS credentials and Agent Core Runtime ARN via GUI without server restart
-- **Native Tool Execution**: Time queries, server information, and extensible tool framework
-- **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
-- **Native Tool Execution**: Time queries, server information, and extensible tool framework
-- **Tool Enable/Disable**: Proper frontend control over which tools are available to Nova Sonic
-- **💾 Smart Tool Result Caching**: 
-  - Intelligent caching with tool-specific TTL (time: 30s, account: 60s, weather: 5min)
-  - Fuzzy query matching for interrupted/repeated questions
-  - Cost optimization - prevents redundant AgentCore calls
-  - Consistent user experience for cached vs fresh results
-- **🔔 Toast Notification System**: 
-  - Visual feedback for tool processing
-  - Deduplication prevents multiple notifications
-  - Clean UI with proper cleanup
-- **🕸️ Visual Workflow Creator**: 
-  - Drag-and-drop interface to build complex agent behaviors
-  - Create decision trees, tool calls, and branching logic
-  - Instantly testable via Dynamic Prompt Injection
-- **🧠 Dynamic Workflow Injection**: 
-  - Backend automatically converts visual graphs into text instructions
-  - Injects logic into the System Prompt based on the active persona
+#### 1. **Nova Sonic Direct Mode** (Recommended)
+- Fast, natural tool execution
+- Native tool calling with visual feedback
+- Ideal for: Time queries, general chat, quick information retrieval
+- Response time: 200-500ms
 
-## Recent Updates (December 2025)
+#### 2. **Bedrock Agent Mode** (Banking Bot)
+- Complex multi-step workflows
+- Full agent reasoning and planning
+- Ideal for: Banking operations, mortgage calculations, dispute management
+- Response time: 1-3s (includes reasoning)
 
-### ✅ Latest: Enhanced Tool Management & Dynamic Categories (Dec 14, 2025)
-- **Feature**: Full UI for managing tool categories (Banking, Mortgage, System, Custom).
-- **Tool Manager**: Updated to support creating dynamic categories via "Smart Input".
-- **Metadata**: Migrated categorization to tool JSON definitions for scalability.
-- **Tabs**: Main UI now renders tools in tabbed views for better organization.
+### 💬 **Flexible Interaction Modes**
+- **Chat + Voice**: Full functionality with both text and voice
+- **Voice Only**: Hands-free operation, text input hidden
+- **Chat Only**: Silent mode with audio muted
 
-### ✅ Bedrock Agent Mode Fixed (Dec 11, 2025)
-- **Fixed**: "Banking Bot (Agent)" dropdown selection now works correctly
-- **Issue**: Frontend was ignoring built-in `bedrock_agent` option, only handling custom agents
-- **Solution**: Updated `getSessionConfig()` to properly handle built-in bedrock_agent mode
-- **Impact**: Users can now access banking workflows via the dropdown menu
-- **Verification**: Server logs show proper brain mode switching and Banking Bot activation
+### 🛠️ **Native Tool System** (14 Built-in Tools)
 
-### ✅ Graceful Disabled Tool Handling (Dec 14, 2025)
-- **Fixed**: System silence or hallucinations when users request disabled tools
-- **Solution**: Implemented server-side interception. All tools are defined to the model (preventing hallucinations), but execution is guarded by an `allowedTools` list.
-- **Outcome**: If a user requests a disabled tool, the system intercepts the call and instructs the model to politely apologize ("request cannot be fulfilled").
+#### Banking Tools
+- `agentcore_balance`: Check account balance with sort code and account number
+- `agentcore_transactions`: Retrieve recent transaction history
+- `create_dispute_case`: File transaction disputes with merchant details
+- `update_dispute_case`: Update existing dispute cases
+- `lookup_merchant_alias`: Resolve merchant names from transaction codes
 
-### ✅ Improved Credential Management (Dec 18, 2025)
-- **Fixed**: "Invalid Security Token" errors when using temporary AWS credentials
-- **Solution**: Added optional **Session Token** field to AWS Configuration UI and updated backend to handle credentials correctly during initial handshake.
-- **Support**: Fully supports both Long-term (AKIA) and Temporary (SSO) AWS credentials.
+#### Mortgage Tools
+- `calculate_max_loan`: Calculate maximum loan amount based on income
+- `get_mortgage_rates`: Retrieve current mortgage rates
+- `value_property`: Get property valuations
+- `check_credit_score`: Check credit scores for mortgage applications
 
-### ✅ Latest: Visual Workflow Editor & Dynamic Injection (Dec 13, 2025)
-- **New Feature**: Added a full visual editor for building agent flows (`/workflow-editor.html`)
-- **Backend Logic**: Implemented `workflow-{persona}.json` detection and automatic prompt injection
-- **UI Integration**: Added "Guide" button to the editor for in-app tutorials
-- **Use Case**: Demonstrated with "Sci-Fi Bot" — create a flow that changes persona based on user input (Star Trek vs Star Wars)
+#### Identity & Verification
+- `perform_idv_check`: Identity verification with sort code and account number validation
 
-### ✅ Chat Duplication Issue Resolved (Dec 11, 2025)
-- **Fixed**: Nova Sonic conversation context accumulation causing duplicate responses
-- **Root Cause**: Cross-modal text inputs were accumulating in Nova's conversation memory
-- **Solution**: Enhanced response processing with dual deduplication system
-- **Impact**: Clean, non-repetitive chat responses while preserving voice functionality
+#### Knowledge & Information
+- `search_knowledge_base`: RAG-powered knowledge base queries
+- `uk_branch_lookup`: Find nearest bank branches by postcode
 
-### 🔧 Chat Duplication Fix (Latest)
-- **Resolved Nova Sonic cross-modal conversation accumulation**: Fixed issue where chat responses would repeat previous messages
-- **Internal deduplication**: Eliminated duplicate sentences within single responses (e.g., "Hello!Hello!")
-- **Cross-response deduplication**: Prevented entire previous responses from appearing in new messages
-- **Smart response parsing**: Enhanced algorithms with exact and fuzzy matching for Nova Sonic's conversation context
-- **Dual storage system**: Store both original and processed responses for accurate comparison
-- **Preserved voice functionality**: All fixes apply only to chat mode, voice-to-voice remains unaffected
-- **Improved tool integration**: Banking tools now work correctly without duplication or protocol errors
+#### System Tools
+- `get_server_time`: Current server time with timezone support
+- `manage_recent_interactions`: Conversation history management
 
-### 🔧 Chat Duplication Fix (Latest)
-- **Resolved Nova Sonic cross-modal conversation accumulation**: Fixed issue where chat responses would repeat previous messages
-- **Internal deduplication**: Eliminated duplicate sentences within single responses (e.g., "Hello!Hello!")
-- **Cross-response deduplication**: Prevented entire previous responses from appearing in new messages
-### 📁 Project Organization Improvements
-- **Prompt naming convention**: Implemented `core-` prefix for platform prompts, `persona-` prefix for character prompts
-- **Test file organization**: Moved all test files to `/tests/` folder for cleaner main directory
-- **Prompt externalization**: All hardcoded LLM prompts moved to external files with `loadPrompt()` function calls
-- **Enhanced documentation**: Added comprehensive README sections and prompt documentation
+### 💭 **LLM-Driven Sentiment Analysis**
+- **Real-time Sentiment Tracking**: Live graph showing conversation sentiment over time
+- **Emoji Markers**: Visual sentiment indicators (😊 😠) on messages
+- **Score Range**: -1 (very negative) to 1 (very positive)
+- **Robust Parsing**: Handles malformed sentiment tags gracefully
+- **Live Dashboard**: Sentiment score displayed in sidebar and header
 
-### 🛠️ Technical Enhancements
-- **Tool execution timing**: Added timestamps and duration measurements for debugging
-- **Enhanced logging**: Improved debug output with ISO timestamps and execution tracking
-- **Session management**: Better handling of tool execution states and cleanup
+### 🕸️ **Visual Workflow System**
+- **Drag-and-Drop Editor**: Build complex agent behaviors visually
+- **Decision Trees**: Create branching logic based on user input
+- **Dynamic Injection**: Workflows automatically injected into system prompts
+- **Persona Coupling**: Link workflows to specific personas
+- **JSON Export**: Save and share workflow definitions
 
-### Integration Details
+### 📚 **Knowledge Base Integration**
+- **RAG Support**: Retrieve-Augment-Generate with external knowledge
+- **Multiple KBs**: Support for multiple knowledge bases per session
+- **Dynamic Configuration**: Add/remove knowledge bases via UI
+- **Model Selection**: Choose embedding models per knowledge base
 
-The backend uses AWS Bedrock Runtime's `InvokeModelWithBidirectionalStreamCommand` for real-time streaming:
-- Async generator pattern for input audio stream
-- Event loop processing for Sonic responses (audio + transcripts)
-- Graceful session management and cleanup
+### 👤 **Persona & Prompt Management**
+- **Preset Personas**: Coding Assistant, Pirate, French Tutor, Banking Bot, etc.
+- **Custom Prompts**: Create and save custom system prompts
+- **Langfuse Integration**: Prompt versioning and management
+- **Speech Prompts**: Optional speech-specific instructions
+- **Guardrails**: Core safety and quality rules
 
-## Project Structure
+### 💾 **Smart Caching System**
+- **Tool Result Caching**: Intelligent caching with tool-specific TTL
+  - Time queries: 30 seconds
+  - Account balance: 60 seconds
+  - Weather data: 5 minutes
+- **Fuzzy Query Matching**: Handles interrupted/repeated questions
+- **Cost Optimization**: Prevents redundant API calls
+- **Cache Invalidation**: Automatic expiration based on TTL
 
+### 📊 **Session Analytics**
+- **Real-time Stats**: Duration, token usage, cost tracking
+- **Token Counting**: Separate input/output token metrics
+- **Cost Calculation**: Configurable pricing per 1K tokens
+- **Session History**: Complete conversation logs with sentiment data
+- **Langfuse Observability**: Full tracing and monitoring
+
+### 🔔 **Toast Notification System**
+- **Tool Processing Feedback**: Visual notifications for tool execution
+- **Deduplication**: Prevents multiple notifications for same event
+- **Auto-dismiss**: Configurable timeout with manual dismiss option
+- **Status Indicators**: Success, error, and info states
+
+### 🎨 **Modern UI/UX**
+- **Dark Mode**: Sleek, professional dark theme
+- **Responsive Design**: Works on desktop, tablet, and mobile
+- **Sidebar Navigation**: Organized sections for settings, tools, workflows
+- **Live Status Indicators**: Connection, recording, and processing states
+- **Keyboard Shortcuts**: Efficient navigation and control
+- **Accessibility**: ARIA labels and semantic HTML
+
+## 🏗️ Technical Architecture
+
+### Frontend (`/frontend`)
+- **Vanilla JavaScript**: No frameworks, minimal dependencies
+- **WebSocket Client**: Binary audio streaming
+- **Audio Processing**: PCM16 conversion, playback queue management
+- **Chart.js**: Sentiment visualization
+- **LocalStorage**: Settings persistence
+
+### Backend (`/backend`)
+- **TypeScript**: Type-safe server implementation
+- **WebSocket Server**: Binary frame handling
+- **AWS SDK Integration**: Bedrock Runtime, Agent Runtime, Polly, Transcribe
+- **Langfuse**: Observability and prompt management
+- **Tool Execution Engine**: Dynamic tool loading and caching
+
+### Tools (`/tools`)
+- **JSON Definitions**: Declarative tool specifications
+- **Category System**: Banking, Mortgage, System, Custom
+- **Dynamic Loading**: Hot-reload tool definitions
+- **Metadata**: Descriptions, parameters, categories
+
+### Workflows (`/workflows`)
+- **Visual Editor**: Drag-and-drop interface
+- **JSON Storage**: Workflow definitions per persona
+- **Dynamic Injection**: Automatic prompt enhancement
+- **Branching Logic**: Conditional flows based on user input
+
+## 📦 Installation & Setup
+
+### Prerequisites
+- Node.js 18+ and npm
+- AWS Account with Bedrock access
+- Amazon Nova 2 Sonic model access in your region
+
+### 1. Clone Repository
+```bash
+git clone <repository-url>
+cd Voice_S2S
 ```
-Voice_S2S/
-├── frontend/
-│   ├── index.html      # UI with status indicators and controls
-│   ├── main.js         # WebSocket connection and state management
-│   └── audio.js        # Audio capture, PCM16 conversion, playback
-├── backend/
-│   ├── src/
-│   │   ├── server.ts           # WebSocket server with dual architecture support
-│   │   ├── sonic-client.ts     # Complete Nova Sonic integration
-│   │   ├── bedrock-agent-client.ts # Banking Bot integration
-│   │   └── transcribe-client.ts    # Audio transcription for agent mode
-│   ├── prompts/
-│   │   ├── core_guardrails.txt # Native tool usage instructions
-│   │   └── agent_echo.txt      # Banking Bot relay configuration
-│   ├── package.json
-│   └── tsconfig.json
-├── tools/
-│   └── time_tool.json          # Native tool definitions
-├── tests/
-│   └── test-complete-native.js # End-to-end tool testing
-├── NATIVE_TOOL_SOLUTION.md     # Complete implementation guide
-└── README.md
-```
 
-## Documentation
-
-- **[User Guide](./docs/USER_GUIDE.md)**: Comprehensive user manual with screenshots.
-- **[Getting Started](./docs/getting_started.md)**: Setup and installation guide.
-- **[Tool Management](./docs/tool_management.md)**: How to configure, categorize, and create new tools.
-- **[Knowledge Bases](./docs/knowledge_bases.md)**: Integrating RAG and external knowledge sources.
-- **[Workflow Editor](./docs/workflows.md)**: Designing complex agent behaviors visually.
-- **[Native Tool Implementation](./NATIVE_TOOL_SOLUTION.md)**: Deep dive into the tool execution architecture.
-
-## Setup Instructions
-
-### 1. Install Backend Dependencies
-
+### 2. Install Backend Dependencies
 ```bash
 cd backend
 npm install
 ```
 
-### 2. Configure AWS Credentials
+### 3. Configure AWS Credentials
 
-Create a `.env` file in the `backend` directory:
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-Edit `.env` and add your AWS credentials:
+Create `.env` file in `backend/` directory:
 
 ```env
 NOVA_AWS_REGION=us-east-1
 NOVA_AWS_ACCESS_KEY_ID=your_access_key_here
 NOVA_AWS_SECRET_ACCESS_KEY=your_secret_key_here
+NOVA_AWS_SESSION_TOKEN=your_session_token_here  # Optional, for SSO/MFA
 NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
 AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/YourRuntimeName
+
+# Optional: Langfuse Integration
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
 **Required IAM Permissions:**
-- `bedrock:InvokeModelWithBidirectionalStream`
-- `bedrock-agentcore:InvokeAgentRuntime` (for Agent Core Runtime)
-- Access to the `amazon.nova-2-sonic-v1:0` model in your region
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModelWithBidirectionalStream",
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "polly:SynthesizeSpeech",
+        "transcribe:StartStreamTranscription"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
-**Alternative:** If running on AWS infrastructure (EC2/ECS), you can use IAM roles instead of explicit credentials.
-
-### 3. Build Backend
-
+### 4. Build Backend
 ```bash
 npm run build
 ```
 
-### 4. Start Backend Server
-
+### 5. Start Server
 ```bash
 npm start
 ```
 
-The server will start on port 8080 with WebSocket endpoint: `ws://localhost:8080/sonic`
+Server starts on **http://localhost:8080**
 
-### 5. Open Frontend
- 
-Open your browser and navigate to:
- 
-**http://localhost:8080**
- 
-(Do not open the `index.html` file directly, as it requires the server to handle CORS and static files)
+### 6. Open Frontend
+Navigate to **http://localhost:8080** in your browser
 
-## Usage
+⚠️ **Important**: Do not open `index.html` directly - use the server URL to avoid CORS issues
 
-### Basic Setup
-1. **Connect**: Click the "Connect" button to establish WebSocket connection
-2. **Allow Microphone**: Grant microphone permissions when prompted
-3. **Select Brain Mode**:
-   - **Nova Sonic Direct**: Fast, natural tool calls (recommended for time queries)
-   - **Bedrock Agent**: Complex banking workflows with full agent reasoning
+## 🚀 Usage Guide
 
-### Interaction Methods
-4. **Voice**: Speak into your microphone. The visualizer will react to your voice
-5. **Text**: Type in the chat bar at the bottom and press Enter
-6. **Modes**: Use the "Interaction Mode" dropdown to switch between:
-   - `✨ Chat + Voice`: Full functionality
-   - `🎤 Voice Only`: Text input hidden
-   - `💬 Chat Only`: Audio muted, mic disabled
+### Quick Start
+1. Click **Connect** to establish WebSocket connection
+2. Grant microphone permissions when prompted
+3. Select **Brain Mode**:
+   - **Nova Sonic (Direct)**: For general chat and quick queries
+   - **Banking Bot (Agent)**: For banking operations
+4. Start talking or typing!
 
-### Tool Usage Examples
-- **Time Queries**: "What time is it?" → Native tool execution → Natural speech response
-- **Repeated Queries**: "What was the time?" → Instant cached response without re-execution
-- **Interrupted Queries**: Ask for time, interrupt, then ask again → Smart cache hit detection
-- **Banking Queries**: "Hello" → Banking Bot greeting and assistance
-- **General Chat**: Any conversational input → Natural AI responses
+### Example Interactions
 
-### Customization
-7. **Persona**: Select different system prompts (Coding Assistant, Pirate, French Tutor)
-8. **Voice**: Choose from available Nova voices (Matthew, Tiffany, Amy, etc.)
-9. **Tools**: Enable/disable specific tools in the configuration panel
-10. **AWS Configuration**: Configure AWS credentials and Agent Core Runtime ARN via the GUI
-    - Credentials are stored securely in session storage
-    - Supports Access Key, Secret Key, and **Session Token** (for SSO/MFA)
-    - Agent Core Runtime ARN can be set per session
-    - Settings are applied automatically when connecting
+#### General Chat (Nova Sonic Direct)
+```
+You: "What time is it?"
+AI: "It's currently 3:45 PM Eastern Time." [Uses get_server_time tool]
 
-**Note**: First response may take 1-2 seconds as Nova Sonic initializes the conversation.
+You: "Tell me a joke"
+AI: "Why don't scientists trust atoms? Because they make up everything!"
+```
 
-## Audio Specifications
+#### Banking Operations (Bedrock Agent)
+```
+You: "Check my balance"
+AI: "I'll need your account details. Could you provide your sort code and account number?"
 
-- **Format**: PCM16 (16-bit signed integer)
-- **Sample Rate**: 16,000 Hz
-- **Channels**: 1 (mono)
-- **Chunk Size**: 4,096 samples
-- **Latency**: < 500ms (end-to-end)
+You: "Sort code 112233, account number 12345678"
+AI: "Your current balance is £1,200.00. Would you like to see recent transactions?"
 
-## Troubleshooting
+You: "Yes, show me my last transaction"
+AI: "Your most recent transaction was on January 14th for £4.50 at Pret A Manger."
+```
 
-**AWS Authentication Error**: Verify your `.env` file has correct AWS credentials and the IAM user/role has Bedrock permissions.
+#### Mortgage Calculations
+```
+You: "I earn £45,000 per year. How much can I borrow?"
+AI: "Based on your annual income of £45,000, you could borrow up to £202,500 (4.5x income multiplier)."
+```
 
-**Model Access Denied**: Ensure you have access to the `amazon.nova-2-sonic-v1:0` model in your AWS region. Some regions may require model access requests.
+### Tool Management
+1. Navigate to **Tools** section in sidebar
+2. Enable/disable tools by category
+3. Tools are organized into:
+   - **Banking**: Account operations
+   - **Mortgage**: Loan calculations
+   - **System**: Utility functions
+   - **Custom**: User-defined tools
 
-**No Audio Response**: Check browser console for errors. Verify Nova Sonic session started successfully in backend logs.
+### Creating Custom Workflows
+1. Open **Workflow Editor** (`/workflow-editor.html`)
+2. Drag nodes to create flow
+3. Connect nodes with decision logic
+4. Save workflow with persona name
+5. Workflow auto-injects when persona is selected
 
-**High Latency**: 
-- Reduce audio chunk size in `audio.js` (currently 4096 samples)
-- Ensure stable network connection
-- Check AWS region latency (use closest region)
+### Sentiment Analysis
+- View live sentiment in **Live Session** sidebar
+- Graph shows sentiment over time
+- Emoji markers on messages indicate tone
+- Top bar displays current sentiment score
 
-**Microphone not working**: Ensure browser has microphone permissions and page is served over HTTPS (or localhost).
+## 📁 Project Structure
 
-**WebSocket connection failed**: Verify backend server is running on port 8080.
+```
+Voice_S2S/
+├── frontend/
+│   ├── index.html              # Main UI
+│   ├── main.js                 # WebSocket client & state management
+│   ├── audio.js                # Audio capture & playback
+│   ├── index.css               # Styling
+│   ├── workflow-editor.html    # Visual workflow builder
+│   └── workflow.html           # Workflow visualizer
+├── backend/
+│   ├── src/
+│   │   ├── server.ts           # WebSocket server
+│   │   ├── sonic-client.ts     # Nova Sonic integration
+│   │   ├── bedrock-agent-client.ts  # Agent mode
+│   │   └── transcribe-client.ts     # Audio transcription
+│   ├── prompts/
+│   │   ├── core_guardrails.txt      # Safety rules
+│   │   └── agent_echo.txt           # Agent configuration
+│   ├── package.json
+│   └── tsconfig.json
+├── tools/
+│   ├── agentcore_balance.json       # Banking tools
+│   ├── calculate_max_loan.json      # Mortgage tools
+│   ├── perform_idv_check.json       # Identity verification
+│   ├── search_knowledge_base.json   # Knowledge base
+│   └── get_server_time.json         # System tools
+├── workflows/
+│   └── workflow-{persona}.json      # Persona workflows
+├── docs/
+│   ├── USER_GUIDE.md                # Comprehensive user manual
+│   ├── getting_started.md           # Setup guide
+│   ├── tool_management.md           # Tool configuration
+│   ├── knowledge_bases.md           # KB integration
+│   └── workflows.md                 # Workflow design
+├── tests/
+│   └── test-complete-native.js      # E2E testing
+├── NATIVE_TOOL_SOLUTION.md          # Tool architecture
+├── TOOL_SYSTEM_GUIDE.md             # Tool development
+├── AGENTCORE_GATEWAY_INTEGRATION.md # Agent integration
+├── CHANGELOG.md                     # Version history
+└── README.md                        # This file
+```
 
-## Nova 2 Sonic Features
+## 🔧 Configuration
 
-- **Multilingual Support**: Expanded language support beyond English
-- **Expressive Voices**: More natural-sounding speech synthesis
-- **High Accuracy**: Improved speech recognition and understanding
-- **Long Context**: 1M token context window for extended conversations
-- **Low Latency**: Optimized for real-time interactions
+### AWS Configuration (GUI)
+1. Click **⚙️ System Settings** in sidebar
+2. Click **🔐 Configure AWS**
+3. Enter credentials:
+   - Access Key ID
+   - Secret Access Key
+   - Session Token (optional, for SSO)
+   - Region
+   - Nova Sonic Model ID
+   - Agent Core Runtime ARN (optional)
+4. Click **Update Credentials**
 
-## Development Notes
+### Cost Configuration
+1. Navigate to **System Settings**
+2. Configure pricing per 1K tokens:
+   - **Nova Sonic**: Input $0.000003, Output $0.000012
+   - **Bedrock Agent**: Input $0.000003, Output $0.000012
+3. Real-time cost tracking in session stats
 
-- **No Build Tools**: Frontend uses vanilla JavaScript (no bundlers, no frameworks)
-- **Clean Separation**: WebSocket layer is independent of Nova Sonic integration layer
-- **Binary Frames**: WebSocket handles binary audio data efficiently
-- **Minimal Dependencies**: Essential packages only (`ws`, `@aws-sdk/client-bedrock-runtime`, `typescript`)
+### Persona Configuration
+1. Go to **Prompts & Personas**
+2. Select preset or create custom
+3. Edit **System Prompt** for behavior
+4. Add **Speech Prompt** for voice-specific instructions
+5. Click **💾 Save** to persist
 
-## Architecture Decisions
+## 🎯 Advanced Features
 
-### Why WebSocket over WebRTC?
+### Langfuse Integration
+- **Prompt Management**: Version control for system prompts
+- **Observability**: Full conversation tracing
+- **Analytics**: Token usage, latency, costs
+- **Debugging**: Detailed execution logs
 
-- Simpler implementation for server-controlled audio processing
-- Direct integration with backend AI services
-- No peer-to-peer complexity needed
+### Knowledge Base RAG
+- **Multiple Sources**: Connect multiple knowledge bases
+- **Dynamic Queries**: Real-time knowledge retrieval
+- **Model Selection**: Choose embedding models
+- **Fallback Handling**: Graceful degradation
 
-### Why PCM16?
+### Workflow Automation
+- **Visual Design**: No-code workflow creation
+- **Conditional Logic**: Branch based on user input
+- **Tool Integration**: Embed tool calls in workflows
+- **Persona Binding**: Workflows tied to personas
 
-- Native format for most speech AI services
-- Efficient binary transmission
-- No compression overhead
+### Session Management
+- **Auto-save**: Settings persist in localStorage
+- **Session History**: Complete conversation logs
+- **Export**: Download session transcripts
+- **Cost Tracking**: Per-session cost analysis
 
-### Why No Bundlers?
+## 📊 Audio Specifications
 
-- Keeps codebase minimal and transparent
-- Easier to understand and modify
-- Faster iteration during development
+| Parameter | Value |
+|-----------|-------|
+| Format | PCM16 (16-bit signed integer) |
+| Sample Rate | 16,000 Hz |
+| Channels | 1 (mono) |
+| Chunk Size | 4,096 samples |
+| Latency | <500ms (end-to-end) |
+| Encoding | Little-endian |
 
-## License
+## 🐛 Troubleshooting
 
-MIT
+### Connection Issues
+**Problem**: WebSocket connection failed  
+**Solution**: Verify backend server is running on port 8080
+
+**Problem**: AWS Authentication Error  
+**Solution**: Check `.env` credentials and IAM permissions
+
+**Problem**: Model Access Denied  
+**Solution**: Request Nova 2 Sonic access in AWS Bedrock console
+
+### Audio Issues
+**Problem**: No audio response  
+**Solution**: Check browser console, verify Nova Sonic session started
+
+**Problem**: Microphone not working  
+**Solution**: Grant microphone permissions, ensure HTTPS or localhost
+
+**Problem**: High latency  
+**Solution**: 
+- Reduce chunk size in `audio.js`
+- Use closest AWS region
+- Check network connection
+
+### Tool Issues
+**Problem**: Tools not executing  
+**Solution**: 
+- Verify tools are enabled in UI
+- Check tool JSON syntax
+- Review server logs for errors
+
+**Problem**: Cached results not updating  
+**Solution**: Wait for TTL expiration or restart session
+
+### Sentiment Issues
+**Problem**: Sentiment not displaying  
+**Solution**: 
+- Check if LLM includes `[SENTIMENT: X]` tags
+- Verify sentiment graph is visible in sidebar
+- Review console logs for parsing errors
+
+## 🔐 Security Considerations
+
+- **Credentials**: Never commit `.env` file to version control
+- **Session Tokens**: Use temporary credentials when possible
+- **HTTPS**: Deploy with SSL/TLS in production
+- **CORS**: Configure appropriate CORS policies
+- **Input Validation**: All user inputs are sanitized
+- **Tool Permissions**: Restrict tool access per user role
+
+## 📈 Performance Optimization
+
+- **Tool Caching**: Reduces redundant API calls by 60-80%
+- **Binary Streaming**: Efficient WebSocket binary frames
+- **Lazy Loading**: Tools loaded on-demand
+- **Connection Pooling**: Reuse AWS SDK clients
+- **Chunk Optimization**: Tuned for latency vs. quality
+
+## 🚢 Deployment
+
+### Production Checklist
+- [ ] Set environment variables securely
+- [ ] Enable HTTPS with valid SSL certificate
+- [ ] Configure CORS for production domain
+- [ ] Set up monitoring and logging
+- [ ] Configure auto-scaling for backend
+- [ ] Test all tools in production environment
+- [ ] Set up backup and disaster recovery
+- [ ] Configure rate limiting
+- [ ] Enable Langfuse observability
+- [ ] Test sentiment analysis accuracy
+
+### Docker Deployment (Optional)
+```bash
+# Build backend
+docker build -t voice-s2s-backend ./backend
+
+# Run container
+docker run -p 8080:8080 \
+  -e NOVA_AWS_REGION=us-east-1 \
+  -e NOVA_AWS_ACCESS_KEY_ID=xxx \
+  -e NOVA_AWS_SECRET_ACCESS_KEY=xxx \
+  voice-s2s-backend
+```
+
+## 📚 Documentation
+
+- **[User Guide](./docs/USER_GUIDE.md)**: Comprehensive manual with screenshots
+- **[Getting Started](./docs/getting_started.md)**: Quick setup guide
+- **[Tool Management](./docs/tool_management.md)**: Tool configuration
+- **[Knowledge Bases](./docs/knowledge_bases.md)**: RAG integration
+- **[Workflows](./docs/workflows.md)**: Workflow design
+- **[Native Tools](./NATIVE_TOOL_SOLUTION.md)**: Tool architecture
+- **[Tool Development](./TOOL_SYSTEM_GUIDE.md)**: Creating custom tools
+- **[Agent Integration](./AGENTCORE_GATEWAY_INTEGRATION.md)**: Agent mode setup
+
+## 🆕 Recent Updates
+
+### January 2026
+- ✅ **LLM-Driven Sentiment Analysis**: Real-time sentiment tracking with live graph
+- ✅ **Enhanced Regex Parsing**: Handles malformed sentiment tags gracefully
+- ✅ **UI Visibility Improvements**: Sentiment graph always visible in sidebar
+- ✅ **Few-Shot Prompt Examples**: Improved LLM sentiment tag consistency
+
+### December 2025
+- ✅ **Enhanced Tool Management**: Dynamic categories and smart input
+- ✅ **Bedrock Agent Mode Fixed**: Proper dropdown selection handling
+- ✅ **Graceful Disabled Tool Handling**: Polite apologies for unavailable tools
+- ✅ **Improved Credential Management**: Session token support for SSO
+- ✅ **Visual Workflow Editor**: Drag-and-drop workflow builder
+- ✅ **Chat Duplication Fix**: Resolved Nova Sonic conversation accumulation
+- ✅ **Smart Tool Caching**: Intelligent caching with fuzzy matching
+- ✅ **Toast Notifications**: Visual feedback for tool processing
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these guidelines:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Submit a pull request with detailed description
+
+## 📄 License
+
+MIT License - see [LICENSE](./LICENSE) file for details
+
+## 🙏 Acknowledgments
+
+- **Amazon Nova 2 Sonic**: Powering the voice AI capabilities
+- **AWS Bedrock**: Providing the infrastructure
+- **Langfuse**: Observability and prompt management
+- **Chart.js**: Sentiment visualization
+
+## 📞 Support
+
+For issues, questions, or feature requests:
+- Open an issue on GitHub
+- Check existing documentation
+- Review troubleshooting section
+
+---
+
+**Built with ❤️ for real-time voice AI interactions**
