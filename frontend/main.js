@@ -2345,6 +2345,9 @@ The user can see your response on a screen.
             // Third pass: Clean up any orphaned brackets or fragments
             text = text.replace(/\[\s*SENTIMENT[^\]]*\]/gi, '');
             text = text.replace(/SENTIMENT[^\]]*\]/gi, '');
+            // Fourth pass: Ultra-safe - catch any word ending in TIMENT or ENTIMENT with score
+            text = text.replace(/\b\w*ENTIMENT:\s*-?[\d\.]+\s*\]?/gi, '');
+            text = text.replace(/\b\w*TIMENT:\s*-?[\d\.]+\s*\]?/gi, '');
             // Final cleanup: trim whitespace
             text = text.trim();
         }

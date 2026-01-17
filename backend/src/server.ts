@@ -1760,13 +1760,25 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             const sentimentInstruction = "\n\n" +
                                 "########## SENTIMENT TAGGING (CRITICAL REQUIREMENT) ##########\n" +
                                 "MANDATORY: You MUST append a sentiment tag to EVERY response.\n" +
-                                "Format: [SENTIMENT: X] where X is a number from -1 to 1\n" +
-                                "- Use square brackets: [ and ]\n" +
-                                "- Include the word SENTIMENT followed by a colon\n" +
-                                "- Then a space and the score\n" +
-                                "- Score: -1 (very negative) to 1 (very positive)\n" +
                                 "\n" +
-                                "FEW-SHOT EXAMPLES (Study these carefully):\n" +
+                                "EXACT FORMAT (MEMORIZE THIS):\n" +
+                                "Step 1: Type an opening square bracket: [\n" +
+                                "Step 2: Type the word: SENTIMENT\n" +
+                                "Step 3: Type a colon and space: : \n" +
+                                "Step 4: Type the score (number from -1 to 1)\n" +
+                                "Step 5: Type a closing square bracket: ]\n" +
+                                "\n" +
+                                "CORRECT EXAMPLES:\n" +
+                                "[SENTIMENT: 0.7]\n" +
+                                "[SENTIMENT: -0.4]\n" +
+                                "[SENTIMENT: 0.0]\n" +
+                                "\n" +
+                                "WRONG (DO NOT DO THIS):\n" +
+                                "SENTIMENT: 0.7]  ← MISSING OPENING BRACKET\n" +
+                                "[SENTIMENT 0.7]  ← MISSING COLON\n" +
+                                "ENTIMENT: 0.7]   ← MISSING OPENING BRACKET AND 'S'\n" +
+                                "\n" +
+                                "FEW-SHOT EXAMPLES (Copy this exact format):\n" +
                                 "1. User: \"Hello, how are you?\"\n" +
                                 "   Assistant: \"I'm doing great, thanks for asking! How can I help you today? [SENTIMENT: 0.7]\"\n" +
                                 "\n" +
@@ -1783,10 +1795,12 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 "   Assistant: \"I understand, and I'm here to listen. Please tell me what happened. [SENTIMENT: -0.1]\"\n" +
                                 "\n" +
                                 "CRITICAL RULES:\n" +
+                                "- ALWAYS start with [ (opening bracket)\n" +
+                                "- ALWAYS end with ] (closing bracket)\n" +
                                 "- The tag is HIDDEN from the user. NEVER mention it in your response.\n" +
                                 "- ALWAYS include the tag, even for short responses.\n" +
                                 "- Match the sentiment to YOUR tone, not the user's.\n" +
-                                "- FAILURE TO INCLUDE THIS TAG WILL BREAK THE SYSTEM.\n";
+                                "- FAILURE TO INCLUDE THIS TAG CORRECTLY WILL BREAK THE SYSTEM.\n";
                             parsed.config.systemPrompt += sentimentInstruction;
                         }
 
