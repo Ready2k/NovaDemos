@@ -177,7 +177,7 @@ export class SonicClient {
     /**
      * Start a bidirectional streaming session with Nova 2 Sonic
      */
-    async startSession(onEvent: (event: SonicEvent) => void): Promise<void> {
+    async startSession(onEvent: (event: SonicEvent) => void, externalSessionId?: string): Promise<void> {
         // Validation: Check for credentials
         if ((!this.config.accessKeyId || !this.config.secretAccessKey) && !this.config.bearerToken) {
             console.warn('[SonicClient] Start session aborted: Missing AWS Credentials.');
@@ -188,7 +188,7 @@ export class SonicClient {
             throw new Error('Session already active. Call stopSession() first.');
         }
 
-        this.sessionId = crypto.randomUUID();
+        this.sessionId = externalSessionId || crypto.randomUUID();
         this.eventCallback = onEvent;
         this.isProcessing = true;
 
@@ -215,10 +215,16 @@ export class SonicClient {
             console.log(`[SonicClient] ✓ Langfuse trace created for session: ${this.sessionId}`);
 
             // Notify client of Trace ID for feedback
-            this.eventCallback?.({
-                type: 'metadata',
-                data: { traceId: this.sessionId }
-            });
+            if (this.eventCallback) {
+                console.log(`[SonicClient] Sending TraceID event: ${this.sessionId}`);
+                this.eventCallback({
+                    type: 'metadata',
+                    data: { traceId: this.sessionId }
+                });
+            } else {
+                console.warn('[SonicClient] No eventCallback set, cannot send TraceID');
+            }
+
         } catch (e) {
             console.error("[SonicClient] Failed to start Langfuse trace:", e);
         }
@@ -263,7 +269,7 @@ export class SonicClient {
     /**
      * Create async generator for input audio stream
      */
-    private async *createInputStream(): AsyncGenerator<any> {
+    private async * createInputStream(): AsyncGenerator<any> {
         console.log(`[SonicClient:${this.id}] Input stream generator started`);
         console.log(`[SonicClient:${this.id}] Current Session Config:`, JSON.stringify(this.sessionConfig, null, 2));
         console.log(`[SonicClient:${this.id}] DEBUG TOOLS:`, JSON.stringify(this.sessionConfig.tools));

@@ -1040,6 +1040,7 @@ const server = http.createServer(async (req, res) => {
                 const { traceId, score, comment, name } = JSON.parse(body);
 
                 if (traceId && (score !== undefined || comment)) {
+                    // 1. Send to Langfuse
                     await langfuse.score({
                         traceId,
                         name: name || "user-feedback",
@@ -1047,6 +1048,34 @@ const server = http.createServer(async (req, res) => {
                         comment: comment
                     });
                     console.log(`[Server] Recorded feedback for trace ${traceId}: score=${score}, comment=${comment}`);
+
+                    // 2. Persist to Local History File
+                    try {
+                        const shortId = traceId.substring(0, 8);
+                        const files = fs.readdirSync(HISTORY_DIR);
+                        const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
+
+                        if (match) {
+                            const filePath = path.join(HISTORY_DIR, match);
+                            const fileContent = fs.readFileSync(filePath, 'utf-8');
+                            const historyData = JSON.parse(fileContent);
+
+                            // Update feedback
+                            historyData.feedback = {
+                                score: score,
+                                comment: comment,
+                                timestamp: new Date().toISOString()
+                            };
+
+                            fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
+                            console.log(`[Server] Updated local history file ${match} with feedback.`);
+                        } else {
+                            console.warn(`[Server] Could not find local history file for session ${shortId} to save feedback.`);
+                        }
+                    } catch (fsErr) {
+                        console.error('[Server] Failed to save feedback to local file:', fsErr);
+                        // Don't fail the request just because local save failed, Langfuse is primary
+                    }
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1448,7 +1477,8 @@ const server = http.createServer(async (req, res) => {
                         summary: `Session ${data.sessionId?.substring(0, 6) || 'Unknown'} - ${totalMessages} msgs`,
                         totalMessages,
                         finalMessages,
-                        transcript: data.transcript // Optional: don't send full transcript in list if heavy
+                        transcript: data.transcript, // Optional: don't send full transcript in list if heavy
+                        feedback: data.feedback // Include feedback for the list view
                     };
                 })
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Newest first
@@ -2144,7 +2174,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         // Start session if not already started (or if we just stopped it)
                         if (!sonicClient.getSessionId()) {
-                            await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                            await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
 
                             // AI SPEAKS FIRST: Send initial greeting trigger (only for raw Nova mode)
                             // In Banking Bot mode, the agent will send its own greeting
@@ -2207,7 +2237,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Ensure session is started
                             if (!sonicClient.getSessionId()) {
                                 console.log('[Server] Starting session for text input');
-                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
                                 // Wait a moment for session to be fully established
                                 await new Promise(resolve => setTimeout(resolve, 500));
                             }
@@ -2395,7 +2425,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     // Ensure session is started and active
                                     if (!sonicClient.getSessionId()) {
                                         console.log('[Server] Starting Nova Sonic session for Banking Bot response...');
-                                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
                                         // Wait a moment for session to be fully established
                                         await new Promise(resolve => setTimeout(resolve, 500));
                                     }
@@ -2445,7 +2475,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     // --- RAW NOVA MODE (Existing) ---
                     // Ensure session is started
                     if (!sonicClient.getSessionId()) {
-                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
                     }
                     await sonicClient.sendAudioChunk({
                         buffer: audioBuffer,
@@ -2795,6 +2825,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
     switch (event.type) {
 
         case 'metadata':
+            console.log('[Server] Forwarding metadata event to client:', JSON.stringify(event.data));
             if (ws.readyState === WebSocket.OPEN) {
                 // Forward metadata (like traceId) to client
                 ws.send(JSON.stringify({
@@ -3579,7 +3610,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                             // Start new session with new prompt
                             console.log('[Server] Context Switch: Starting new session...');
-                            await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                            await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), session.sessionId);
                             console.log('[Server] Context Switch: New session started (ID: ' + session.sonicClient.getSessionId() + ')');
 
                             // CRITIES: The model needs to know it should speak first in the new context.
@@ -3851,7 +3882,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');
                             // Try to restart the session and send the result
                             try {
-                                await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session));
+                                await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), session.sessionId);
                                 await new Promise(resolve => setTimeout(resolve, 500)); // Wait for session to establish
                                 if (session.sonicClient.getSessionId()) {
                                     await session.sonicClient.sendToolResult(

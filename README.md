@@ -111,6 +111,7 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Token Counting**: Separate input/output token metrics
 - **Cost Calculation**: Configurable pricing per 1K tokens
 - **Session History**: Complete conversation logs with sentiment data
+- **User Feedback**: Thumbs Up/Down rating system with persistent storage
 - **Langfuse Observability**: Full tracing and monitoring
 
 ### 🔔 **Toast Notification System**
@@ -499,6 +500,8 @@ docker run -p 8080:8080 \
 ## 🆕 Recent Updates
 
 ### January 2026
+- ✅ **User Feedback System**: Thumbs Up/Down feedback on disconnect, persisted to storage and Langfuse
+- ✅ **Tool Instruction Propagation**: Enhanced tool definition usage for better LLM compliance
 - ✅ **LLM-Driven Sentiment Analysis**: Real-time sentiment tracking with live graph
 - ✅ **Enhanced Regex Parsing**: Handles malformed sentiment tags gracefully
 - ✅ **UI Visibility Improvements**: Sentiment graph always visible in sidebar

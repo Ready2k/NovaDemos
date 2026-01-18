@@ -32,6 +32,12 @@ Select the "Assistant" dropdown:
 *   **🎤 Voice Only**: Microphone active, text input hidden. Hands-free.
 *   **💬 Chat Only**: Text input only. Microphone disabled.
 
+### Ending a Session & Feedback
+When you have finished your conversation, click **Disconnect**.
+*   **Feedback Modal**: A dialog will appear asking for your rating (Thumbs Up 👍 or Down 👎).
+*   **Comments**: You can optionally add text comments to explain your rating.
+*   **History**: Your rating will be saved and displayed as an icon in the **Chat History** sidebar for future reference.
+
 ---
 
 ## 3. Customization

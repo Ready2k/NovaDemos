@@ -1121,10 +1121,16 @@ class VoiceAssistant {
                         const sessionId = item.id.includes('_') ? item.id.split('_')[1].substring(0, 6) : 'Unknown';
                         const dynamicSummary = `Session ${sessionId} - ${messageCount} msgs`;
 
+                        let feedbackIcon = '';
+                        if (item.feedback) {
+                            if (item.feedback.score === 1) feedbackIcon = '<span title="Positive Feedback" style="margin-left: 6px;">👍</span>';
+                            else if (item.feedback.score === 0) feedbackIcon = '<span title="Negative Feedback" style="margin-left: 6px;">👎</span>';
+                        }
+
                         return `
                                     <div class="history-item" data-id="${item.id}" style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin-bottom: 6px; transition: all 0.2s ease;">
                                         <div style="font-size: 0.8rem; font-weight: 600; color: #e2e8f0; display: flex; justify-content: space-between;">
-                                            <span>${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span>${new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ${feedbackIcon}</span>
                                             <span style="font-size: 0.7rem; color: #64748b;">${new Date(item.date).toLocaleDateString()}</span>
                                         </div>
                                         <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
@@ -1975,6 +1981,13 @@ The user can see your response on a screen.
 
                             case 'workflow_update':
                                 this.handleWorkflowUpdate(message);
+                                break;
+
+                            case 'metadata':
+                                if (message.data && message.data.traceId) {
+                                    this.currentTraceId = message.data.traceId;
+                                    console.log('[Main] Trace ID received via metadata:', this.currentTraceId);
+                                }
                                 break;
 
                             case 'error':
