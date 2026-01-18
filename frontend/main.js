@@ -218,6 +218,16 @@ class VoiceAssistant {
 
         this.currentHistoryData = null; // Store current session data
 
+        // Langfuse Feedback State
+        this.currentTraceId = null;
+        this.pendingFeedbackTraceId = null;
+        this.feedbackModal = document.getElementById('feedbackModal');
+        this.feedbackUpBtn = document.getElementById('feedbackUp');
+        this.feedbackDownBtn = document.getElementById('feedbackDown');
+
+        if (this.feedbackUpBtn) this.feedbackUpBtn.addEventListener('click', () => this.submitFeedback(1));
+        if (this.feedbackDownBtn) this.feedbackDownBtn.addEventListener('click', () => this.submitFeedback(0));
+
         // Bind event handlers
         this.connectBtn.addEventListener('click', () => this.connect());
         this.disconnectBtn.addEventListener('click', () => this.disconnect());
@@ -586,8 +596,8 @@ class VoiceAssistant {
     /**
      * Add an item to the "Key Moments" timeline
      * @param {string} type - 'connected', 'disconnected', 'tool', 'error'
-     * @param {string} title 
-     * @param {string} details 
+     * @param {string} title
+     * @param {string} details
      */
     addKeyMoment(type, title, details = '') {
         if (!this.liveMomentsList) return;
@@ -1089,14 +1099,14 @@ class VoiceAssistant {
                     html += `
                         <div class="history-group-container" style="margin-bottom: 5px;">
                             <h5 class="history-group-header" data-target="${groupId}" style="
-                                margin: 10px 0 5px 0; 
-                                color: var(--accent-color); 
-                                font-size: 0.75rem; 
-                                text-transform: uppercase; 
-                                letter-spacing: 0.05em; 
-                                cursor: pointer; 
-                                display: flex; 
-                                justify-content: space-between; 
+                                margin: 10px 0 5px 0;
+                                color: var(--accent-color);
+                                font-size: 0.75rem;
+                                text-transform: uppercase;
+                                letter-spacing: 0.05em;
+                                cursor: pointer;
+                                display: flex;
+                                justify-content: space-between;
                                 align-items: center;
                                 padding: 4px 8px;
                                 background: rgba(255,255,255,0.03);
@@ -1266,7 +1276,7 @@ class VoiceAssistant {
                 <div style="font-weight: 600;">Session: ${data.sessionId}</div>
                 <div style="font-size: 0.75rem; color: #64748b;">${new Date(data.startTime).toLocaleString()}</div>
                 <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">
-                    Showing ${messagesToShow.length} of ${data.transcript.length} messages 
+                    Showing ${messagesToShow.length} of ${data.transcript.length} messages
                     ${showFinalOnly ? '(Final Only)' : '(All)'}
                 </div>
                 ${data.tools && data.tools.length > 0 ? `
@@ -1348,8 +1358,8 @@ class VoiceAssistant {
 
         msgDiv.className = `message ${isUser ? 'user-message' : 'agent-message'}`;
         msgDiv.style.cssText = `
-            margin-bottom: 16px; 
-            max-width: 80%; 
+            margin-bottom: 16px;
+            max-width: 80%;
             align-self: ${isUser ? 'flex-end' : 'flex-start'};
             background: ${isUser ? 'rgba(59, 130, 246, 0.2)' : (isSpeculative ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 255, 255, 0.05)')};
             border: 1px ${isSpeculative ? 'dashed' : 'solid'} ${isUser ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
@@ -1681,7 +1691,17 @@ The user can see your response on a screen.
     /**
      * Connect to WebSocket server
      */
-    connect() {
+    async connect() {
+        // Checks for Implicit Positive Feedback from previous session
+        if (this.pendingFeedbackTraceId && this.feedbackModal.style.display !== 'none') {
+            console.log('[Feedback] Implicit positive feedback for previous session:', this.pendingFeedbackTraceId);
+            this.submitFeedback(1, this.pendingFeedbackTraceId, "Implicit positive (started new session)");
+        }
+
+        // Hide feedback modal when starting new session
+        if (this.feedbackModal) this.feedbackModal.style.display = 'none';
+        this.pendingFeedbackTraceId = null;
+
         return new Promise((resolve, reject) => {
             if (this.ws) {
                 this.ws.close();
@@ -1861,8 +1881,9 @@ The user can see your response on a screen.
                                 this.log(`Transcript[${message.role}]: ${message.text} `);
 
                                 // Analyze sentiment for final transcripts
-                                if (message.text && message.isFinal) {
-                                    this.updateLiveSentiment(message.text, message.role || 'assistant');
+                                // Analyze sentiment for final transcripts
+                                if (message.text && message.isFinal && message.sentiment) {
+                                    this.updateLiveSentiment(message.text, message.role || 'assistant', message.sentiment.score);
                                 }
                                 break;
 
@@ -1945,6 +1966,11 @@ The user can see your response on a screen.
                                         }, 30000);
                                     }
                                 }
+                                // Capture traceId for feedback if available
+                                if (message.data && message.data.traceId) {
+                                    this.currentTraceId = message.data.traceId;
+                                    console.log('[Main] Trace ID received:', this.currentTraceId);
+                                }
                                 break;
 
                             case 'workflow_update':
@@ -2006,6 +2032,65 @@ The user can see your response on a screen.
         }
         this.stopSessionTimer();
         this.stopVisualizer();
+
+        // Trigger Feedback Flow
+        if (this.currentTraceId) {
+            this.pendingFeedbackTraceId = this.currentTraceId;
+            if (this.feedbackModal) {
+                this.feedbackModal.style.display = 'flex';
+                // Auto-hide after 15 seconds if ignored
+                setTimeout(() => {
+                    if (this.feedbackModal.style.display !== 'none') {
+                        this.feedbackModal.style.display = 'none';
+                    }
+                }, 15000);
+            }
+        }
+        this.currentTraceId = null;
+    }
+
+    /**
+     * Submit user feedback to backend
+     * @param {number} score - 1 (Positive) or 0 (Negative)
+     * @param {string} traceId - Optional override
+     * @param {string} comment - Optional comment
+     */
+    async submitFeedback(score, traceId = null, comment = null) {
+        const targetTraceId = traceId || this.pendingFeedbackTraceId;
+        if (!targetTraceId) return;
+
+        console.log(`[Feedback] Submitting score ${score} for trace ${targetTraceId}`);
+
+        // UI Feedback
+        if (!traceId && this.feedbackModal) {
+            // Animate selection
+            const btn = score === 1 ? this.feedbackUpBtn : this.feedbackDownBtn;
+            if (btn) {
+                btn.style.transform = 'scale(1.2)';
+                setTimeout(() => btn.style.transform = 'scale(1)', 200);
+            }
+            // Hide modal
+            setTimeout(() => {
+                this.feedbackModal.style.display = 'none';
+                this.showToast(score === 1 ? 'Thanks for the feedback!' : 'Thanks, we will improve.', 'info');
+            }, 300);
+        }
+
+        try {
+            await fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    traceId: targetTraceId,
+                    score: score,
+                    comment: comment
+                })
+            });
+        } catch (e) {
+            console.error('[Feedback] Failed to submit feedback:', e);
+        }
+
+        if (!traceId) this.pendingFeedbackTraceId = null;
     }
 
     /**

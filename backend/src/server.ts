@@ -777,9 +777,16 @@ function loadTools(): any[] {
                 // 1. Rename input_schema -> inputSchema (also support 'parameters')
                 // 2. Wrap schema in { json: ... }
                 const schema = toolDef.input_schema || toolDef.inputSchema || toolDef.parameters;
+
+                // CRITICAL FIX: Append instruction to description so LLM sees it
+                let finalDescription = toolDef.description || "";
+                if (toolDef.instruction) {
+                    finalDescription += `\n\n[INSTRUCTION]: ${toolDef.instruction}`;
+                }
+
                 const toolSpec: any = {
                     name: toolDef.name,
-                    description: toolDef.description,
+                    description: finalDescription,
                     inputSchema: {
                         json: JSON.stringify(schema || {
                             type: "object",
@@ -2786,6 +2793,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
     };
 
     switch (event.type) {
+
+        case 'metadata':
+            if (ws.readyState === WebSocket.OPEN) {
+                // Forward metadata (like traceId) to client
+                ws.send(JSON.stringify({
+                    type: 'metadata',
+                    data: event.data
+                }));
+            }
+            break;
 
         case 'contentStart':
             if (event.data.role === 'assistant') {

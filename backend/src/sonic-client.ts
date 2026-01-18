@@ -213,6 +213,12 @@ export class SonicClient {
                 tags: ["voice", "nova-sonic"]
             });
             console.log(`[SonicClient] ✓ Langfuse trace created for session: ${this.sessionId}`);
+
+            // Notify client of Trace ID for feedback
+            this.eventCallback?.({
+                type: 'metadata',
+                data: { traceId: this.sessionId }
+            });
         } catch (e) {
             console.error("[SonicClient] Failed to start Langfuse trace:", e);
         }
