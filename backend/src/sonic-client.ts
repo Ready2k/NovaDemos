@@ -1140,7 +1140,7 @@ export class SonicClient {
                         });
 
                         // Send final transcript when turn ends
-                        if (eventData.contentEnd.stopReason === 'END_TURN' && this.currentTurnTranscript.length > 0) {
+                        if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
                             // Determine stage from content name if possible
                             const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
 
