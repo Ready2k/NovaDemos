@@ -10,7 +10,8 @@ export default function Sidebar({ className }: SidebarProps) {
         isDarkMode,
         activeView,
         navigateTo,
-        resetSession
+        resetSession,
+        setIsAboutModalOpen
     } = useApp();
 
     const navItems = [
@@ -52,7 +53,13 @@ export default function Sidebar({ className }: SidebarProps) {
             className
         )}>
             {/* Logo */}
-            <div className="mb-6 w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white font-bold text-sm">A</div>
+            <button
+                onClick={() => setIsAboutModalOpen(true)}
+                title="About Voice S2S"
+                className="mb-6 w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white font-bold text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"
+            >
+                A
+            </button>
 
             {/* Navigation Items */}
             <div className="flex flex-col gap-2 flex-1">

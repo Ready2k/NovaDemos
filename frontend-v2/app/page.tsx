@@ -8,6 +8,7 @@ import IntelligenceOrb from '@/components/intelligence/IntelligenceOrb';
 import ChatContainer from '@/components/chat/ChatContainer';
 import CommandBar from '@/components/chat/CommandBar';
 import SessionSurveyModal from '@/components/search/SessionSurveyModal';
+import AboutModal from '@/components/layout/AboutModal';
 import { useApp } from '@/lib/context/AppContext';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
@@ -394,17 +395,21 @@ export default function Home() {
               isDarkMode ? "text-ink-text-primary" : "text-gray-900"
             )}>Nova Sonic</h1>
             <div className={cn(
-              "flex items-center gap-3 text-xs transition-colors duration-300",
-              isDarkMode ? "text-ink-text-muted" : "text-gray-600"
+              "flex items-center gap-2 text-[10px] uppercase tracking-wider font-medium transition-colors duration-300",
+              isDarkMode ? "text-ink-text-muted/60" : "text-gray-500"
             )}>
               <span>v2.0.0</span>
-              <span>•</span>
-              <span suppressHydrationWarning>{typeof window !== 'undefined' ? new Date().toLocaleDateString() : ''}</span>
-              <span>•</span>
+              <span className="opacity-30">|</span>
+              <span suppressHydrationWarning>
+                {isHydrated ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Loading...'}
+              </span>
+              <span className="opacity-30">|</span>
               <span className={cn(
-                "px-2 py-0.5 rounded border transition-colors duration-300",
-                isDarkMode ? "bg-white/5 border-white/8" : "bg-gray-100 border-gray-300"
-              )}>Mode: {isHydrated ? (settings.brainMode === 'raw_nova' ? 'Nova Sonic' : 'Agent') : 'Nova Sonic'}</span>
+                "px-1.5 py-0.5 rounded-md border text-[9px] font-bold transition-colors duration-300",
+                isDarkMode ? "bg-white/5 border-white/10 text-ink-text-muted" : "bg-gray-100 border-gray-200 text-gray-600"
+              )}>
+                MODE: {isHydrated ? (settings.brainMode === 'raw_nova' ? 'NOVA SONIC' : 'AGENT') : 'NOVA SONIC'}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -487,6 +492,9 @@ export default function Home() {
         }}
         isDarkMode={isDarkMode}
       />
+
+      {/* Application Info Modal */}
+      <AboutModal />
     </div>
   );
 }

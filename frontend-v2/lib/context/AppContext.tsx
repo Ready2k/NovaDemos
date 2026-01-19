@@ -66,6 +66,8 @@ interface AppState {
     setActiveSettingsTab: (tab: string) => void;
     resetSession: () => void;
     isHydrated: boolean;
+    isAboutModalOpen: boolean;
+    setIsAboutModalOpen: (open: boolean) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -106,6 +108,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Hydration state
     const [isHydrated, setIsHydrated] = useState(false);
+
+    // About Modal state
+    const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
 
     // Settings state
     const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -305,6 +310,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         activeSettingsTab,
         setActiveSettingsTab,
         isHydrated,
+        isAboutModalOpen,
+        setIsAboutModalOpen,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
