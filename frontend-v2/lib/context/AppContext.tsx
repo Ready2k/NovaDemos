@@ -65,6 +65,7 @@ interface AppState {
     activeSettingsTab: string;
     setActiveSettingsTab: (tab: string) => void;
     resetSession: () => void;
+    isHydrated: boolean;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -103,28 +104,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Messages state
     const [messages, setMessages] = useState<Message[]>([]);
 
+    // Hydration state
+    const [isHydrated, setIsHydrated] = useState(false);
+
     // Settings state
-    const [settings, setSettings] = useState<AppSettings>(() => {
-        // Initialize from localStorage if available (client-side only)
+    const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+
+    // Hydrate settings from localStorage on mount
+    useEffect(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('nova_settings');
             if (saved) {
                 try {
-                    return { ...defaultSettings, ...JSON.parse(saved) };
+                    const parsed = JSON.parse(saved);
+                    setSettings(prev => ({ ...prev, ...parsed }));
                 } catch (e) {
                     console.error('Failed to parse settings', e);
                 }
             }
+            setIsHydrated(true);
         }
-        return defaultSettings;
-    });
+    }, []);
 
-    // Save settings to localStorage whenever they change
+    // Save settings to localStorage whenever they change (only after initial hydration)
     useEffect(() => {
-        if (typeof window !== 'undefined') {
+        if (isHydrated && typeof window !== 'undefined') {
             localStorage.setItem('nova_settings', JSON.stringify(settings));
         }
-    }, [settings]);
+    }, [settings, isHydrated]);
 
     // Tools state
     const [tools, setTools] = useState<Tool[]>([]);
@@ -297,6 +304,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         navigateTo,
         activeSettingsTab,
         setActiveSettingsTab,
+        isHydrated,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

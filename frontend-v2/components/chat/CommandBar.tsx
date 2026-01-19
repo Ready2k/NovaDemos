@@ -13,7 +13,7 @@ interface CommandBarProps {
 }
 
 export default function CommandBar({ status, isDarkMode = true, onSendMessage, onToggleRecording, onToggleConnection }: CommandBarProps) {
-    const { connectionStatus } = useApp();
+    const { connectionStatus, settings, isHydrated } = useApp();
     const [message, setMessage] = useState('');
 
     // Use prop status if provided, otherwise use global status
@@ -82,62 +82,68 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                     : "bg-white border-gray-200 shadow-lg"
             )}>
                 {/* Text Input */}
-                <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    disabled={isDisabled}
-                    className={cn(
-                        "flex-1 bg-transparent border-none focus:outline-none text-sm transition-colors duration-300",
-                        isDarkMode
-                            ? "text-ink-text-primary placeholder:text-ink-text-muted"
-                            : "text-gray-900 placeholder:text-gray-400",
-                        isDisabled && "opacity-50 cursor-not-allowed"
-                    )}
-                    placeholder={isDisabled ? "Connect to start chatting..." : "Type a message..."}
-                />
+                {isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
+                    <input
+                        type="text"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        disabled={isDisabled}
+                        className={cn(
+                            "flex-1 bg-transparent border-none focus:outline-none text-sm transition-colors duration-300",
+                            isDarkMode
+                                ? "text-ink-text-primary placeholder:text-ink-text-muted"
+                                : "text-gray-900 placeholder:text-gray-400",
+                            isDisabled && "opacity-50 cursor-not-allowed"
+                        )}
+                        placeholder={isDisabled ? "Connect to start chatting..." : "Type a message..."}
+                    />
+                )}
 
                 {/* Send Button */}
-                <button
-                    onClick={handleSend}
-                    disabled={!message.trim() || isDisabled}
-                    className={cn(
-                        "w-10 h-10 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center",
-                        isDarkMode
-                            ? "bg-white/10 hover:bg-white/20 text-white"
-                            : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                    )}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                    </svg>
-                </button>
+                {isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
+                    <button
+                        onClick={handleSend}
+                        disabled={!message.trim() || isDisabled}
+                        className={cn(
+                            "w-10 h-10 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center",
+                            isDarkMode
+                                ? "bg-white/10 hover:bg-white/20 text-white"
+                                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        )}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                        </svg>
+                    </button>
+                )}
 
                 {/* Mic Button */}
-                <button
-                    onClick={handleMicClick}
-                    disabled={isDisabled}
-                    className={cn(
-                        "w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg hover:shadow-xl transition-all flex items-center justify-center relative",
-                        isRecording && "animate-pulse-mic",
-                        isDisabled && "opacity-50 cursor-not-allowed"
-                    )}
-                >
-                    {isRecording ? (
-                        <div className="w-4 h-4 bg-white rounded-sm"></div>
-                    ) : (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                        </svg>
-                    )}
-                    {isRecording && (
-                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-pulse"></span>
-                    )}
-                </button>
+                {isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'voice_only' || !settings.interactionMode) && (
+                    <button
+                        onClick={handleMicClick}
+                        disabled={isDisabled}
+                        className={cn(
+                            "w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg hover:shadow-xl transition-all flex items-center justify-center relative",
+                            isRecording && "animate-pulse-mic",
+                            isDisabled && "opacity-50 cursor-not-allowed"
+                        )}
+                    >
+                        {isRecording ? (
+                            <div className="w-4 h-4 bg-white rounded-sm"></div>
+                        ) : (
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                        )}
+                        {isRecording && (
+                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-pulse"></span>
+                        )}
+                    </button>
+                )}
 
                 {/* Power Button (Connection Toggle) */}
                 <button

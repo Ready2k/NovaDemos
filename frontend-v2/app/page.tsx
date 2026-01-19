@@ -30,6 +30,7 @@ export default function Home() {
     setIsDarkMode,
     settings,
     activeView,
+    isHydrated,
   } = useApp();
 
   // Local state for survey
@@ -253,7 +254,20 @@ export default function Home() {
       }
     },
   });
-
+  // Interaction Mode Sync: Mute audio if in 'chat_only' mode
+  useEffect(() => {
+    if (settings.interactionMode === 'chat_only') {
+      console.log('[App] Chat Only mode: Muting audio processor');
+      audioProcessor.setMuted(true);
+      // Also stop recording if active
+      if (connectionStatus === 'recording') {
+        audioProcessor.stopRecording();
+        setConnectionStatus('connected');
+      }
+    } else {
+      audioProcessor.setMuted(false);
+    }
+  }, [settings.interactionMode, audioProcessor, connectionStatus]);
   // Store send function in ref for use in message handler
   useEffect(() => {
     sendRef.current = send;
@@ -312,6 +326,12 @@ export default function Home() {
 
   // Handle toggle recording
   const handleToggleRecording = useCallback(async () => {
+    // Phase 4: Block recording if in 'chat_only' mode
+    if (settings.interactionMode === 'chat_only') {
+      console.warn('[App] Cannot record in Chat Only mode');
+      return;
+    }
+
     if (connectionStatus === 'recording') {
       // Stop recording
       audioProcessor.stopRecording();
@@ -384,7 +404,7 @@ export default function Home() {
               <span className={cn(
                 "px-2 py-0.5 rounded border transition-colors duration-300",
                 isDarkMode ? "bg-white/5 border-white/8" : "bg-gray-100 border-gray-300"
-              )}>Mode: {settings.brainMode === 'raw_nova' ? 'Nova Sonic' : 'Agent'}</span>
+              )}>Mode: {isHydrated ? (settings.brainMode === 'raw_nova' ? 'Nova Sonic' : 'Agent') : 'Nova Sonic'}</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
