@@ -7,9 +7,11 @@ interface MultimodalMessageProps {
     timestamp?: string;
     media?: ReactNode;
     isDarkMode?: boolean;
+    sentiment?: number;
+    feedback?: 'up' | 'down';
 }
 
-export default function MultimodalMessage({ role, content, timestamp, media, isDarkMode = true }: MultimodalMessageProps) {
+export default function MultimodalMessage({ role, content, timestamp, media, isDarkMode = true, sentiment, feedback }: MultimodalMessageProps) {
     const avatar = role === 'user' ? '👤' : '🤖';
     const name = role === 'user' ? 'Katre' : 'Amn';
 

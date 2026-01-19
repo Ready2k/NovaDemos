@@ -1,5 +1,6 @@
 'use client';
 
+import { useApp } from '@/lib/context/AppContext';
 import SentimentHalo from './SentimentHalo';
 import WaveformVisualizer from './WaveformVisualizer';
 
@@ -8,7 +9,25 @@ interface IntelligenceOrbProps {
     isActive?: boolean;
 }
 
-export default function IntelligenceOrb({ sentiment = 0, isActive = true }: IntelligenceOrbProps) {
+export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive }: IntelligenceOrbProps) {
+    const { messages, connectionStatus } = useApp();
+
+    // Calculate average sentiment from recent messages (last 5)
+    const recentMessages = messages.slice(-5);
+    const calculatedSentiment = recentMessages.length > 0
+        ? recentMessages
+            .filter(m => m.sentiment !== undefined)
+            .reduce((sum, m) => sum + (m.sentiment || 0), 0) / recentMessages.filter(m => m.sentiment !== undefined).length
+        : 0.5;
+
+    // Use prop sentiment if provided, otherwise use calculated
+    const sentiment = propSentiment !== undefined ? propSentiment : calculatedSentiment;
+
+    // Determine if active based on connection status
+    const isActive = propIsActive !== undefined
+        ? propIsActive
+        : (connectionStatus === 'connected' || connectionStatus === 'recording');
+
     return (
         <div className="relative w-full px-8 py-4 md:py-6 flex items-center justify-center">
             {/* Sentiment Halo */}

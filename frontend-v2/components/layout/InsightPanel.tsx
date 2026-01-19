@@ -1,4 +1,8 @@
+'use client';
+
 import { cn } from '@/lib/utils';
+import { useApp } from '@/lib/context/AppContext';
+import { useSessionStats } from '@/lib/hooks/useSessionStats';
 
 interface InsightPanelProps {
     className?: string;
@@ -6,6 +10,29 @@ interface InsightPanelProps {
 }
 
 export default function InsightPanel({ className, isDarkMode = true }: InsightPanelProps) {
+    const { messages } = useApp();
+    const { formattedDuration, inputTokens, outputTokens, cost, formatCost, formatTokens } = useSessionStats();
+
+    // Calculate average sentiment from messages
+    const messagesWithSentiment = messages.filter(m => m.sentiment !== undefined && !isNaN(m.sentiment));
+    const averageSentiment = messagesWithSentiment.length > 0
+        ? messagesWithSentiment.reduce((sum, m) => sum + (m.sentiment || 0), 0) / messagesWithSentiment.length
+        : 0.5; // Default to neutral (0.5) if no sentiment data
+
+    // Convert sentiment to percentage (0-1 to 0-100)
+    const sentimentPercentage = (averageSentiment * 100).toFixed(0);
+
+    // Calculate sentiment label
+    const getSentimentLabel = (sentiment: number): string => {
+        if (sentiment >= 0.6) return 'Positive';
+        if (sentiment >= 0.4) return 'Neutral';
+        return 'Negative';
+    };
+
+    // Calculate stroke dashoffset for circular progress (352 = circumference of circle with r=56)
+    const circumference = 352;
+    const sentimentOffset = circumference - (averageSentiment * circumference);
+
     return (
         <aside className={cn(
             "w-80 flex flex-col gap-6 p-6 border-l transition-colors duration-300",
@@ -45,10 +72,10 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                                 stroke="url(#sentiment-gradient)"
                                 strokeWidth="8"
                                 fill="none"
-                                strokeDasharray="352"
-                                strokeDashoffset="87"
+                                strokeDasharray={circumference}
+                                strokeDashoffset={sentimentOffset}
                                 strokeLinecap="round"
-                                className="transition-sentiment"
+                                className="transition-all duration-500"
                             />
                             <defs>
                                 <linearGradient id="sentiment-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -58,11 +85,13 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                             </defs>
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <div className="text-xs text-sentiment-neutral font-semibold">High</div>
+                            <div className="text-xs text-sentiment-neutral font-semibold">
+                                {getSentimentLabel(averageSentiment)}
+                            </div>
                             <div className={cn(
                                 "text-2xl font-bold transition-colors duration-300",
                                 isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                            )}>0.97%</div>
+                            )}>{sentimentPercentage}%</div>
                         </div>
                     </div>
                 </div>
@@ -86,7 +115,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>0.97%</div>
+                        )}>{sentimentPercentage}%</div>
                     </div>
                     <div>
                         <div className={cn(
@@ -96,7 +125,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>2</div>
+                        )}>{messages.length}</div>
                     </div>
                     <div>
                         <div className={cn(
@@ -106,7 +135,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>$3/m</div>
+                        )}>{formatCost(cost)}</div>
                     </div>
                     <div>
                         <div className={cn(
@@ -116,7 +145,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>3.8k</div>
+                        )}>{formatTokens(inputTokens)}</div>
                     </div>
                     <div>
                         <div className={cn(
@@ -126,7 +155,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>20.8k</div>
+                        )}>{formatTokens(outputTokens)}</div>
                     </div>
                     <div>
                         <div className={cn(
@@ -136,7 +165,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-xl font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>120ms</div>
+                        )}>--</div>
                     </div>
                 </div>
             </div>
@@ -153,7 +182,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                 <div className={cn(
                     "text-3xl font-bold transition-colors duration-300",
                     isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                )}>00:00</div>
+                )}>{formattedDuration}</div>
                 <div className="mt-4 flex items-center gap-2">
                     <div className={cn(
                         "flex-1 h-1 rounded-full overflow-hidden transition-colors duration-300",

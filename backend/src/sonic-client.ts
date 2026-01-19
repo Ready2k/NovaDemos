@@ -444,8 +444,45 @@ export class SonicClient {
             yield { chunk: { bytes: Buffer.from(JSON.stringify(speechContentEndEvent)) } };
         }
 
-        // 6. User Audio Content Start - REMOVED (Lazy initialization)
-        // We will start the audio content stream only when we actually have audio to send.
+        // 6. User Audio Content Start - RESTORED (Eager initialization)
+        // Nova Sonic seems to REQUIRE an audio content block to be open immediately
+        const audioContentName = `audio-${Date.now()}`;
+        this.currentContentName = audioContentName;
+
+        const audioStartEvent = {
+            event: {
+                contentStart: {
+                    promptName: promptName,
+                    contentName: audioContentName,
+                    type: "AUDIO",
+                    interactive: true,
+                    role: "USER",
+                    audioInputConfiguration: {
+                        mediaType: "audio/lpcm",
+                        sampleRateHertz: 16000,
+                        sampleSizeBits: 16,
+                        channelCount: 1,
+                        audioType: "SPEECH",
+                        encoding: "base64"
+                    }
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(audioStartEvent)) } };
+        console.log('[SonicClient] Started audio content (Eager):', audioContentName);
+
+        // CRITICAL FIX: Prime the audio stream with silence to avoid "no content data received" error
+        const initialSilenceEvent = {
+            event: {
+                audioInput: {
+                    promptName: promptName,
+                    contentName: audioContentName,
+                    content: this.SILENCE_FRAME.toString('base64')
+                }
+            }
+        };
+        yield { chunk: { bytes: Buffer.from(JSON.stringify(initialSilenceEvent)) } };
+        console.log('[SonicClient] Primed audio content with silence');
 
         while (this.isProcessing) {
             // Check for tool results first (priority over text/audio)

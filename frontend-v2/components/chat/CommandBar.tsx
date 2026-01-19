@@ -2,22 +2,29 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useApp } from '@/lib/context/AppContext';
 
 interface CommandBarProps {
     status: 'disconnected' | 'connecting' | 'connected' | 'recording';
     isDarkMode?: boolean;
+    onSendMessage?: (message: string) => void;
+    onToggleRecording?: () => void;
+    onToggleConnection?: () => void;
 }
 
-export default function CommandBar({ status, isDarkMode = true }: CommandBarProps) {
+export default function CommandBar({ status, isDarkMode = true, onSendMessage, onToggleRecording, onToggleConnection }: CommandBarProps) {
+    const { connectionStatus } = useApp();
     const [message, setMessage] = useState('');
-    const [isRecording, setIsRecording] = useState(false);
 
-    // These handlers are now placeholders as onSendMessage/onToggleRecording props are removed.
-    // The user's instruction implies these functions might be handled differently or removed later.
-    // For now, I'll keep them but they won't do anything without the props.
+    // Use prop status if provided, otherwise use global status
+    const currentStatus = status || connectionStatus;
+    const isRecording = currentStatus === 'recording';
+
     const handleSend = () => {
-        if (message.trim()) {
-            // onSendMessage(message); // onSendMessage prop is removed
+        console.log('[CommandBar] handleSend called, message:', message);
+        console.log('[CommandBar] onSendMessage exists:', !!onSendMessage);
+        if (message.trim() && onSendMessage) {
+            onSendMessage(message);
             setMessage('');
         }
     };
@@ -30,12 +37,13 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
     };
 
     const handleMicClick = () => {
-        setIsRecording(!isRecording);
-        // onToggleRecording?.(); // onToggleRecording prop is removed
+        if (onToggleRecording) {
+            onToggleRecording();
+        }
     };
 
     const getStatusColor = () => {
-        switch (status) {
+        switch (currentStatus) {
             case 'connected':
             case 'recording':
                 return 'bg-emerald-500';
@@ -49,7 +57,7 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
     };
 
     const getStatusLabel = () => {
-        switch (status) {
+        switch (currentStatus) {
             case 'connected':
                 return 'Connected';
             case 'recording':
@@ -62,6 +70,8 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
                 return 'Unknown';
         }
     };
+
+    const isDisabled = currentStatus === 'disconnected' || currentStatus === 'connecting';
 
     return (
         <div className="px-8 py-6">
@@ -77,19 +87,21 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    disabled={isDisabled}
                     className={cn(
                         "flex-1 bg-transparent border-none focus:outline-none text-sm transition-colors duration-300",
                         isDarkMode
                             ? "text-ink-text-primary placeholder:text-ink-text-muted"
-                            : "text-gray-900 placeholder:text-gray-400"
+                            : "text-gray-900 placeholder:text-gray-400",
+                        isDisabled && "opacity-50 cursor-not-allowed"
                     )}
-                    placeholder="Type a message..."
+                    placeholder={isDisabled ? "Connect to start chatting..." : "Type a message..."}
                 />
 
                 {/* Send Button */}
                 <button
                     onClick={handleSend}
-                    disabled={!message.trim()}
+                    disabled={!message.trim() || isDisabled}
                     className={cn(
                         "w-10 h-10 rounded-full disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center",
                         isDarkMode
@@ -105,9 +117,11 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
                 {/* Mic Button */}
                 <button
                     onClick={handleMicClick}
+                    disabled={isDisabled}
                     className={cn(
                         "w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg hover:shadow-xl transition-all flex items-center justify-center relative",
-                        isRecording && "animate-pulse-mic"
+                        isRecording && "animate-pulse-mic",
+                        isDisabled && "opacity-50 cursor-not-allowed"
                     )}
                 >
                     {isRecording ? (
@@ -125,17 +139,39 @@ export default function CommandBar({ status, isDarkMode = true }: CommandBarProp
                     )}
                 </button>
 
-                {/* Status Badge - Just the indicator */}
-                <div className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded-full border transition-colors duration-300",
-                    isDarkMode
-                        ? "bg-white/5 border-white/8"
-                        : "bg-gray-50 border-gray-200"
-                )}
-                    title={getStatusLabel()}
+                {/* Power Button (Connection Toggle) */}
+                <button
+                    onClick={onToggleConnection}
+                    className={cn(
+                        "w-12 h-12 rounded-full border transition-all duration-300 flex items-center justify-center shadow-lg hover:shadow-xl relative overflow-hidden group",
+                        // Dynamic Colors based on status
+                        currentStatus === 'connected' || currentStatus === 'recording'
+                            ? (isDarkMode ? "bg-emerald-500/20 border-emerald-500/50 hover:bg-emerald-500/30" : "bg-emerald-50 border-emerald-200 hover:bg-emerald-100")
+                            : currentStatus === 'connecting'
+                                ? (isDarkMode ? "bg-yellow-500/20 border-yellow-500/50 hover:bg-yellow-500/30" : "bg-yellow-50 border-yellow-200 hover:bg-yellow-100")
+                                : (isDarkMode ? "bg-rose-500/20 border-rose-500/50 hover:bg-rose-500/30" : "bg-rose-50 border-rose-200 hover:bg-rose-100")
+                    )}
+                    title={isDisabled ? "Click to Connect" : "Click to Disconnect"}
                 >
-                    <div className={cn("w-2 h-2 rounded-full", getStatusColor())}></div>
-                </div>
+                    {/* Icon changes based on status */}
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        className={cn("transition-colors duration-300",
+                            currentStatus === 'connected' || currentStatus === 'recording'
+                                ? "text-emerald-500"
+                                : currentStatus === 'connecting'
+                                    ? "text-yellow-500 animate-pulse"
+                                    : "text-rose-500"
+                        )}
+                    >
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                        <line x1="12" y1="2" x2="12" y2="12"></line>
+                    </svg>
+
+                    {/* Ring glow effect for active state */}
+                    {(currentStatus === 'connected' || currentStatus === 'recording') && (
+                        <span className="absolute inset-0 rounded-full border-2 border-emerald-500/30 animate-ping opacity-20"></span>
+                    )}
+                </button>
             </div>
         </div>
     );
