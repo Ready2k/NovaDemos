@@ -150,7 +150,14 @@ class VoiceAssistant {
 
         // Sentiment Analysis (LLM-Driven)
         // Sentiment data is now extracted from LLM responses via [SENTIMENT: score] tags
-        this.sentimentData = []; // Store real-time sentiment scores
+        // Initialize with neutral baseline (0 = neutral, range: -1 to +1)
+        this.sentimentData = [{
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            score: 0,
+            label: 'Neutral',
+            role: 'system',
+            text: 'Session Start'
+        }];
         this.liveSentimentChart = null;
         this.historySentimentChart = null;
 
@@ -648,13 +655,18 @@ class VoiceAssistant {
         if (!this.liveSentimentCanvas || typeof Chart === 'undefined') return;
 
         const ctx = this.liveSentimentCanvas.getContext('2d');
+
+        // Initialize with current sentiment data (includes neutral baseline)
+        const initialLabels = this.sentimentData.map(d => d.timestamp);
+        const initialData = this.sentimentData.map(d => d.score);
+
         this.liveSentimentChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [],
+                labels: initialLabels,
                 datasets: [{
                     label: 'Sentiment Score',
-                    data: [],
+                    data: initialData,
                     borderColor: 'rgb(59, 130, 246)',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 2,
@@ -669,7 +681,7 @@ class VoiceAssistant {
                 maintainAspectRatio: false,
                 scales: {
                     y: {
-                        beginAtZero: false,
+                        beginAtZero: true, // Changed to true to emphasize neutral point
                         min: -1,
                         max: 1,
                         ticks: {
@@ -683,7 +695,20 @@ class VoiceAssistant {
                             }
                         },
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: function (context) {
+                                // Highlight the zero line (neutral)
+                                if (context.tick.value === 0) {
+                                    return 'rgba(148, 163, 184, 0.4)';
+                                }
+                                return 'rgba(255, 255, 255, 0.1)';
+                            },
+                            lineWidth: function (context) {
+                                // Make zero line thicker
+                                if (context.tick.value === 0) {
+                                    return 2;
+                                }
+                                return 1;
+                            }
                         }
                     },
                     x: {
@@ -1435,8 +1460,14 @@ class VoiceAssistant {
         // Reset stats
         this.resetStats();
 
-        // Reset sentiment data
-        this.sentimentData = [];
+        // Reset sentiment data with neutral baseline
+        this.sentimentData = [{
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            score: 0,
+            label: 'Neutral',
+            role: 'system',
+            text: 'Session Start'
+        }];
         if (this.liveSentimentChart) {
             this.liveSentimentChart.data.labels = [];
             this.liveSentimentChart.data.datasets[0].data = [];
@@ -2090,17 +2121,30 @@ The user can see your response on a screen.
         }
 
         try {
-            await fetch('/api/feedback', {
+            const payload = {
+                sessionId: this.sessionId, // Add sessionId for backend lookup
+                traceId: targetTraceId,
+                score: score,
+                comment: comment,
+                name: 'user-feedback'
+            };
+
+            console.log('[Feedback] Sending payload:', payload);
+
+            const response = await fetch('/api/feedback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    traceId: targetTraceId,
-                    score: score,
-                    comment: comment
-                })
+                body: JSON.stringify(payload)
             });
+
+            if (!response.ok) {
+                throw new Error(`Feedback API returned ${response.status}`);
+            }
+
+            console.log('[Feedback] Successfully submitted feedback');
         } catch (e) {
             console.error('[Feedback] Failed to submit feedback:', e);
+            this.showToast('Failed to submit feedback', 'error');
         }
 
         if (!traceId) this.pendingFeedbackTraceId = null;

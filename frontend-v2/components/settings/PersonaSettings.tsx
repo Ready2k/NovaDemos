@@ -150,7 +150,6 @@ export default function PersonaSettings() {
         if (selectedPromptId) {
             try {
                 const payload = {
-                    name: selectedPromptId,
                     content: localSystemPrompt,
                     config: {
                         linkedWorkflows: settings.linkedWorkflows || [],
@@ -159,14 +158,18 @@ export default function PersonaSettings() {
                     }
                 };
 
-                const response = await fetch('/api/prompts', {
+                // Add sync=true to push to Langfuse
+                // Backend expects: /api/prompts/{id}?sync=true
+                const response = await fetch(`/api/prompts/${selectedPromptId}?sync=true`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
                 if (response.ok) {
-                    showToast('Settings and Workflow links saved!', 'success');
+                    const result = await response.json();
+                    const versionMsg = result.version ? ` (v${result.version})` : '';
+                    showToast(`Settings saved and synced to Langfuse${versionMsg}!`, 'success');
                 } else {
                     throw new Error('Failed to save to backend');
                 }

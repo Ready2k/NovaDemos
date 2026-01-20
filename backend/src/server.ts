@@ -11,6 +11,7 @@ import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
 import { SimulationService } from './simulation-service';
 import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
+import { PromptService } from './services/prompt-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
@@ -109,6 +110,9 @@ const langfuse = new Langfuse({
 langfuse.on("error", (error) => {
     console.error("Langfuse error:", error);
 });
+
+// Initialize Prompt Service
+const promptService = new PromptService(langfuse);
 
 
 
@@ -1021,26 +1025,33 @@ const server = http.createServer(async (req, res) => {
                     fs.mkdirSync(PROMPTS_DIR, { recursive: true });
                 }
 
-                fs.writeFileSync(savePath, content);
+                // Save prompt content with config metadata
+                // Format: content\n---\n{config JSON}
+                let fileContent = content.trim();
+                if (config && Object.keys(config).length > 0) {
+                    fileContent += '\n---\n' + JSON.stringify(config, null, 2);
+                }
+
+                fs.writeFileSync(savePath, fileContent);
                 console.log(`[Server] Saved prompt to ${savePath}`);
 
                 let syncMessage = '';
+                let versionNumber = null;
+
                 if (shouldSync) {
                     try {
                         const promptName = filename.replace('.txt', '');
                         console.log(`[Server] Syncing prompt ${promptName} to Langfuse...`);
 
-                        await langfuse.createPrompt({
-                            name: promptName,
-                            type: "text",
-                            prompt: content,
-                            config: config || {},
-                            labels: ["production"],
-                            tags: ["voice-assistant-sync"]
-                        });
+                        // Use PromptService to save and promote to production
+                        versionNumber = await promptService.saveAndPromote(
+                            promptName,
+                            content,
+                            config || {}
+                        );
 
-                        console.log(`[Server] Successfully synced prompt ${promptName} to Langfuse`);
-                        syncMessage = ' and synced to Langfuse';
+                        console.log(`[Server] Successfully synced prompt ${promptName} to Langfuse (version ${versionNumber})`);
+                        syncMessage = ` and synced to Langfuse as version ${versionNumber}`;
                     } catch (syncErr: any) {
                         console.error('[Server] Failed to sync to Langfuse:', syncErr);
                         syncMessage = '. Warning: Failed to sync to Langfuse (' + syncErr.message + ')';
@@ -1052,7 +1063,11 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 'success', message: 'Prompt saved' + syncMessage }));
+                res.end(JSON.stringify({
+                    status: 'success',
+                    message: 'Prompt saved' + syncMessage,
+                    version: versionNumber
+                }));
             } catch (error: any) {
                 console.error('[Server] Failed to save prompt:', error);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -1233,56 +1248,81 @@ const server = http.createServer(async (req, res) => {
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', async () => {
             try {
-                console.log(`[Server] Received feedback request body: ${body}`); // Debug log
+                console.log(`[Server] Received feedback request body: ${body}`);
                 const { traceId, sessionId, score, comment, name } = JSON.parse(body);
-                // Allow sessionId to be used as traceId (frontend sends sessionId)
-                const targetId = traceId || sessionId;
-                console.log(`[Server] Feedback Debug: traceId=${traceId}, sessionId=${sessionId}, targetId=${targetId}, score=${score}`);
 
-                if (targetId && (score !== undefined || comment)) {
-                    // 1. Send to Langfuse
-                    await langfuse.score({
-                        traceId: targetId,
-                        name: name || "user-feedback",
-                        value: score,
-                        comment: comment
-                    });
-                    console.log(`[Server] Recorded feedback for trace ${targetId}: score=${score}, comment=${comment}`);
+                // Look up the actual Langfuse traceId from active session
+                let actualTraceId = traceId;
 
-                    // 2. Persist to Local History File
-                    try {
-                        const shortId = targetId.substring(0, 8);
-                        const files = fs.readdirSync(HISTORY_DIR);
-                        const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
+                if (sessionId) {
+                    // Find the session in activeSessions
+                    const session = Array.from(activeSessions.values())
+                        .find(s => s.sessionId === sessionId);
 
-                        if (match) {
-                            const filePath = path.join(HISTORY_DIR, match);
-                            const fileContent = fs.readFileSync(filePath, 'utf-8');
-                            const historyData = JSON.parse(fileContent);
-
-                            // Update feedback
-                            historyData.feedback = {
-                                score: score,
-                                comment: comment,
-                                timestamp: new Date().toISOString()
-                            };
-
-                            fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
-                            console.log(`[Server] Updated local history file ${match} with feedback.`);
-                        } else {
-                            console.warn(`[Server] Could not find local history file for session ${shortId} to save feedback.`);
-                        }
-                    } catch (fsErr) {
-                        console.error('[Server] Failed to save feedback to local file:', fsErr);
-                        // Don't fail the request just because local save failed, Langfuse is primary
+                    if (session && session.langfuseTrace) {
+                        actualTraceId = session.langfuseTrace.id;
+                        console.log(`[Server] Found active session, using Langfuse trace ID: ${actualTraceId}`);
+                    } else {
+                        console.warn(`[Server] Session ${sessionId} not found in active sessions, using provided traceId`);
                     }
+                }
+
+                // Fallback: use sessionId as traceId if nothing else available
+                const targetId = actualTraceId || sessionId;
+
+                console.log(`[Server] Feedback Debug: sessionId=${sessionId}, traceId=${traceId}, actualTraceId=${actualTraceId}, targetId=${targetId}, score=${score}`);
+
+                if (!targetId) {
+                    throw new Error('No valid trace ID or session ID provided');
+                }
+
+                if (score === undefined && !comment) {
+                    throw new Error('Either score or comment must be provided');
+                }
+
+                // 1. Send to Langfuse
+                await langfuse.score({
+                    traceId: targetId,
+                    name: name || "user-feedback",
+                    value: score,
+                    comment: comment
+                });
+                console.log(`[Server] Recorded feedback for trace ${targetId}: score=${score}, comment=${comment}`);
+
+                // 2. Persist to Local History File
+                try {
+                    const shortId = (sessionId || targetId).substring(0, 8);
+                    const files = fs.readdirSync(HISTORY_DIR);
+                    const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
+
+                    if (match) {
+                        const filePath = path.join(HISTORY_DIR, match);
+                        const fileContent = fs.readFileSync(filePath, 'utf-8');
+                        const historyData = JSON.parse(fileContent);
+
+                        // Update feedback
+                        historyData.feedback = {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
+                        console.log(`[Server] Updated local history file ${match} with feedback.`);
+                    } else {
+                        console.warn(`[Server] Could not find local history file for session ${shortId} to save feedback.`);
+                    }
+                } catch (fsErr) {
+                    console.error('[Server] Failed to save feedback to local file:', fsErr);
+                    // Don't fail the request just because local save failed, Langfuse is primary
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ status: 'success' }));
             } catch (error: any) {
                 console.error('[Server] Failed to record feedback:', error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                    ;
                 res.end(JSON.stringify({ error: error.message }));
             }
         });

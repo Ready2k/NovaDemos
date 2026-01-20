@@ -36,19 +36,25 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
         ? messagesWithSentiment.reduce((sum, m) => sum + (m.sentiment || 0), 0) / messagesWithSentiment.length
         : 0; // Default to neutral (0) if no data
 
-    // Convert sentiment to percentage (0-1 to 0-100)
-    const sentimentPercentage = (averageSentiment * 100).toFixed(0);
+    // Convert sentiment from -1 to +1 scale to 0-100% scale
+    // -1 (very negative) = 0%
+    //  0 (neutral) = 50%
+    // +1 (very positive) = 100%
+    const sentimentPercentage = ((averageSentiment + 1) * 50).toFixed(0);
 
-    // Calculate sentiment label
+    // Calculate sentiment label based on percentage
     const getSentimentLabel = (sentiment: number): string => {
-        if (sentiment >= 0.6) return 'Positive';
-        if (sentiment >= 0.4) return 'Neutral';
+        const percentage = (sentiment + 1) * 50; // Convert to 0-100 scale
+        if (percentage >= 70) return 'Positive';
+        if (percentage >= 30) return 'Neutral';
         return 'Negative';
     };
 
     // Calculate stroke dashoffset for circular progress (352 = circumference of circle with r=56)
     const circumference = 352;
-    const sentimentOffset = circumference - (averageSentiment * circumference);
+    // Convert sentiment to 0-1 range for progress circle
+    const sentimentProgress = (averageSentiment + 1) / 2; // -1 to +1 becomes 0 to 1
+    const sentimentOffset = circumference - (sentimentProgress * circumference);
 
     return (
         <aside className={cn(

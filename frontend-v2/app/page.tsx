@@ -540,10 +540,11 @@ export default function Home() {
           // Send feedback via HTTP to avoid WS disconnection issues
           try {
             const feedbackPayload = {
-              sessionId: finishedSessionId || currentSession?.sessionId, // Use captured ID first
+              sessionId: finishedSessionId || currentSession?.sessionId,
+              traceId: currentSession?.sessionId, // Use sessionId as traceId fallback
               score,
               comment,
-              timestamp: Date.now()
+              name: 'user-feedback'
             };
             console.log('[App] Sending Feedback Payload:', feedbackPayload);
             await fetch('/api/feedback', {
