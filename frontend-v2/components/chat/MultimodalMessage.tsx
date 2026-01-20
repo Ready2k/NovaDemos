@@ -13,7 +13,7 @@ interface MultimodalMessageProps {
 
 export default function MultimodalMessage({ role, content, timestamp, media, isDarkMode = true, sentiment, feedback }: MultimodalMessageProps) {
     const avatar = role === 'user' ? '👤' : '🤖';
-    const name = role === 'user' ? 'Katre' : 'Amn';
+    const name = role === 'user' ? 'User' : 'Agent';
 
     return (
         <div className={cn(
