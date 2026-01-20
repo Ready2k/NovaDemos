@@ -9,7 +9,7 @@ export default function PersonaSettings() {
     const [prompts, setPrompts] = useState<any[]>([]);
     const [selectedPromptId, setSelectedPromptId] = useState<string>(settings.personaPreset || '');
     const [workflows, setWorkflows] = useState<any[]>([]);
-    const [linkedWorkflows, setLinkedWorkflows] = useState<string[]>([]);
+    // Removed local linkedWorkflows state to rely on global settings for persistence
     const [isSyncing, setIsSyncing] = useState(false);
 
     // Sync selectedPromptId when settings change (e.g. initial load or external update)
@@ -60,7 +60,7 @@ export default function PersonaSettings() {
         const selected = prompts.find(p => p.id === id);
         if (selected) {
             setLocalSystemPrompt(selected.content);
-            setLinkedWorkflows(selected.config?.linkedWorkflows || []);
+            // setLinkedWorkflows removed - updating settings directly below
 
             updateSettings({
                 systemPrompt: selected.content,
@@ -107,7 +107,7 @@ export default function PersonaSettings() {
         updateSettings({
             systemPrompt: localSystemPrompt,
             speechPrompt: localSpeechPrompt,
-            linkedWorkflows: linkedWorkflows
+            // linkedWorkflows is already updated in real-time
         });
 
         // 2. Persist to Backend (for permanent storage)
@@ -117,7 +117,7 @@ export default function PersonaSettings() {
                     name: selectedPromptId,
                     content: localSystemPrompt,
                     config: {
-                        linkedWorkflows: linkedWorkflows
+                        linkedWorkflows: settings.linkedWorkflows || []
                         // Add other config fields here if needed in future
                     }
                 };
@@ -238,12 +238,13 @@ export default function PersonaSettings() {
                             <input
                                 type="checkbox"
                                 className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
-                                checked={linkedWorkflows.includes(wf.id)}
+                                checked={(settings.linkedWorkflows || []).includes(wf.id)}
                                 onChange={(e) => {
+                                    const currentLinks = settings.linkedWorkflows || [];
                                     if (e.target.checked) {
-                                        setLinkedWorkflows([...linkedWorkflows, wf.id]);
+                                        updateSettings({ linkedWorkflows: [...currentLinks, wf.id] });
                                     } else {
-                                        setLinkedWorkflows(linkedWorkflows.filter(id => id !== wf.id));
+                                        updateSettings({ linkedWorkflows: currentLinks.filter(id => id !== wf.id) });
                                     }
                                 }}
                             />

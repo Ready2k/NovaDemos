@@ -539,6 +539,7 @@ const SONIC_PATH = '/sonic';
 const FRONTEND_DIR = path.join(__dirname, '../../frontend');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
 const PROMPTS_DIR = path.join(__dirname, '../prompts');
+const PRESETS_FILE = path.join(__dirname, '../data/presets.json');
 const HISTORY_DIR = path.join(__dirname, '../../chat_history');
 
 // Ensure history directory exists
@@ -1019,6 +1020,99 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: error.message }));
             }
         });
+        return;
+    }
+
+
+    // Presets API
+    // Presets API
+    // GET /api/presets - List all presets
+    if (req.method === 'GET' && req.url?.startsWith('/api/presets') && !req.url.startsWith('/api/presets/')) {
+        try {
+            if (!fs.existsSync(PRESETS_FILE)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify([]));
+                return;
+            }
+            const presets = fs.readFileSync(PRESETS_FILE, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(presets);
+        } catch (error: any) {
+            console.error('[Server] Failed to list presets:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
+        return;
+    }
+
+    // POST /api/presets - Create a new preset
+    if (req.method === 'POST' && req.url?.startsWith('/api/presets') && !req.url.startsWith('/api/presets/')) {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const { name, config } = JSON.parse(body);
+                if (!name || !config) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Name and config are required' }));
+                    return;
+                }
+
+                let presets = [];
+                if (fs.existsSync(PRESETS_FILE)) {
+                    presets = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
+                }
+
+                const newPreset = {
+                    id: crypto.randomUUID(),
+                    name,
+                    createdAt: new Date().toISOString(),
+                    config
+                };
+
+                presets.push(newPreset);
+                fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
+
+                console.log(`[Server] Created new preset: ${name} (${newPreset.id})`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newPreset));
+            } catch (error: any) {
+                console.error('[Server] Failed to create preset:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
+    // DELETE /api/presets/:id - Delete a preset
+    if (req.method === 'DELETE' && req.url?.startsWith('/api/presets/')) {
+        const urlParts = req.url.split('?');
+        const id = urlParts[0].substring(13); // Remove /api/presets/ from the path part only
+        try {
+            if (fs.existsSync(PRESETS_FILE)) {
+                let presets = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
+                const originalLength = presets.length;
+                presets = presets.filter((p: any) => p.id !== id);
+
+                if (presets.length < originalLength) {
+                    fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
+                    console.log(`[Server] Deleted preset: ${id}`);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } else {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Preset not found' }));
+                }
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'No presets found' }));
+            }
+        } catch (error: any) {
+            console.error('[Server] Failed to delete preset:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
         return;
     }
 

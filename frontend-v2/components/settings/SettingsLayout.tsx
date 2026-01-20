@@ -4,12 +4,14 @@ import GeneralSettings from './GeneralSettings';
 import PersonaSettings from './PersonaSettings';
 import KnowledgeBaseSettings from './KnowledgeBaseSettings';
 import WorkflowSettings from './WorkflowSettings';
+import PresetsSettings from './PresetsSettings';
 
 export default function SettingsLayout() {
     const { activeSettingsTab, setActiveSettingsTab, isDarkMode } = useApp();
 
     const tabs = [
         { id: 'general', label: 'General' },
+        { id: 'presets', label: 'Presets' },
         { id: 'persona', label: 'Persona' },
         { id: 'knowledge', label: 'Knowledge' },
         { id: 'workflow', label: 'Workflow' },
@@ -53,6 +55,7 @@ export default function SettingsLayout() {
             {/* Settings Content Area */}
             <div className="flex-1 p-8 overflow-y-auto">
                 {activeSettingsTab === 'general' && <GeneralSettings />}
+                {activeSettingsTab === 'presets' && <PresetsSettings />}
                 {activeSettingsTab === 'persona' && <PersonaSettings />}
                 {activeSettingsTab === 'knowledge' && <KnowledgeBaseSettings />}
                 {activeSettingsTab === 'workflow' && <WorkflowSettings />}
