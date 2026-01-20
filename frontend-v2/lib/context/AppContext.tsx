@@ -110,7 +110,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
 
     // Session state
-    const [currentSession, setCurrentSession] = useState<Session | null>(null);
+    const [currentSession, setCurrentSessionState] = useState<Session | null>(null);
+    const setCurrentSession = useCallback((value: Session | null | ((prev: Session | null) => Session | null)) => {
+        setCurrentSessionState(prev => {
+            const next = typeof value === 'function' ? (value as any)(prev) : value;
+            console.log('[AppContext] Setting current session:', next?.sessionId || 'null');
+            return next;
+        });
+    }, []);
 
     // Messages state
     const [messages, setMessages] = useState<Message[]>([]);

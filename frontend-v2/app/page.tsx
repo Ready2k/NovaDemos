@@ -44,6 +44,7 @@ export default function Home() {
   // Local state for survey
   const [showSurvey, setShowSurvey] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [finishedSessionId, setFinishedSessionId] = useState<string | null>(null);
 
   // Ref to store send function (to avoid dependency issues)
   const sendRef = useRef<((message: any) => void) | null>(null);
@@ -53,6 +54,15 @@ export default function Home() {
 
   // Ref to prevent double-connect in React Strict Mode
   const hasConnectedRef = useRef(false);
+
+  // Ref to track session ID for feedback (robust against state updates)
+  const sessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentSession?.sessionId) {
+      sessionIdRef.current = currentSession.sessionId;
+    }
+  }, [currentSession?.sessionId]);
 
 
 
@@ -88,6 +98,10 @@ export default function Home() {
 
       case 'session_start':
         console.log('[Session] Started:', message.sessionId);
+        // Robust capture: Update ref immediately
+        sessionIdRef.current = message.sessionId;
+        console.log('[Session] Capture Ref Updated:', sessionIdRef.current);
+
         setCurrentSession({
           sessionId: message.sessionId,
           startTime: message.timestamp || new Date().toISOString(),
@@ -385,20 +399,26 @@ export default function Home() {
     }
   }, [connectionStatus, audioProcessor, setConnectionStatus]);
 
+
   // Handle Connection Toggle (Manual)
   const handleConnectionToggle = useCallback(() => {
     if (connectionStatus === 'connected' || connectionStatus === 'recording' || connectionStatus === 'connecting') {
       // Disconnecting
-      console.log('[App] Disconnecting... hasInteracted:', hasInteracted);
+      console.log('[App] Disconnecting... hasInteracted:', hasInteracted, 'Session (Ref):', sessionIdRef.current, 'Session (State):', currentSession?.sessionId);
       if (hasInteracted) {
+        const finalId = sessionIdRef.current || currentSession?.sessionId || null;
+        console.log('[App] Capturing Final Session ID:', finalId);
+        setFinishedSessionId(finalId);
         setShowSurvey(true);
       }
       disconnect();
     } else {
       // Connecting
+      setFinishedSessionId(null); // Clear previous
+      sessionIdRef.current = null; // Clear ref
       connect();
     }
-  }, [connectionStatus, connect, disconnect, hasInteracted]);
+  }, [connectionStatus, connect, disconnect, hasInteracted, currentSession]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -520,11 +540,12 @@ export default function Home() {
           // Send feedback via HTTP to avoid WS disconnection issues
           try {
             const feedbackPayload = {
-              sessionId: currentSession?.sessionId, // Correlate if possible
+              sessionId: finishedSessionId || currentSession?.sessionId, // Use captured ID first
               score,
               comment,
               timestamp: Date.now()
             };
+            console.log('[App] Sending Feedback Payload:', feedbackPayload);
             await fetch('/api/feedback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

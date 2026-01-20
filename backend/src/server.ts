@@ -1233,21 +1233,25 @@ const server = http.createServer(async (req, res) => {
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', async () => {
             try {
-                const { traceId, score, comment, name } = JSON.parse(body);
+                console.log(`[Server] Received feedback request body: ${body}`); // Debug log
+                const { traceId, sessionId, score, comment, name } = JSON.parse(body);
+                // Allow sessionId to be used as traceId (frontend sends sessionId)
+                const targetId = traceId || sessionId;
+                console.log(`[Server] Feedback Debug: traceId=${traceId}, sessionId=${sessionId}, targetId=${targetId}, score=${score}`);
 
-                if (traceId && (score !== undefined || comment)) {
+                if (targetId && (score !== undefined || comment)) {
                     // 1. Send to Langfuse
                     await langfuse.score({
-                        traceId,
+                        traceId: targetId,
                         name: name || "user-feedback",
                         value: score,
                         comment: comment
                     });
-                    console.log(`[Server] Recorded feedback for trace ${traceId}: score=${score}, comment=${comment}`);
+                    console.log(`[Server] Recorded feedback for trace ${targetId}: score=${score}, comment=${comment}`);
 
                     // 2. Persist to Local History File
                     try {
-                        const shortId = traceId.substring(0, 8);
+                        const shortId = targetId.substring(0, 8);
                         const files = fs.readdirSync(HISTORY_DIR);
                         const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
 
