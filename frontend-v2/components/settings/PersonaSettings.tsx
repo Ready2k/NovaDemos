@@ -39,7 +39,7 @@ export default function PersonaSettings() {
         fetchPrompts();
     }, []);
 
-    // Fetch Workflows
+    // Fetch Workflows and Tools
     useEffect(() => {
         const fetchWorkflows = async () => {
             try {
@@ -55,10 +55,21 @@ export default function PersonaSettings() {
             try {
                 const response = await fetch('/api/tools');
                 if (response.ok) {
-                    setTools(await response.json());
+                    const data = await response.json();
+                    if (Array.isArray(data)) {
+                        console.log('Fetched tools:', data.length);
+                        setTools(data);
+
+                        // FIX: If enabledTools is empty but we have tools, it might be uninitialized.
+                        // Ideally we respect the settings, but for now we trust the settings load.
+                    } else {
+                        console.error('Tools API returned non-array:', data);
+                        setTools([]);
+                    }
                 }
             } catch (err) {
                 console.warn('Failed to fetch tools', err);
+                setTools([]);
             }
         };
         fetchWorkflows();
@@ -73,15 +84,19 @@ export default function PersonaSettings() {
         const selected = prompts.find(p => p.id === id);
         if (selected) {
             setLocalSystemPrompt(selected.content);
-            // setLinkedWorkflows removed - updating settings directly below
+
+            // FIX: If allowedTools is undefined (legacy persona), DEFAULT TO ALL TOOLS
+            // instead of empty array (which disables everything).
+            const defaultAllTools = tools.map(t => t.name);
+            const newEnabledTools = selected.config?.allowedTools || defaultAllTools;
 
             updateSettings({
                 systemPrompt: selected.content,
                 personaPreset: id,
                 linkedWorkflows: selected.config?.linkedWorkflows || [],
-                enabledTools: selected.config?.allowedTools || []
+                enabledTools: newEnabledTools
             });
-            setEnabledTools(selected.config?.allowedTools || []);
+            setEnabledTools(newEnabledTools);
         }
     };
 
@@ -115,8 +130,12 @@ export default function PersonaSettings() {
     useEffect(() => {
         setLocalSystemPrompt(settings.systemPrompt);
         setLocalSpeechPrompt(settings.speechPrompt);
-        setEnabledTools(settings.enabledTools || []);
-    }, [settings.systemPrompt, settings.speechPrompt]);
+        // Only update if settings.enabledTools is populated, to avoid overwriting ongoing edits
+        // But we need to sync if it changes externally.
+        if (settings.enabledTools) {
+            setEnabledTools(settings.enabledTools);
+        }
+    }, [settings.systemPrompt, settings.speechPrompt, settings.enabledTools]);
 
     const handleSave = async () => {
         // 1. Update local settings state (for immediate effect in current session)
@@ -157,6 +176,14 @@ export default function PersonaSettings() {
             }
         } else {
             showToast('Settings updated for this session.', 'info');
+        }
+    };
+
+    const toggleAllTools = () => {
+        if (enabledTools.length === tools.length) {
+            setEnabledTools([]); // Deselect All
+        } else {
+            setEnabledTools(tools.map(t => t.name)); // Select All
         }
     };
 
@@ -234,6 +261,63 @@ export default function PersonaSettings() {
                 />
             </section>
 
+            {/* Allowed Tools */}
+            <section className="flex flex-col gap-4">
+                <div className="flex justify-between items-end">
+                    <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                        Allowed Tools
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleAllTools}
+                            className={cn(
+                                "text-xs px-2 py-1 rounded transition-colors",
+                                isDarkMode ? "bg-white/10 hover:bg-white/20 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                            )}
+                        >
+                            {enabledTools.length === tools.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                        <span className={cn("text-xs opacity-60", isDarkMode ? "text-white" : "text-gray-600")}>
+                            {enabledTools.length}/{tools.length} Selected
+                        </span>
+                    </div>
+                </div>
+                <div className={cn(
+                    "w-full p-4 rounded-xl border flex flex-col gap-2 max-h-60 overflow-y-auto",
+                    isDarkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-200"
+                )}>
+                    {(!tools || tools.length === 0) && (
+                        <p className="text-sm text-gray-500 italic">No tools found (or loading...).</p>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {Array.isArray(tools) && tools.map(tool => (
+                            <label key={tool.name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors">
+                                <input
+                                    type="checkbox"
+                                    className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                                    checked={enabledTools.includes(tool.name)}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setEnabledTools([...enabledTools, tool.name]);
+                                        } else {
+                                            setEnabledTools(enabledTools.filter(t => t !== tool.name));
+                                        }
+                                    }}
+                                />
+                                <div>
+                                    <div className={cn("text-sm font-medium", isDarkMode ? "text-white" : "text-gray-700")}>
+                                        {tool.name}
+                                    </div>
+                                    <div className="text-xs text-gray-500 truncate max-w-[200px]" title={tool.description}>
+                                        {tool.description}
+                                    </div>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
             {/* Linked Workflows */}
             <section className="flex flex-col gap-4">
                 <div className="flex justify-between items-end">
@@ -274,52 +358,6 @@ export default function PersonaSettings() {
                             </span>
                         </label>
                     ))}
-                </div>
-            </section>
-
-            {/* Allowed Tools */}
-            <section className="flex flex-col gap-4">
-                <div className="flex justify-between items-end">
-                    <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
-                        Allowed Tools
-                    </h3>
-                    <span className={cn("text-xs opacity-60", isDarkMode ? "text-white" : "text-gray-600")}>
-                        Tools this persona is allowed to use
-                    </span>
-                </div>
-                <div className={cn(
-                    "w-full p-4 rounded-xl border flex flex-col gap-2 max-h-60 overflow-y-auto",
-                    isDarkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-200"
-                )}>
-                    {tools.length === 0 && (
-                        <p className="text-sm text-gray-500 italic">No tools found.</p>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {tools.map(tool => (
-                            <label key={tool.name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors">
-                                <input
-                                    type="checkbox"
-                                    className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
-                                    checked={enabledTools.includes(tool.name)}
-                                    onChange={(e) => {
-                                        if (e.target.checked) {
-                                            setEnabledTools([...enabledTools, tool.name]);
-                                        } else {
-                                            setEnabledTools(enabledTools.filter(t => t !== tool.name));
-                                        }
-                                    }}
-                                />
-                                <div>
-                                    <div className={cn("text-sm font-medium", isDarkMode ? "text-white" : "text-gray-700")}>
-                                        {tool.name}
-                                    </div>
-                                    <div className="text-xs text-gray-500 truncate max-w-[200px]" title={tool.description}>
-                                        {tool.description}
-                                    </div>
-                                </div>
-                            </label>
-                        ))}
-                    </div>
                 </div>
             </section>
 

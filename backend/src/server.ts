@@ -1475,6 +1475,7 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: error.message }));
             }
         });
+        return;
     }
 
     // Delete Workflow API
@@ -1539,6 +1540,7 @@ const server = http.createServer(async (req, res) => {
             });
             return;
         }
+        return;
     }
 
 
@@ -1572,8 +1574,8 @@ const server = http.createServer(async (req, res) => {
 
 
 
-    if (req.url?.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
-        const idToDelete = req.url!.split('/').pop();
+    if (pathname.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
+        const idToDelete = pathname.split('/').pop();
         const kbs = loadKnowledgeBases();
         const newKbs = kbs.filter((kb: any) => kb.id !== idToDelete);
         saveKnowledgeBases(newKbs);
@@ -3955,6 +3957,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // We send a tool result instructing the model to apologize.
                 if (!isToolEnabled(actualToolName)) {
                     console.log(`[Server] 🛑 Blocked execution of DISABLED tool: ${actualToolName}`);
+                    console.log(`[Server] Allowed tools for this session:`, session.allowedTools || 'NONE (undefined)');
 
                     if (session.sonicClient && session.sonicClient.getSessionId()) {
                         // Send a "successful" tool result but with content that tells the model it failed/was denied.

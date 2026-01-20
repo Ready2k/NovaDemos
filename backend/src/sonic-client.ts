@@ -509,9 +509,14 @@ export class SonicClient {
                     };
                     yield { chunk: { bytes: Buffer.from(JSON.stringify(audioEndEvent)) } };
                     this.currentContentName = undefined;
+                    console.log('[SonicClient] Ended audio content before tool result');
                 }
 
-                // 2. Send Tool Result as Text Content
+                // BACK TO BASICS: The "native" toolResult event is unstable/undocumented for Nova Sonic.
+                // The historically working solution (commit f4e692e) injected results as USER TEXT.
+                // This reliably provides the context to the model.
+
+                // 2. Send Tool Result as Text Content (Simulated User Message)
                 const textContentName = `tool-result-${Date.now()}`;
                 const textStartEvent = {
                     event: {
@@ -529,19 +534,25 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
 
+                const resultString = typeof resultData.result === 'string'
+                    ? resultData.result
+                    : JSON.stringify(resultData.result);
+
                 const textInputEvent = {
                     event: {
                         textInput: {
                             promptName: promptName,
                             contentName: textContentName,
-                            content: `[SYSTEM] Tool execution completed successfully. Result: ${resultText}`
+                            content: `Tool '${resultData.toolUseId}' result: ${resultString}`
                         }
                     }
                 };
-                console.log('[SonicClient] Sending tool result as text input:', textInputEvent.event.textInput.content.substring(0, 100) + '...');
+
+                console.log('[SonicClient] Sending tool result as TEXT input:', resultData.toolUseId);
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textInputEvent)) } };
 
-                const textEndEvent = {
+                // 3. Text Content End
+                const textEnd = {
                     event: {
                         contentEnd: {
                             promptName: promptName,
@@ -549,58 +560,8 @@ export class SonicClient {
                         }
                     }
                 };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(textEndEvent)) } };
-
-                // 3. Send Silent Audio (Required by Nova Sonic)
-                if (!this.currentContentName) {
-                    const silenceContentName = `audio-silence-${Date.now()}`;
-
-                    // Start Silence Audio
-                    const silenceStartEvent = {
-                        event: {
-                            contentStart: {
-                                promptName: promptName,
-                                contentName: silenceContentName,
-                                type: "AUDIO",
-                                interactive: true,
-                                role: "USER",
-                                audioInputConfiguration: {
-                                    mediaType: "audio/lpcm",
-                                    sampleRateHertz: 16000,
-                                    sampleSizeBits: 16,
-                                    channelCount: 1,
-                                    audioType: "SPEECH",
-                                    encoding: "base64"
-                                }
-                            }
-                        }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
-
-                    // Send Silence Data
-                    const silenceInputEvent = {
-                        event: {
-                            audioInput: {
-                                promptName: promptName,
-                                contentName: silenceContentName,
-                                content: this.SILENCE_FRAME.toString('base64')
-                            }
-                        }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
-
-                    // End Silence Audio
-                    const silenceEndEvent = {
-                        event: {
-                            contentEnd: {
-                                promptName: promptName,
-                                contentName: silenceContentName
-                            }
-                        }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceEndEvent)) } };
-                    console.log('[SonicClient] Sent silent audio frame after tool result');
-                }
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(textEnd)) } };
+                console.log('[SonicClient] Text-based tool result sequence completed');
             }
 
             // Check for text input first (priority)
