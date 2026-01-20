@@ -8,6 +8,8 @@ export default function PersonaSettings() {
     const [localSpeechPrompt, setLocalSpeechPrompt] = useState(settings.speechPrompt);
     const [prompts, setPrompts] = useState<any[]>([]);
     const [selectedPromptId, setSelectedPromptId] = useState<string>(settings.personaPreset || '');
+    const [workflows, setWorkflows] = useState<any[]>([]);
+    const [linkedWorkflows, setLinkedWorkflows] = useState<string[]>([]);
     const [isSyncing, setIsSyncing] = useState(false);
 
     // Sync selectedPromptId when settings change (e.g. initial load or external update)
@@ -35,6 +37,21 @@ export default function PersonaSettings() {
         fetchPrompts();
     }, []);
 
+    // Fetch Workflows
+    useEffect(() => {
+        const fetchWorkflows = async () => {
+            try {
+                const response = await fetch('/api/workflows');
+                if (response.ok) {
+                    setWorkflows(await response.json());
+                }
+            } catch (err) {
+                console.warn('Failed to fetch workflows', err);
+            }
+        };
+        fetchWorkflows();
+    }, []);
+
     // Handle Preset Selection
     const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const id = e.target.value;
@@ -43,11 +60,12 @@ export default function PersonaSettings() {
         const selected = prompts.find(p => p.id === id);
         if (selected) {
             setLocalSystemPrompt(selected.content);
-            // If the prompt object has speech config, set it too (assuming custom field or metadata)
-            // For now, we only update system prompt as standard
+            setLinkedWorkflows(selected.config?.linkedWorkflows || []);
+
             updateSettings({
                 systemPrompt: selected.content,
-                personaPreset: id
+                personaPreset: id,
+                linkedWorkflows: selected.config?.linkedWorkflows || []
             });
         }
     };
@@ -84,12 +102,44 @@ export default function PersonaSettings() {
         setLocalSpeechPrompt(settings.speechPrompt);
     }, [settings.systemPrompt, settings.speechPrompt]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        // 1. Update local settings state (for immediate effect in current session)
         updateSettings({
             systemPrompt: localSystemPrompt,
-            speechPrompt: localSpeechPrompt
+            speechPrompt: localSpeechPrompt,
+            linkedWorkflows: linkedWorkflows
         });
-        // TODO: Show toast notification
+
+        // 2. Persist to Backend (for permanent storage)
+        if (selectedPromptId) {
+            try {
+                const payload = {
+                    name: selectedPromptId,
+                    content: localSystemPrompt,
+                    config: {
+                        linkedWorkflows: linkedWorkflows
+                        // Add other config fields here if needed in future
+                    }
+                };
+
+                const response = await fetch('/api/prompts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    showToast('Settings and Workflow links saved!', 'success');
+                } else {
+                    throw new Error('Failed to save to backend');
+                }
+            } catch (err) {
+                console.error('Failed to save settings:', err);
+                showToast('Saved to session, but failed to persist to backend.', 'error');
+            }
+        } else {
+            showToast('Settings updated for this session.', 'info');
+        }
     };
 
     return (
@@ -164,6 +214,48 @@ export default function PersonaSettings() {
                     )}
                     placeholder="You are a helpful assistant..."
                 />
+            </section>
+
+            {/* Linked Workflows */}
+            <section className="flex flex-col gap-4">
+                <div className="flex justify-between items-end">
+                    <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                        Linked Workflows
+                    </h3>
+                    <span className={cn("text-xs opacity-60", isDarkMode ? "text-white" : "text-gray-600")}>
+                        Automatically start these workflows with this persona
+                    </span>
+                </div>
+                <div className={cn(
+                    "w-full p-4 rounded-xl border flex flex-col gap-2 max-h-48 overflow-y-auto",
+                    isDarkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-200"
+                )}>
+                    {workflows.length === 0 && (
+                        <p className="text-sm text-gray-500 italic">No workflows found.</p>
+                    )}
+                    {workflows.map(wf => (
+                        <label key={wf.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors">
+                            <input
+                                type="checkbox"
+                                className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                                checked={linkedWorkflows.includes(wf.id)}
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setLinkedWorkflows([...linkedWorkflows, wf.id]);
+                                    } else {
+                                        setLinkedWorkflows(linkedWorkflows.filter(id => id !== wf.id));
+                                    }
+                                }}
+                            />
+                            <span className={cn("text-sm font-medium", isDarkMode ? "text-white" : "text-gray-700")}>
+                                {wf.name}
+                            </span>
+                            <span className="text-xs text-gray-400 ml-auto">
+                                {wf.filename}
+                            </span>
+                        </label>
+                    ))}
+                </div>
             </section>
 
             {/* Speech Prompt */}

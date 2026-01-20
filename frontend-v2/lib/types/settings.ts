@@ -40,6 +40,10 @@ export interface AppSettings {
     // Cost Configuration
     costConfig: CostConfig;
 
+    // Workflow Settings
+    showWorkflowVisualization?: boolean;
+    linkedWorkflows?: string[];
+
     // Debug
     debugMode: boolean;
 }

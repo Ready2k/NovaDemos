@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import GeneralSettings from './GeneralSettings';
 import PersonaSettings from './PersonaSettings';
 import KnowledgeBaseSettings from './KnowledgeBaseSettings';
+import WorkflowSettings from './WorkflowSettings';
 
 export default function SettingsLayout() {
     const { activeSettingsTab, setActiveSettingsTab, isDarkMode } = useApp();
@@ -11,6 +12,7 @@ export default function SettingsLayout() {
         { id: 'general', label: 'General' },
         { id: 'persona', label: 'Persona' },
         { id: 'knowledge', label: 'Knowledge' },
+        { id: 'workflow', label: 'Workflow' },
         { id: 'system', label: 'System' },
     ];
 
@@ -53,6 +55,7 @@ export default function SettingsLayout() {
                 {activeSettingsTab === 'general' && <GeneralSettings />}
                 {activeSettingsTab === 'persona' && <PersonaSettings />}
                 {activeSettingsTab === 'knowledge' && <KnowledgeBaseSettings />}
+                {activeSettingsTab === 'workflow' && <WorkflowSettings />}
                 {activeSettingsTab === 'system' && <div className="text-gray-500">System Settings (Coming Soon)</div>}
             </div>
         </div>

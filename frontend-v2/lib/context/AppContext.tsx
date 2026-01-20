@@ -41,6 +41,9 @@ interface AppState {
     workflows: Workflow[];
     setWorkflows: (workflows: Workflow[]) => void;
     toggleWorkflow: (workflowId: string) => void;
+    // Current live workflow execution state
+    workflowState: { currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null;
+    setWorkflowState: (state: { currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null) => void;
 
     // Knowledge Bases
     knowledgeBases: KnowledgeBase[];
@@ -58,6 +61,7 @@ interface AppState {
     setIsDarkMode: (dark: boolean) => void;
     debugMode: boolean;
     setDebugMode: (debug: boolean) => void;
+    isHydrated: boolean;
 
     // Navigation (Phase 3)
     activeView: 'chat' | 'settings' | 'workflow' | 'history';
@@ -96,6 +100,8 @@ const defaultSettings: AppSettings = {
             outputCost: 0.000012,
         },
     },
+    showWorkflowVisualization: true,
+    linkedWorkflows: [],
     debugMode: false,
 };
 
@@ -146,6 +152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Workflows state
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
+    const [workflowState, setWorkflowState] = useState<{ currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null>(null);
 
     // Knowledge bases state
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -302,6 +309,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         workflows,
         setWorkflows,
         toggleWorkflow,
+        workflowState,
+        setWorkflowState,
 
         // Knowledge Bases
         knowledgeBases,

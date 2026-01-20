@@ -644,7 +644,7 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
 
         // 3. Union of all prompt names
         const allNames = Array.from(new Set([...cloudPrompts, ...localFiles]));
-        const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local' }[] = [];
+        const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] = [];
 
         // Fetch in batches to avoid overwhelming the Langfuse API/Network
         const BATCH_SIZE = 5;
@@ -669,11 +669,13 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
 
                     let source: 'langfuse' | 'local' = 'local';
                     let content = '';
+                    let config: any = {};
 
                     // Try to fetch from Langfuse first
                     try {
                         if (cloudPrompts.has(promptName)) {
                             const prompt = await langfuse.getPrompt(promptName);
+                            config = (prompt as any).config || {};
 
                             // Extract content based on prompt type
                             if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
@@ -700,7 +702,19 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
                         try {
                             const localPath = path.join(PROMPTS_DIR, filename);
                             if (fs.existsSync(localPath)) {
-                                content = fs.readFileSync(localPath, 'utf-8').trim();
+                                let rawContent = fs.readFileSync(localPath, 'utf-8');
+                                // Parse Config if present
+                                const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
+                                if (parts.length > 1) {
+                                    content = parts[0].trim();
+                                    try {
+                                        config = JSON.parse(parts[1].trim());
+                                    } catch (e) {
+                                        console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
+                                    }
+                                } else {
+                                    content = rawContent.trim();
+                                }
                             }
                         } catch (localErr) {
                             console.error(`[Server] Failed to load local backup for ${promptName}:`, localErr);
@@ -708,7 +722,7 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
                     }
 
                     if (!content) return null;
-                    return { id: promptName, name: displayName, content, source };
+                    return { id: promptName, name: displayName, content, source, config };
                 })
             );
 
@@ -1518,6 +1532,7 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Failed to fetch workflows' }));
         }
+        return;
     }
 
     // --- Voices API ---
@@ -2883,14 +2898,17 @@ function convertWorkflowToText(workflow: any): string {
     if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
 
     let text = "### WORKFLOW INSTRUCTIONS\n";
-    text += "You must follow this strictly defined process flow. \n";
-    text += "CRITICAL: You MUST begin your response internal thought or output with the tag [STEP: node_id] indicating which step you are executing. Example: [STEP: check_auth] ...\n";
-    text += "CRITICAL: The descriptions below are INSTRUCTIONS for your behavior/persona. DO NOT read them aloud to the user.\n\n";
+    text += "You are executing a STRICT workflow. You represent a state machine.\n";
+    text += "CRITICAL RULE: You MUST begin EVERY single response with the tag [STEP: node_id].\n";
+    text += "This tag tells the UI where you are. Without it, the interface BREAKS.\n";
+    text += "Format: [STEP: node_id] Your response text...\n";
+    text += "Example: [STEP: check_auth] I removed the example text to save tokens.\n";
+    text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n\n";
 
     // 1. Map Nodes
     const startNode = workflow.nodes.find((n: any) => n.type === 'start');
     if (startNode) {
-        text += `ENTRY POINT: Begin execution at step [${startNode.id}].\n`;
+        text += `ENTRY POINT: Begin execution at step [${startNode.id}]. Start your first response with [STEP: ${startNode.id}].\n`;
     }
 
     workflow.nodes.forEach((node: any) => {
@@ -2957,6 +2975,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 ws.send(JSON.stringify({
                     type: 'metadata',
                     data: event.data
+                }));
+            }
+            break;
+
+        case 'workflow_update':
+            console.log(`[Server] Forwarding workflow update: ${event.data.currentStep}`);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'workflow_update',
+                    currentStep: event.data.currentStep
                 }));
             }
             break;

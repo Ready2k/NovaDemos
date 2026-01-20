@@ -10,6 +10,7 @@ import CommandBar from '@/components/chat/CommandBar';
 import SessionSurveyModal from '@/components/search/SessionSurveyModal';
 import AboutModal from '@/components/layout/AboutModal';
 import Toast from '@/components/ui/Toast';
+import WorkflowVisualizer from '@/components/chat/WorkflowVisualizer';
 import { useApp } from '@/lib/context/AppContext';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
@@ -33,6 +34,7 @@ export default function Home() {
     settings,
     activeView,
     isHydrated,
+    setWorkflowState
   } = useApp();
 
   // Local state for survey
@@ -203,7 +205,12 @@ export default function Home() {
 
       case 'workflow_update':
         console.log('[Workflow] Update:', message.currentStep);
-        // Could update workflow state
+        if (message.currentStep) {
+          setWorkflowState({
+            currentStep: message.currentStep,
+            status: message.currentStep.toLowerCase().includes('complete') ? 'completed' : 'active'
+          });
+        }
         break;
 
       case 'interruption':
@@ -413,6 +420,9 @@ export default function Home() {
               </span>
             </div>
           </div>
+
+
+
           <div className="flex items-center gap-3">
             {/* Dark Mode Toggle */}
             <button
@@ -496,6 +506,8 @@ export default function Home() {
 
       {/* Application Info Modal */}
       <AboutModal />
+
+
 
       {/* Global Notifications */}
       <Toast />

@@ -39,7 +39,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update';
     data: any;
 }
 
@@ -1150,7 +1150,31 @@ export class SonicClient {
                         const contentId = eventData.textOutput.contentId;
                         const stage = this.contentStages.get(contentId) || 'UNKNOWN';
 
-                        if (content && content.length > 0) {
+                        // CRITICAL: Check for [STEP: step_id] tags
+                        let cleanContent = eventData.textOutput.content;
+                        const stepMatch = cleanContent.match(/\[STEP:\s*([a-zA-Z0-9_\-]+)\]/);
+                        if (stepMatch) {
+                            const stepId = stepMatch[1];
+                            console.log(`[SonicClient] DETECTED WORKFLOW STEP: ${stepId}`);
+
+                            // Emit workflow event
+                            this.eventCallback?.({
+                                type: 'workflow_update',
+                                data: { currentStep: stepId }
+                            });
+
+                            // Remove the tag from the displayed text
+                            cleanContent = cleanContent.replace(/\[STEP:\s*[a-zA-Z0-9_\-]+\]/g, '').trim();
+
+                            // If text is only the tag, don't append effectively empty string (or just a space)
+                            if (cleanContent.length === 0) cleanContent = "";
+                        }
+
+                        // Remove SENTIMENT tags (handling potential malformed brackets)
+                        cleanContent = cleanContent.replace(/[\[\]]?SENTIMENT:\s*-?\d+(\.\d+)?[\]\[]?/gi, '').trim();
+
+                        if (cleanContent && cleanContent.length > 0) {
+                            const content = cleanContent;
                             // Track first token time for latency metrics
                             if (!this.firstTokenTime && this.currentGenerationStartTime && this.currentRole === 'ASSISTANT') {
                                 this.firstTokenTime = new Date();
@@ -1373,14 +1397,24 @@ export class SonicClient {
                     }
                 }
             }
-        } catch (error) {
-            console.error('[SonicClient] Error processing output events:', error);
+        } catch (error: any) {
+            console.error('[SonicClient] CRITICAL ERROR processing output stream:', error);
+            if (error instanceof Error) {
+                console.error('[SonicClient] Stack:', error.stack);
+            }
             this.eventCallback?.({
                 type: 'error',
-                data: { message: 'Stream processing error', error },
+                data: {
+                    message: 'Stream processing error',
+                    error: {
+                        message: error.message || String(error),
+                        name: error.name,
+                        stack: error.stack
+                    }
+                },
             });
+            console.log('[SonicClient] Output event processing ended');
         }
-        console.log('[SonicClient] Output event processing ended');
     }
 
     /**
