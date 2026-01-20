@@ -98,7 +98,5 @@
       "label": ""
     }
   ],
-  "tools": [
-    "get_server_time"
-  ]
+  "testPersona": "I'm an avid Star Wars fan that want to talk about the starwars universe and all things sci-fi"
 }

@@ -7,6 +7,7 @@ export interface Message {
     sentiment?: number;
     isFinal?: boolean;
     feedback?: 'up' | 'down';
+    type?: 'final' | 'speculative' | 'tool_use' | 'tool_result'; // Added for improved history filtering
 }
 
 export interface Session {

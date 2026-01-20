@@ -3,7 +3,7 @@ import { useApp } from '@/lib/context/AppContext';
 import { cn } from '@/lib/utils';
 import { KnowledgeBase } from '@/lib/types';
 
-export default function KnowledgeBaseSettings() {
+export default function KnowledgeSettings() {
     const {
         knowledgeBases,
         setKnowledgeBases,

@@ -2,27 +2,33 @@ import { useApp } from '@/lib/context/AppContext';
 import { cn } from '@/lib/utils';
 import GeneralSettings from './GeneralSettings';
 import PersonaSettings from './PersonaSettings';
-import KnowledgeBaseSettings from './KnowledgeBaseSettings';
+import KnowledgeSettings from './KnowledgeSettings'; // Changed from KnowledgeBaseSettings
 import WorkflowSettings from './WorkflowSettings';
 import PresetsSettings from './PresetsSettings';
+import SystemSettings from '@/components/settings/SystemSettings';
+import ToolsSettings from '@/components/settings/ToolsSettings';
+
+// Assuming AppSettingsTab is defined elsewhere, e.g., in AppContext or a types file
+type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system' | 'tools';
 
 export default function SettingsLayout() {
     const { activeSettingsTab, setActiveSettingsTab, isDarkMode } = useApp();
 
-    const tabs = [
+    const tabs: { id: AppSettingsTab; label: string }[] = [
         { id: 'general', label: 'General' },
-        { id: 'presets', label: 'Presets' },
         { id: 'persona', label: 'Persona' },
-        { id: 'knowledge', label: 'Knowledge' },
+        { id: 'knowledge', label: 'Knowledge Base' },
+        { id: 'tools', label: 'Tools' },
         { id: 'workflow', label: 'Workflow' },
-        { id: 'system', label: 'System' },
+        { id: 'presets', label: 'Presets' },
+        { id: 'system', label: 'System' }
     ];
 
     return (
         <div className="flex h-full w-full">
             {/* Settings Sidebar */}
             <div className={cn(
-                "w-64 border-r p-6 flex flex-col gap-1",
+                "w-64 border-r p-6 flex flex-col gap-1 shrink-0",
                 isDarkMode ? "border-white/10 bg-ink-bg" : "border-gray-200 bg-gray-50"
             )}>
                 <h2 className={cn(
@@ -37,7 +43,7 @@ export default function SettingsLayout() {
                         key={tab.id}
                         onClick={() => setActiveSettingsTab(tab.id)}
                         className={cn(
-                            "text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors",
+                            "text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors relative",
                             activeSettingsTab === tab.id
                                 ? isDarkMode
                                     ? "bg-violet-500/20 text-violet-300"
@@ -48,18 +54,22 @@ export default function SettingsLayout() {
                         )}
                     >
                         {tab.label}
+                        {activeSettingsTab === tab.id && (
+                            <div className="absolute left-0 top-3 bottom-3 w-1 bg-violet-500 rounded-r-full" />
+                        )}
                     </button>
                 ))}
             </div>
 
-            {/* Settings Content Area */}
-            <div className="flex-1 p-8 overflow-y-auto">
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-8 scrollbar-thin">
                 {activeSettingsTab === 'general' && <GeneralSettings />}
-                {activeSettingsTab === 'presets' && <PresetsSettings />}
                 {activeSettingsTab === 'persona' && <PersonaSettings />}
-                {activeSettingsTab === 'knowledge' && <KnowledgeBaseSettings />}
+                {activeSettingsTab === 'knowledge' && <KnowledgeSettings />}
+                {activeSettingsTab === 'tools' && <ToolsSettings />}
                 {activeSettingsTab === 'workflow' && <WorkflowSettings />}
-                {activeSettingsTab === 'system' && <div className="text-gray-500">System Settings (Coming Soon)</div>}
+                {activeSettingsTab === 'presets' && <PresetsSettings />}
+                {activeSettingsTab === 'system' && <SystemSettings />}
             </div>
         </div>
     );

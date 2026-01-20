@@ -11,11 +11,14 @@ import SessionSurveyModal from '@/components/search/SessionSurveyModal';
 import AboutModal from '@/components/layout/AboutModal';
 import Toast from '@/components/ui/Toast';
 import WorkflowVisualizer from '@/components/chat/WorkflowVisualizer';
+import HistoryView from '@/components/chat/HistoryView';
+import WorkflowView from '@/components/workflow/WorkflowView';
 import { useApp } from '@/lib/context/AppContext';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
 import { cn } from '@/lib/utils';
-import type { WebSocketMessage } from '@/lib/types';
+import { AppSettings, Message, WebSocketMessage, SessionStats, SessionStartMessage, AudioMessage, TranscriptMessage, ToolUseMessage, ToolResultMessage, ErrorMessage, TokenUsageMessage, WorkflowUpdateMessage } from '@/lib/types';
+import { useWorkflowSimulator } from '@/lib/hooks/useWorkflowSimulator';
 
 import SettingsLayout from '@/components/settings/SettingsLayout';
 
@@ -34,7 +37,8 @@ export default function Home() {
     settings,
     activeView,
     isHydrated,
-    setWorkflowState
+    setWorkflowState,
+    updateSettings
   } = useApp();
 
   // Local state for survey
@@ -49,6 +53,8 @@ export default function Home() {
 
   // Ref to prevent double-connect in React Strict Mode
   const hasConnectedRef = useRef(false);
+
+
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
@@ -71,7 +77,7 @@ export default function Home() {
                 speechPrompt: settings.speechPrompt || '',
                 enableGuardrails: settings.enableGuardrails ?? true,
                 selectedTools: settings.enabledTools || [],
-                // Default agent settings if in agent mode
+                linkedWorkflows: settings.linkedWorkflows || [],
                 agentId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
                 agentAliasId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
               },
@@ -182,9 +188,15 @@ export default function Home() {
         break;
 
       case 'token_usage':
+        // Ensure we update session stats even if message format varies
+        const inputTokens = message.inputTokens || (message.data && message.data.inputTokens) || 0;
+        const outputTokens = message.outputTokens || (message.data && message.data.outputTokens) || 0;
+
+        console.log('[WebSocket] Received token usage:', { inputTokens, outputTokens });
+
         updateSessionStats({
-          inputTokens: message.inputTokens,
-          outputTokens: message.outputTokens,
+          inputTokens,
+          outputTokens,
         });
         break;
 
@@ -308,7 +320,9 @@ export default function Home() {
     settings.systemPrompt,
     settings.speechPrompt,
     settings.enableGuardrails,
-    settings.enabledTools
+    settings.enableGuardrails,
+    settings.enabledTools,
+    settings.linkedWorkflows
   ]);
 
   // Handle send text message
@@ -332,6 +346,20 @@ export default function Home() {
       text: text
     });
   }, [isConnected, send]);
+
+  // --- Workflow Simulator ---
+  const stopSimulation = useCallback(() => {
+    updateSettings({ simulationMode: false });
+  }, [updateSettings]);
+
+  const { isThinking: isSimulatingThinking } = useWorkflowSimulator({
+    isActive: settings.simulationMode || false,
+    messages: currentSession?.transcript || [],
+    // @ts-ignore - The hook generally passes a string response, handleSendMessage accepts string.
+    onSendMessage: handleSendMessage,
+    testPersona: settings.simulationPersona,
+    stopSimulation
+  });
 
   // Handle toggle recording
   const handleToggleRecording = useCallback(async () => {
@@ -438,34 +466,40 @@ export default function Home() {
           </div>
         </header>
 
-        {activeView === 'chat' ? (
-          <>
-            {/* Intelligence Orb (center stage) */}
-            <IntelligenceOrb />
+        <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
+          {activeView === 'chat' ? (
+            <>
+              {/* Intelligence Orb (center stage) */}
+              <IntelligenceOrb />
 
-            {/* Chat Container - now with proper flex */}
-            <div className="flex-1 overflow-hidden">
-              <ChatContainer isDarkMode={isDarkMode} />
-            </div>
+              {/* Chat Container - now with proper flex */}
+              <div className="flex-1 overflow-hidden">
+                <ChatContainer isDarkMode={isDarkMode} />
+              </div>
 
-            {/* Command Bar - now part of flex layout, not fixed */}
-            <div className="flex-shrink-0 pb-0 md:pb-0 mb-16 md:mb-0">
-              <CommandBar
-                status={connectionStatus}
-                isDarkMode={isDarkMode}
-                onSendMessage={handleSendMessage}
-                onToggleRecording={handleToggleRecording}
-                onToggleConnection={handleConnectionToggle}
-              />
+              {/* Command Bar - now part of flex layout, not fixed */}
+              <div className="flex-shrink-0 pb-0 md:pb-0 mb-16 md:mb-0">
+                <CommandBar
+                  status={connectionStatus}
+                  isDarkMode={isDarkMode}
+                  onSendMessage={handleSendMessage}
+                  onToggleRecording={handleToggleRecording}
+                  onToggleConnection={handleConnectionToggle}
+                />
+              </div>
+            </>
+          ) : activeView === 'settings' ? (
+            <SettingsLayout />
+          ) : activeView === 'history' ? (
+            <HistoryView />
+          ) : activeView === 'workflow' ? (
+            <WorkflowView />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              View: {activeView} (Coming Soon)
             </div>
-          </>
-        ) : activeView === 'settings' ? (
-          <SettingsLayout />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            View: {activeView} (Coming Soon)
-          </div>
-        )}
+          )}
+        </div>
       </main>
 
 

@@ -3,6 +3,8 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/context/AppContext';
 import { useSessionStats } from '@/lib/hooks/useSessionStats';
+import { analyzeSentiment } from '@/lib/sentiment';
+import { useMemo } from 'react';
 
 interface InsightPanelProps {
     className?: string;
@@ -16,10 +18,23 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
     const { formattedDuration, inputTokens, outputTokens, cost, formatCost, formatTokens } = useSessionStats();
 
     // Calculate average sentiment from messages
-    const messagesWithSentiment = messages.filter(m => m.sentiment !== undefined && !isNaN(m.sentiment));
+    // Calculate average sentiment from messages (use useMemo for performance)
+    const messagesWithSentiment = useMemo(() => {
+        return messages.map(m => {
+            // Use existing sentiment if available
+            if (m.sentiment !== undefined && !isNaN(m.sentiment)) {
+                return { ...m, sentiment: m.sentiment };
+            }
+            // Fallback to local dictionary analysis
+            const analysis = analyzeSentiment(m.content);
+            // Use comparative score as it's length-normalized (roughly -1 to 1)
+            return { ...m, sentiment: analysis.comparative };
+        });
+    }, [messages]);
+
     const averageSentiment = messagesWithSentiment.length > 0
         ? messagesWithSentiment.reduce((sum, m) => sum + (m.sentiment || 0), 0) / messagesWithSentiment.length
-        : 0.5; // Default to neutral (0.5) if no sentiment data
+        : 0; // Default to neutral (0) if no data
 
     // Convert sentiment to percentage (0-1 to 0-100)
     const sentimentPercentage = (averageSentiment * 100).toFixed(0);

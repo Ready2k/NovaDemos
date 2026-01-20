@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/context/AppContext';
+import { useState } from 'react';
 
 interface SidebarProps {
     className?: string;
@@ -11,8 +12,11 @@ export default function Sidebar({ className }: SidebarProps) {
         activeView,
         navigateTo,
         resetSession,
-        setIsAboutModalOpen
+        setIsAboutModalOpen,
+        setActiveSettingsTab
     } = useApp();
+
+    const [confirmReset, setConfirmReset] = useState(false);
 
     const navItems = [
         {
@@ -40,9 +44,24 @@ export default function Sidebar({ className }: SidebarProps) {
     const actionItems = [
         {
             id: 'new_session',
-            icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
-            label: 'New Session',
-            action: resetSession
+            // Show checkmark when confirming, recycle icon otherwise
+            icon: confirmReset ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            ),
+            label: confirmReset ? 'Click to Confirm' : 'New Session',
+            action: () => {
+                if (confirmReset) {
+                    resetSession();
+                    setConfirmReset(false);
+                } else {
+                    setConfirmReset(true);
+                    // Build-in timeout to reset confirmation state if not clicked
+                    setTimeout(() => setConfirmReset(false), 3000);
+                }
+            },
+            isWarning: confirmReset
         },
     ];
 
@@ -95,9 +114,11 @@ export default function Sidebar({ className }: SidebarProps) {
                         onClick={item.action}
                         className={cn(
                             "w-10 h-10 rounded-lg flex items-center justify-center border transition-all duration-200",
-                            isDarkMode
-                                ? "text-ink-text-muted border-transparent hover:bg-white/5 hover:border-white/10 hover:text-ink-text-primary"
-                                : "text-gray-500 border-transparent hover:bg-gray-100 hover:border-gray-200 hover:text-gray-700"
+                            item.isWarning
+                                ? (isDarkMode ? "bg-red-500/20 text-red-500 border-red-500/50" : "bg-red-100 text-red-600 border-red-200")
+                                : (isDarkMode
+                                    ? "text-ink-text-muted border-transparent hover:bg-white/5 hover:border-white/10 hover:text-ink-text-primary"
+                                    : "text-gray-500 border-transparent hover:bg-gray-100 hover:border-gray-200 hover:text-gray-700")
                         )}
                         title={item.label}
                     >

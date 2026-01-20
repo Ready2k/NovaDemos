@@ -62,7 +62,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
             if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
                 let buffer: ArrayBuffer;
                 if (ArrayBuffer.isView(data)) {
-                    buffer = data.buffer;
+                    buffer = data.buffer as ArrayBuffer;
                 } else {
                     buffer = data;
                 }

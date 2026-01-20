@@ -2,6 +2,7 @@
 
 export type InteractionMode = 'chat_voice' | 'voice_only' | 'chat_only';
 export type BrainMode = 'raw_nova' | 'bedrock_agent';
+export type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system';
 
 export interface VoicePreset {
     id: string;
@@ -43,6 +44,10 @@ export interface AppSettings {
     // Workflow Settings
     showWorkflowVisualization?: boolean;
     linkedWorkflows?: string[];
+
+    // Simulation
+    simulationMode?: boolean;
+    simulationPersona?: string;
 
     // Debug
     debugMode: boolean;

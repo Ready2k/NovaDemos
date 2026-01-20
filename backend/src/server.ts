@@ -9,6 +9,7 @@ import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
+import { SimulationService } from './simulation-service';
 import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
@@ -42,10 +43,27 @@ function logWithTimestamp(level: string, message: string) {
     console.log(`[${timestamp}] ${level} ${message}`);
 }
 
+// Global Debug Mode State - defaulted to false for production cleanliness
+let DEBUG_MODE = false;
+
+function logDebug(message: string) {
+    if (DEBUG_MODE) {
+        logWithTimestamp('DEBUG', message);
+    }
+}
+
 // --- AWS Bedrock AgentCore Client ---
+const REGION = process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
+
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 // Build credentials config for AgentCore client
 let agentCoreConfig: any = {
-    region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
+    region: REGION
 };
 
 // Add explicit credentials if NOVA_ prefixed env vars are set
@@ -199,10 +217,10 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     // If we found a match, extract only the new content
     if (bestMatchLength > 0) {
         const newContent = fullResponse.substring(bestMatchLength).trim();
-        console.log(`[ResponseParser] Extracted new content from accumulated response:`);
-        console.log(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
-        console.log(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
-        console.log(`[ResponseParser] New: "${newContent.substring(0, 50)}..."`);
+        logDebug(`[ResponseParser] Extracted new content from accumulated response:`);
+        logDebug(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
+        logDebug(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
+        logDebug(`[ResponseParser] New: "${newContent.substring(0, 50)}..."`);
         return newContent;
     }
 
@@ -238,9 +256,9 @@ function removeInternalDuplication(text: string): string {
         const similarity = calculateStringSimilarity(firstSentence.toLowerCase(), secondSentence.toLowerCase());
 
         if (similarity > 0.8) {
-            console.log(`[InternalDedup] Detected internal duplication (similarity: ${similarity.toFixed(2)})`);
-            console.log(`[InternalDedup] First: "${firstSentence.substring(0, 50)}..."`);
-            console.log(`[InternalDedup] Second: "${secondSentence.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Detected internal duplication (similarity: ${similarity.toFixed(2)})`);
+            logDebug(`[InternalDedup] First: "${firstSentence.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Second: "${secondSentence.substring(0, 50)}..."`);
 
             // Remove the first sentence and return the rest
             const remainingSentences = sentences.slice(1);
@@ -251,7 +269,7 @@ function removeInternalDuplication(text: string): string {
                 return cleanedText + '.';
             }
 
-            console.log(`[InternalDedup] Cleaned: "${cleanedText.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Cleaned: "${cleanedText.substring(0, 50)}..."`);
             return cleanedText;
         }
     }
@@ -264,12 +282,12 @@ function removeInternalDuplication(text: string): string {
         const secondHalf = words.slice(halfLength, halfLength * 2).join(' ');
 
         if (firstHalf.length > 10 && firstHalf === secondHalf) {
-            console.log(`[InternalDedup] Detected exact duplication in first half`);
-            console.log(`[InternalDedup] Duplicated part: "${firstHalf.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Detected exact duplication in first half`);
+            logDebug(`[InternalDedup] Duplicated part: "${firstHalf.substring(0, 50)}..."`);
 
             // Return only the second half plus any remaining content
             const remaining = words.slice(halfLength).join(' ');
-            console.log(`[InternalDedup] Cleaned: "${remaining.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Cleaned: "${remaining.substring(0, 50)}..."`);
             return remaining;
         }
     }
@@ -593,6 +611,9 @@ function saveTranscript(session: ClientSession) {
 // Initialize Tool Manager
 const toolManager = new ToolManager(TOOLS_DIR);
 
+// Initialize Simulation Service
+const simulationService = new SimulationService();
+
 async function loadPrompt(filename: string): Promise<string> {
     const promptName = filename.replace('.txt', '');
     try {
@@ -616,7 +637,20 @@ async function loadPrompt(filename: string): Promise<string> {
     }
 }
 
-async function listPrompts(): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local' }[]> {
+// Cache for prompts to avoid expensive Langfuse sync on every request
+let promptsCache: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] | null = null;
+let lastPromptsSyncTime = 0;
+const PROMPTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function listPrompts(forceRefresh = false): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[]> {
+    const now = Date.now();
+    if (!forceRefresh && promptsCache && (now - lastPromptsSyncTime < PROMPTS_CACHE_TTL)) {
+        // console.log('[Server] Returning cached prompts');
+        return promptsCache;
+    }
+
+    console.log('[Server] Syncing prompts (Source: Langfuse + Local)...');
+
     try {
         // 1. Get Prompts from Langfuse
         const cloudPrompts = new Set<string>();
@@ -730,6 +764,11 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
             // @ts-ignore - filter out nulls
             promptsWithSource.push(...batchResults.filter(p => p !== null));
         }
+
+        // Update Cache
+        promptsCache = promptsWithSource;
+        lastPromptsSyncTime = Date.now();
+        console.log(`[Server] Prompt sync complete. Cached ${promptsWithSource.length} prompts.`);
 
         return promptsWithSource;
     } catch (e) {
@@ -920,15 +959,17 @@ const activeSessions = new Map<WebSocket, ClientSession>();
 
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
-    console.log(`[HTTP] Request: ${req.url}`);
+    // Strip query parameters for routing
+    const [pathname, queryPart] = (req.url || '/').split('?');
+    logDebug(`[HTTP] Request: ${req.method} ${pathname}`);
 
-    if (req.url === '/health') {
+    if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
         return;
     }
 
-    if (req.url === '/api/prompts') {
+    if (pathname === '/api/prompts') {
         const prompts = await listPrompts();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(prompts));
@@ -936,7 +977,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Sync Prompts from Langfuse
-    if (req.url === '/api/prompts/sync' && req.method === 'POST') {
+    if (pathname === '/api/prompts/sync' && req.method === 'POST') {
         try {
             console.log('[Server] Syncing prompts from Langfuse...');
             const prompts = await listPrompts();
@@ -955,10 +996,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Save Prompt API
-    if (req.method === 'POST' && req.url?.startsWith('/api/prompts/')) {
-        // Parse URL and Query Params
-        const [pathPart, queryPart] = req.url.split('?');
-        const id = pathPart.substring(13); // Remove /api/prompts/
+    if (req.method === 'POST' && pathname.startsWith('/api/prompts/')) {
+        const id = pathname.substring(13); // Remove /api/prompts/
 
         const urlParams = new URLSearchParams(queryPart);
         const syncParam = urlParams.get('sync');
@@ -1027,7 +1066,7 @@ const server = http.createServer(async (req, res) => {
     // Presets API
     // Presets API
     // GET /api/presets - List all presets
-    if (req.method === 'GET' && req.url?.startsWith('/api/presets') && !req.url.startsWith('/api/presets/')) {
+    if (req.method === 'GET' && pathname.startsWith('/api/presets') && !pathname.startsWith('/api/presets/')) {
         try {
             if (!fs.existsSync(PRESETS_FILE)) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1046,7 +1085,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // POST /api/presets - Create a new preset
-    if (req.method === 'POST' && req.url?.startsWith('/api/presets') && !req.url.startsWith('/api/presets/')) {
+    if (req.method === 'POST' && pathname.startsWith('/api/presets') && !pathname.startsWith('/api/presets/')) {
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', () => {
@@ -1086,9 +1125,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // DELETE /api/presets/:id - Delete a preset
-    if (req.method === 'DELETE' && req.url?.startsWith('/api/presets/')) {
-        const urlParts = req.url.split('?');
-        const id = urlParts[0].substring(13); // Remove /api/presets/ from the path part only
+    if (req.method === 'DELETE' && pathname.startsWith('/api/presets/')) {
+        const id = pathname.substring(13); // Remove /api/presets/ from the path part only
         try {
             if (fs.existsSync(PRESETS_FILE)) {
                 let presets = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
@@ -1116,9 +1154,81 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // SYSTEM - GET /api/system/status - Check AWS Connectivity
+    if (req.method === 'GET' && pathname === '/api/system/status') {
+        try {
+            // Simple check: Try to list 1 model to verify credentials work
+            const command = new ListFoundationModelsCommand({});
+            await bedrockClient.send(command);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                aws: 'connected',
+                region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'unknown'
+            }));
+        } catch (error: any) {
+            console.error('[System] AWS Connectivity Check Failed:', error);
+            res.writeHead(200, { 'Content-Type': 'application/json' }); // Return 200 but with error status
+            res.end(JSON.stringify({
+                aws: 'error',
+                error: error.message
+            }));
+        }
+        return;
+    }
+
+    // SYSTEM - POST /api/system/reset - Factory Reset
+    if (req.method === 'POST' && pathname === '/api/system/reset') {
+        try {
+            // 1. Delete presets.json
+            if (fs.existsSync(PRESETS_FILE)) {
+                fs.unlinkSync(PRESETS_FILE);
+            }
+
+            // 2. Delete history files (optional, but requested in plan)
+            if (fs.existsSync(HISTORY_DIR)) {
+                const files = fs.readdirSync(HISTORY_DIR);
+                for (const file of files) {
+                    if (file.endsWith('.json')) {
+                        fs.unlinkSync(path.join(HISTORY_DIR, file));
+                    }
+                }
+            }
+
+            console.log('[System] Factory reset completed');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: 'System reset complete' }));
+        } catch (error: any) {
+            console.error('[System] Factory reset failed:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
+        return;
+    }
+
+    // SYSTEM - POST /api/system/debug - Toggle Debug Mode
+    if (req.method === 'POST' && pathname === '/api/system/debug') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const { enabled } = JSON.parse(body);
+                DEBUG_MODE = !!enabled; // Update global state
+                console.log(`[System] Debug Mode set to: ${DEBUG_MODE}`);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, enabled: DEBUG_MODE }));
+            } catch (error: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
 
     // Feedback API
-    if (req.method === 'POST' && req.url === '/api/feedback') {
+    if (req.method === 'POST' && pathname === '/api/feedback') {
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', async () => {
@@ -1175,7 +1285,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/tools') {
+    if (pathname === '/api/tools') {
         if (req.method === 'GET') {
             const tools = toolManager.listTools();
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1208,8 +1318,8 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    if (req.url?.startsWith('/api/tools/')) {
-        const toolName = req.url.substring(11); // Remove /api/tools/
+    if (pathname.startsWith('/api/tools/')) {
+        const toolName = pathname.substring(11); // Remove /api/tools/
 
         if (req.method === 'DELETE') {
             const success = toolManager.deleteTool(toolName);
@@ -1224,7 +1334,7 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    if (req.url === '/api/gateway/tools') {
+    if (pathname === '/api/gateway/tools') {
         if (agentCoreGatewayClient) {
             try {
                 const tools = await agentCoreGatewayClient.listTools();
@@ -1242,7 +1352,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // List available personas (files in prompts directory)
-    if (req.url === '/api/personas') {
+    if (pathname === '/api/personas') {
         const prompts = await listPrompts();
         // Filter mainly for persona-* but allow generic files if they map to flows
         // For visualizer, we want simple IDs
@@ -1256,8 +1366,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Dynamic Workflow Graph API
-    if (req.method === 'GET' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'GET' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
 
         // Generic Load: simply look for workflow-{id}.json
         let filename = `workflow-${id}.json`;
@@ -1299,8 +1409,8 @@ const server = http.createServer(async (req, res) => {
 
 
     // Save Workflow Graph API
-    if (req.method === 'POST' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'POST' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
 
         let body = '';
         req.on('data', chunk => {
@@ -1368,8 +1478,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Delete Workflow API
-    if (req.method === 'DELETE' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'DELETE' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
         console.log(`[Server] Request to DELETE workflow: ${id}`);
 
         // Security / Validation
@@ -1404,7 +1514,7 @@ const server = http.createServer(async (req, res) => {
 
 
     // Knowledge Base APIs
-    if (req.url === '/api/knowledge-bases') {
+    if (pathname === '/api/knowledge-bases') {
         if (req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(loadKnowledgeBases()));
@@ -1433,8 +1543,8 @@ const server = http.createServer(async (req, res) => {
 
 
 
-    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'PUT') {
-        const idToUpdate = req.url.split('/').pop();
+    if (pathname.startsWith('/api/knowledge-bases/') && req.method === 'PUT') {
+        const idToUpdate = pathname.split('/').pop();
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', () => {
@@ -1462,8 +1572,8 @@ const server = http.createServer(async (req, res) => {
 
 
 
-    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
-        const idToDelete = req.url.split('/').pop();
+    if (req.url?.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
+        const idToDelete = req.url!.split('/').pop();
         const kbs = loadKnowledgeBases();
         const newKbs = kbs.filter((kb: any) => kb.id !== idToDelete);
         saveKnowledgeBases(newKbs);
@@ -1473,7 +1583,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // List Bedrock Models Endpoint
-    if (req.url === '/api/bedrock-models') {
+    if (pathname === '/api/bedrock-models') {
         console.log('[Server] Received request for /api/bedrock-models');
         try {
             console.log('[Server] Listing Foundation Models...');
@@ -1531,7 +1641,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/voices') {
+    if (pathname === '/api/voices') {
         const voices = formatVoicesForFrontend();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(voices));
@@ -1539,14 +1649,14 @@ const server = http.createServer(async (req, res) => {
     }
 
 
-    if (req.url === '/api/version') {
+    if (pathname === '/api/version') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(VERSION_INFO));
         return;
     }
 
     // Chat History API
-    if (req.url === '/api/history') {
+    if (pathname === '/api/history') {
         try {
             ensureHistoryDir();
             const files = fs.readdirSync(HISTORY_DIR)
@@ -1579,8 +1689,8 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url?.startsWith('/api/history/')) {
-        const filename = req.url.substring(13); // Remove /api/history/
+    if (pathname.startsWith('/api/history/')) {
+        const filename = pathname.substring(13); // Remove /api/history/
         const safePath = path.join(HISTORY_DIR, path.basename(filename));
 
         if (fs.existsSync(safePath)) {
@@ -1594,10 +1704,17 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/workflows') {
+    if (pathname.startsWith('/api/workflows')) {
+        console.log('[Server] Request for /api/workflows');
         try {
             // List all workflow files in src directory
-            const srcDir = path.join(__dirname, '../src/');
+            let srcDir = path.join(__dirname, '../src/');
+            if (!fs.existsSync(srcDir)) {
+                console.log('[Server] ../src does not exist, checking fallback');
+                // Fallback to current directory or dist
+                srcDir = __dirname;
+            }
+
             if (fs.existsSync(srcDir)) {
                 const files = fs.readdirSync(srcDir)
                     .filter(f => f.startsWith('workflow-') && f.endsWith('.json'));
@@ -1615,157 +1732,50 @@ const server = http.createServer(async (req, res) => {
                     return { id, name, filename: f };
                 });
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(workflows));
             } else {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
                 res.end(JSON.stringify([]));
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('[Server] Error fetching workflows:', error);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Failed to fetch workflows' }));
+            res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to fetch workflows: ' + error.message }));
         }
         return;
     }
 
-    // --- Voices API ---
-    if (req.url === '/api/voices' && req.method === 'GET') {
-        // Return static list of supported voices for Nova Sonic / Polly
-        // This list matches the fallback list in frontend-v2/components/settings/GeneralSettings.tsx
-        const voices = [
-            { id: 'matthew', name: 'Matthew (US Male)' },
-            { id: 'ruth', name: 'Ruth (US Female)' },
-            { id: 'stephen', name: 'Stephen (US Male)' },
-            { id: 'danielle', name: 'Danielle (US Female)' },
-            { id: 'joanna', name: 'Joanna (US Female)' },
-            { id: 'joey', name: 'Joey (US Male)' },
-            { id: 'justin', name: 'Justin (US Male)' },
-            { id: 'kendra', name: 'Kendra (US Female)' },
-            { id: 'kimberly', name: 'Kimberly (US Female)' },
-            { id: 'salli', name: 'Salli (US Female)' },
-            { id: 'amy', name: 'Amy (GB Female)' },
-            { id: 'arthur', name: 'Arthur (GB Male)' },
-            { id: 'brian', name: 'Brian (GB Male)' },
-            { id: 'emma', name: 'Emma (GB Female)' },
-            { id: 'nicole', name: 'Nicole (AU Female)' },
-            { id: 'russell', name: 'Russell (AU Male)' },
-            { id: 'florian', name: 'Florian (FR Male)' },
-            { id: 'ambre', name: 'Ambre (FR Female)' },
-        ];
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(voices));
-        return;
-    }
-
-    // --- Prompts API ---
-    if (req.url === '/api/prompts' && req.method === 'GET') {
-        try {
-            const prompts = await listPrompts();
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(prompts));
-        } catch (error) {
-            console.error('[Server] Error listing prompts:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Failed to list prompts' }));
-        }
-        return;
-    }
-
-
-
-    // --- Knowledge Bases API ---
-    if (req.url === '/api/knowledge-bases' && req.method === 'GET') {
-        try {
-            const kbs = loadKnowledgeBases();
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(kbs));
-        } catch (error) {
-            console.error('[Server] Error listing KBs:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Failed to list KBs' }));
-        }
-        return;
-    }
-
-    if (req.url === '/api/knowledge-bases' && req.method === 'POST') {
+    // --- Simulation Endpoint ---
+    if (pathname === '/api/simulation/generate' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => body += chunk);
-        req.on('end', () => {
+        req.on('end', async () => {
             try {
-                const newKb = JSON.parse(body);
-                const kbs = loadKnowledgeBases();
-                kbs.push(newKb);
-                saveKnowledgeBases(kbs);
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(newKb));
-            } catch (error) {
-                console.error('[Server] Error adding KB:', error);
-                res.writeHead(500);
-                res.end(JSON.stringify({ error: 'Failed to add KB' }));
-            }
-        });
-        return;
-    }
+                const { history, persona } = JSON.parse(body);
+                console.log('[Simulation] Received request. Persona length:', persona?.length, 'History items:', history?.length);
 
-    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
-        const id = req.url.split('/').pop();
-        if (id) {
-            try {
-                const kbs = loadKnowledgeBases();
-                const filtered = kbs.filter((k: any) => k.id !== id);
-                saveKnowledgeBases(filtered);
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true }));
-            } catch (error) {
-                console.error('[Server] Error deleting KB:', error);
-                res.writeHead(500);
-                res.end(JSON.stringify({ error: 'Failed to delete KB' }));
-            }
-        }
-        return;
-    }
-
-
-
-    // --- Feedback API ---
-    if (req.url === '/api/feedback' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                const feedback = JSON.parse(body);
-                console.log('[Server] Received Session Feedback (HTTP):', feedback);
-
-                // If we have a Langfuse trace, score it
-                if (feedback.traceId && feedback.score !== undefined) {
-                    // Just use the global langfuse instance
-                    if (langfuse) {
-                        langfuse.score({
-                            traceId: feedback.traceId,
-                            name: "user-feedback",
-                            value: feedback.score,
-                            comment: feedback.comment
-                        });
-                        console.log(`[Server] Recorded Langfuse score for trace ${feedback.traceId}: ${feedback.score}`);
-                    } else {
-                        console.warn('[Server] Langfuse not initialized, cannot record feedback score');
-                    }
+                if (!history || !Array.isArray(history) || !persona) {
+                    res.writeHead(400, CORS_HEADERS);
+                    res.end(JSON.stringify({ error: 'Missing history (array) or persona (string)' }));
+                    return;
                 }
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true }));
-            } catch (error) {
-                console.error('[Server] Error processing feedback:', error);
-                res.writeHead(500);
-                res.end(JSON.stringify({ error: 'Failed to process feedback' }));
+                const response = await simulationService.generateResponse(history, persona);
+
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ response }));
+            } catch (e: any) {
+                console.error('[Simulation] Error:', e);
+                res.writeHead(500, CORS_HEADERS);
+                res.end(JSON.stringify({ error: e.message || 'Simulation failed' }));
             }
         });
         return;
     }
 
     // Serve static files
-    let filePath = req.url === '/' ? '/index.html' : req.url || '/index.html';
+    let filePath = pathname === '/' ? '/index.html' : pathname || '/index.html';
     // Remove query parameters
     filePath = filePath.split('?')[0];
 
@@ -2560,6 +2570,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                             console.log(`[Server] Processing ${fullAudio.length} bytes for Agent...`);
 
+                            // Send updated token usage to client
+                            if (session.sonicClient) {
+                                const inputTokens = session.sonicClient.getSessionInputTokens();
+                                const outputTokens = session.sonicClient.getSessionOutputTokens();
+
+                                ws.send(JSON.stringify({
+                                    type: 'token_usage',
+                                    inputTokens,
+                                    outputTokens
+                                }));
+
+                                logDebug(`[Session] Sent token update: In=${inputTokens}, Out=${outputTokens}`);
+                            }
                             // 3. Transcribe
                             console.log(`[Server] Starting transcription of ${fullAudio.length} bytes...`);
 
@@ -2800,7 +2823,7 @@ process.on('uncaughtException', (error: Error) => {
 });
 
 // Start HTTP server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] HTTP server listening on port ${PORT}`);
     console.log(`[Server] WebSocket endpoint: ws://localhost:${PORT}${SONIC_PATH}`);
     console.log(`[Server] Health check: http://localhost:${PORT}/health`);
@@ -3120,6 +3143,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         text: event.data.transcript,
                         isFinal: event.data.isFinal
                     }));
+
+                    if (event.data.isFinal && session.sonicClient) {
+                        const inputTokens = session.sonicClient.getSessionInputTokens();
+                        const outputTokens = session.sonicClient.getSessionOutputTokens();
+                        ws.send(JSON.stringify({
+                            type: 'token_usage',
+                            inputTokens,
+                            outputTokens
+                        }));
+                    }
                 }
                 return;
             }
@@ -3152,6 +3185,17 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         entry.type = 'speculative';
                     } else if (event.data.isFinal) {
                         entry.type = 'final';
+
+                        // Send token usage update on final response
+                        if (session.sonicClient) {
+                            const inputTokens = session.sonicClient.getSessionInputTokens();
+                            const outputTokens = session.sonicClient.getSessionOutputTokens();
+                            ws.send(JSON.stringify({
+                                type: 'token_usage',
+                                inputTokens,
+                                outputTokens
+                            }));
+                        }
                     }
 
                     session.transcript.push(entry);
