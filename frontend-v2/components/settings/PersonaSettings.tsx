@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
 export default function PersonaSettings() {
-    const { settings, updateSettings, isDarkMode } = useApp();
+    const { settings, updateSettings, isDarkMode, showToast } = useApp();
     const [localSystemPrompt, setLocalSystemPrompt] = useState(settings.systemPrompt);
     const [localSpeechPrompt, setLocalSpeechPrompt] = useState(settings.speechPrompt);
     const [prompts, setPrompts] = useState<any[]>([]);
@@ -63,12 +63,16 @@ export default function PersonaSettings() {
                 const listResp = await fetch('/api/prompts');
                 if (listResp.ok) {
                     setPrompts(await listResp.json());
+                    showToast('Prompts successfully synced!', 'success');
                 }
             } else {
-                console.warn('Sync endpoint failed, trying WebSocket fallback not implemented yet');
+                const errorData = await response.json().catch(() => ({}));
+                console.warn('Sync endpoint failed:', response.status, errorData);
+                showToast(`Sync failed: ${errorData.error || response.statusText}`, 'error');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Sync failed', error);
+            showToast(`Sync failed: ${error.message}`, 'error');
         } finally {
             setIsSyncing(false);
         }

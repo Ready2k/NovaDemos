@@ -9,6 +9,7 @@ import ChatContainer from '@/components/chat/ChatContainer';
 import CommandBar from '@/components/chat/CommandBar';
 import SessionSurveyModal from '@/components/search/SessionSurveyModal';
 import AboutModal from '@/components/layout/AboutModal';
+import Toast from '@/components/ui/Toast';
 import { useApp } from '@/lib/context/AppContext';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
@@ -495,6 +496,9 @@ export default function Home() {
 
       {/* Application Info Modal */}
       <AboutModal />
+
+      {/* Global Notifications */}
+      <Toast />
     </div>
   );
 }

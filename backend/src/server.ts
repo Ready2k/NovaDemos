@@ -643,124 +643,82 @@ async function listPrompts(): Promise<{ id: string, name: string, content: strin
         }
 
         // 3. Union of all prompt names
-        const allNames = new Set([...cloudPrompts, ...localFiles]);
+        const allNames = Array.from(new Set([...cloudPrompts, ...localFiles]));
+        const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local' }[] = [];
 
-        const promptsWithSource = await Promise.all(
-            Array.from(allNames).map(async promptName => {
-                let displayName = promptName;
-                const filename = promptName + '.txt';
+        // Fetch in batches to avoid overwhelming the Langfuse API/Network
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < allNames.length; i += BATCH_SIZE) {
+            const batch = allNames.slice(i, i + BATCH_SIZE);
+            console.log(`[Server] Syncing prompts batch ${i / BATCH_SIZE + 1} (${batch.length} items)...`);
 
-                // Handle prefixed naming convention
-                if (displayName.startsWith('core-')) {
-                    displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
-                } else if (displayName.startsWith('persona-')) {
-                    displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
-                } else {
-                    displayName = displayName.replace(/_/g, ' ');
-                }
+            const batchResults = await Promise.all(
+                batch.map(async promptName => {
+                    let displayName = promptName;
+                    const filename = promptName + '.txt';
 
-                // Capitalize words
-                displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
-
-                let source: 'langfuse' | 'local' = 'local';
-                let content = '';
-                let config: any = {};
-
-                // Try to fetch from Langfuse first
-                try {
-                    // Check cloud set first to avoid 404s/Errors for local-only files
-                    if (!cloudPrompts.has(promptName)) {
-                        throw new Error("Skipping Langfuse fetch (not in list)");
-                    }
-                    const prompt = await langfuse.getPrompt(promptName);
-                    config = (prompt as any).config || {};
-
-                    // Extract content based on prompt type to avoid undesired formatting tags
-                    if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
-                        // For chat prompts, extract the text from the system message (or first message)
-                        const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
-                        content = systemMsg?.content || '';
+                    // Formatting names
+                    if (displayName.startsWith('core-')) {
+                        displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
+                    } else if (displayName.startsWith('persona-')) {
+                        displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
                     } else {
-                        // For text prompts, compile() is safe
-                        try {
-                            content = prompt.compile();
-                        } catch (compileErr) {
-                            console.warn(`[Server] Failed to compile Langfuse prompt ${promptName}, using local fallback:`, compileErr);
-                            throw compileErr; // Fallback to local
-                        }
+                        displayName = displayName.replace(/_/g, ' ');
                     }
+                    displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
 
-                    source = 'langfuse';
+                    let source: 'langfuse' | 'local' = 'local';
+                    let content = '';
 
-                    // RESTORE/SYNC TO LOCAL DISK
-                    // If we successfully got content from Langfuse, ensure it exists/matches locally
+                    // Try to fetch from Langfuse first
                     try {
-                        const localPath = path.join(PROMPTS_DIR, filename);
-                        let needsWrite = true;
-                        if (fs.existsSync(localPath)) {
-                            const localContent = fs.readFileSync(localPath, 'utf-8').trim();
-                            if (localContent === content.trim()) {
-                                needsWrite = false;
-                            }
-                        }
+                        if (cloudPrompts.has(promptName)) {
+                            const prompt = await langfuse.getPrompt(promptName);
 
-                        if (needsWrite && content) {
-                            fs.writeFileSync(localPath, content.trim());
-                            console.log(`[Server] Synced (Restored) prompt to disk: ${filename}`);
-                        }
-                    } catch (writeErr) {
-                        console.error(`[Server] Failed to sync prompt ${filename} to disk:`, writeErr);
-                    }
-
-                } catch (err) {
-                    // Prompt not in Langfuse or failed, use local
-                    source = 'local';
-                    try {
-                        const localPath = path.join(PROMPTS_DIR, filename);
-                        if (fs.existsSync(localPath)) {
-                            let rawContent = fs.readFileSync(localPath, 'utf-8');
-                            // Parse Config if present (Format: Content \n---\n JSON)
-                            // Robust split for Unix/Windows endings
-                            const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
-                            if (parts.length > 1) {
-                                content = parts[0].trim();
-                                try {
-                                    const configStr = parts[1].trim();
-                                    config = JSON.parse(configStr);
-                                    console.log(`[Server] Successfully parsed config for ${filename}:`, Object.keys(config));
-                                    if (config.linkedWorkflows) {
-                                        console.log(`[Server] Found linkedWorkflows for ${filename}:`, config.linkedWorkflows);
-                                    }
-                                } catch (e) {
-                                    console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
-                                }
+                            // Extract content based on prompt type
+                            if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
+                                const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
+                                content = systemMsg?.content || '';
                             } else {
-                                content = rawContent.trim();
+                                content = prompt.compile();
+                            }
+                            source = 'langfuse';
+
+                            // Update local cache
+                            try {
+                                const localPath = path.join(PROMPTS_DIR, filename);
+                                fs.writeFileSync(localPath, content.trim());
+                            } catch (writeErr) {
+                                console.error(`[Server] Failed to cache prompt ${promptName}:`, writeErr);
                             }
                         } else {
-                            // Listed in cloud loop but failed fetch? Or listed in union but phantom?
-                            content = '';
+                            throw new Error("Local only");
                         }
-                    } catch (readErr) {
-                        content = '';
+                    } catch (err) {
+                        // Fallback to local file if Langfuse fails or is skipped
+                        source = 'local';
+                        try {
+                            const localPath = path.join(PROMPTS_DIR, filename);
+                            if (fs.existsSync(localPath)) {
+                                content = fs.readFileSync(localPath, 'utf-8').trim();
+                            }
+                        } catch (localErr) {
+                            console.error(`[Server] Failed to load local backup for ${promptName}:`, localErr);
+                        }
                     }
-                }
 
-                if (!content) return null; // Skip invalid/empty prompts
+                    if (!content) return null;
+                    return { id: promptName, name: displayName, content, source };
+                })
+            );
 
-                return {
-                    id: filename,
-                    name: displayName,
-                    content: content,
-                    source,
-                    config: config
-                };
-            })
-        );
+            // @ts-ignore - filter out nulls
+            promptsWithSource.push(...batchResults.filter(p => p !== null));
+        }
 
-        return promptsWithSource.filter(p => p !== null) as { id: string, name: string, content: string, source: 'langfuse' | 'local' }[];
-    } catch (err) {
-        console.error('[Server] Failed to list prompts:', err);
+        return promptsWithSource;
+    } catch (e) {
+        console.error('[Server] listPrompts failed:', e);
         return [];
     }
 }
@@ -959,6 +917,25 @@ const server = http.createServer(async (req, res) => {
         const prompts = await listPrompts();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(prompts));
+        return;
+    }
+
+    // Sync Prompts from Langfuse
+    if (req.url === '/api/prompts/sync' && req.method === 'POST') {
+        try {
+            console.log('[Server] Syncing prompts from Langfuse...');
+            const prompts = await listPrompts();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                message: `Synced ${prompts.length} prompts`,
+                count: prompts.length
+            }));
+        } catch (error: any) {
+            console.error('[Server] Error syncing prompts:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to sync prompts', details: error.message }));
+        }
         return;
     }
 
@@ -1586,23 +1563,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/prompts/sync' && req.method === 'POST') {
-        try {
-            // Trigger Langfuse sync
-            // Logic would go here. For now, we rely on listPrompts fetching fresh data if implemented,
-            // or we could explicitly call a sync method.
-            // listPrompts already fetches from Langfuse on demand if cache expired or on simple call?
-            // Let's assume listPrompts does the job or we need to clear cache.
-            // For now, simply success to unblock frontend.
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, message: 'Sync triggered' }));
-        } catch (error) {
-            console.error('[Server] Error syncing prompts:', error);
-            res.writeHead(500);
-            res.end(JSON.stringify({ error: 'Failed to sync prompts' }));
-        }
-        return;
-    }
+
 
     // --- Knowledge Bases API ---
     if (req.url === '/api/knowledge-bases' && req.method === 'GET') {

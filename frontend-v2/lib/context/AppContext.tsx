@@ -65,9 +65,12 @@ interface AppState {
     activeSettingsTab: string;
     setActiveSettingsTab: (tab: string) => void;
     resetSession: () => void;
-    isHydrated: boolean;
     isAboutModalOpen: boolean;
     setIsAboutModalOpen: (open: boolean) => void;
+
+    // Toast (Phase 3)
+    toast: { message: string, type: 'success' | 'error' | 'info' | null };
+    showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -149,6 +152,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Key moments state
     const [keyMoments, setKeyMoments] = useState<KeyMoment[]>([]);
+
+    // Toast state
+    const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' | 'info' | null }>({
+        message: '',
+        type: null
+    });
+
+    const showToast = useCallback((message: string, type: 'success' | 'error' | 'info', duration = 3000) => {
+        setToast({ message, type });
+        setTimeout(() => {
+            setToast(prev => prev.message === message ? { message: '', type: null } : prev);
+        }, duration);
+    }, []);
 
     // UI state
 
@@ -312,6 +328,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isHydrated,
         isAboutModalOpen,
         setIsAboutModalOpen,
+
+        // Toast
+        toast,
+        showToast,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
