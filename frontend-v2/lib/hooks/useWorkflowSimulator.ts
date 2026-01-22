@@ -64,7 +64,7 @@ export function useWorkflowSimulator({ isActive, messages, onSendMessage, testPe
                     content: m.content || ''
                 }));
 
-                const res = await fetch('http://localhost:3000/api/simulation/generate', {
+                const res = await fetch('http://localhost:8080/api/simulation/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

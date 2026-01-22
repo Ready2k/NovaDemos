@@ -39,7 +39,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update' | 'session_start';
     data: any;
 }
 
@@ -220,6 +220,12 @@ export class SonicClient {
                 this.eventCallback({
                     type: 'metadata',
                     data: { traceId: this.sessionId }
+                });
+
+                // Emit explicit session_start for frontend-v2
+                this.eventCallback({
+                    type: 'session_start',
+                    data: { sessionId: this.sessionId }
                 });
             } else {
                 console.warn('[SonicClient] No eventCallback set, cannot send TraceID');

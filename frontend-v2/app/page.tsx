@@ -73,8 +73,14 @@ export default function Home() {
     switch (message.type) {
       case 'connected':
         // Backend confirmation of connection
-        console.log('[Session] Backend connected, starting session...');
+        console.log('[Session] Backend connected, captured session ID:', message.sessionId);
         setConnectionStatus('connected'); // Set to connected now
+
+        // Capture session ID early (helps with feedback if session_start is delayed)
+        if (message.sessionId) {
+          sessionIdRef.current = message.sessionId;
+        }
+
         // Small delay to ensure WebSocket is fully ready
         setTimeout(() => {
           if (sendRef.current) {
@@ -188,15 +194,24 @@ export default function Home() {
       case 'metadata':
         // Session metadata (trace ID, version, etc.)
         console.log('[Session] Metadata:', message);
-        // Could store trace ID for debugging/feedback
+        if (message.data?.traceId) {
+          sessionIdRef.current = message.data.traceId;
+        }
+        break;
+
+      case 'debugInfo':
+        // Suppress debug logs from backend to keep console clean
         break;
 
       case 'usage':
         // Token usage update (alias for token_usage)
         if (message.data) {
+          const inputTokens = message.data.totalInputTokens || message.data.inputTokens || 0;
+          const outputTokens = message.data.totalOutputTokens || message.data.outputTokens || 0;
+
           updateSessionStats({
-            inputTokens: message.data.totalInputTokens || message.data.inputTokens,
-            outputTokens: message.data.totalOutputTokens || message.data.outputTokens,
+            inputTokens,
+            outputTokens,
           });
         }
         break;
@@ -205,8 +220,6 @@ export default function Home() {
         // Ensure we update session stats even if message format varies
         const inputTokens = message.inputTokens || (message.data && message.data.inputTokens) || 0;
         const outputTokens = message.outputTokens || (message.data && message.data.outputTokens) || 0;
-
-        console.log('[WebSocket] Received token usage:', { inputTokens, outputTokens });
 
         updateSessionStats({
           inputTokens,
@@ -539,20 +552,42 @@ export default function Home() {
         onSendFeedback={async (score, comment) => {
           // Send feedback via HTTP to avoid WS disconnection issues
           try {
+            // Use multiple fallbacks to ensure we have a session ID
+            const sessionId = finishedSessionId || currentSession?.sessionId || sessionIdRef.current;
+
+            console.log('[App] Feedback Debug:', {
+              finishedSessionId,
+              currentSessionId: currentSession?.sessionId,
+              sessionIdRef: sessionIdRef.current,
+              finalSessionId: sessionId
+            });
+
+            if (!sessionId) {
+              console.error('[App] Cannot send feedback: No session ID available');
+              return;
+            }
+
             const feedbackPayload = {
-              sessionId: finishedSessionId || currentSession?.sessionId,
-              traceId: currentSession?.sessionId, // Use sessionId as traceId fallback
+              sessionId,
+              traceId: sessionId, // Use sessionId as traceId fallback
               score,
               comment,
               name: 'user-feedback'
             };
             console.log('[App] Sending Feedback Payload:', feedbackPayload);
-            await fetch('/api/feedback', {
+
+            const response = await fetch('/api/feedback', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(feedbackPayload)
             });
-            console.log('[App] Feedback sent via HTTP');
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('[App] Feedback failed:', response.status, errorText);
+            } else {
+              console.log('[App] Feedback sent successfully');
+            }
           } catch (e) {
             console.error('[App] Failed to send feedback', e);
           }

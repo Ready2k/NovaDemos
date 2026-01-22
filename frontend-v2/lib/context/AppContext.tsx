@@ -92,12 +92,12 @@ const defaultSettings: AppSettings = {
     knowledgeBases: [],
     costConfig: {
         nova: {
-            inputCost: 0.000003,
-            outputCost: 0.000012,
+            inputCost: 0.003,
+            outputCost: 0.015,
         },
         agent: {
-            inputCost: 0.000003,
-            outputCost: 0.000012,
+            inputCost: 0.003,
+            outputCost: 0.015,
         },
     },
     showWorkflowVisualization: true,
@@ -185,7 +185,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Session actions
     const updateSessionStats = useCallback((stats: Partial<Session>) => {
-        setCurrentSession(prev => prev ? { ...prev, ...stats } : null);
+        setCurrentSession(prev => {
+            return prev ? { ...prev, ...stats } : null;
+        });
     }, []);
 
     // Message actions

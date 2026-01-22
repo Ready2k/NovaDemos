@@ -584,26 +584,43 @@ function saveTranscript(session: ClientSession) {
         const filename = `session_${timestamp}_${session.sessionId.substring(0, 8)}.json`;
         const filePath = path.join(HISTORY_DIR, filename);
 
+        // Calculate Overall Sentiment
+        let totalSentiment = 0;
+        let sentimentCount = 0;
+        session.transcript.forEach((msg: any) => {
+            if (msg.sentiment !== undefined && !isNaN(msg.sentiment)) {
+                totalSentiment += msg.sentiment;
+                sentimentCount++;
+            }
+        });
+        const averageSentiment = sentimentCount > 0 ? totalSentiment / sentimentCount : 0;
+
+        // Calculate Usage Stats
+        const inputTokens = session.sonicClient?.getSessionInputTokens() || 0;
+        const outputTokens = session.sonicClient?.getSessionOutputTokens() || 0;
+        const totalTokens = session.sonicClient?.getSessionTotalTokens() || 0;
+
+        // Use realistic rates for history calculation
+        const inputCostRaw = (inputTokens / 1000) * 0.003;
+        const outputCostRaw = (outputTokens / 1000) * 0.015;
+        const finalCost = inputCostRaw + outputCostRaw;
+
         const data = {
             sessionId: session.sessionId,
             startTime: session.transcript[0]?.timestamp || Date.now(),
             endTime: Date.now(),
             brainMode: session.brainMode,
             transcript: session.transcript,
-            tools: session.allowedTools || [], // Save allowed tools list
-            // Save Usage Stats
+            tools: session.allowedTools || [],
             usage: {
-                inputTokens: session.sonicClient?.getSessionInputTokens() || 0,
-                outputTokens: session.sonicClient?.getSessionOutputTokens() || 0,
-                totalTokens: session.sonicClient?.getSessionTotalTokens() || 0,
-                cost: 0 // Will need to calculate if not available directly, or add getter
-            }
+                inputTokens,
+                outputTokens,
+                totalTokens,
+                cost: finalCost,
+                sentiment: averageSentiment
+            },
+            feedback: session.feedback // In case it was already stored
         };
-
-        if (data.usage) {
-            // Cost is calculated dynamically on the frontend based on User Settings
-            data.usage.cost = 0;
-        }
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         console.log(`[Server] Saved chat history to ${filename}`);
@@ -934,6 +951,7 @@ interface ClientSession {
     awsSessionToken?: string;
     awsRegion?: string;
     agentCoreRuntimeArn?: string;
+    feedback?: any; // New: Store feedback from user
 
     // Workflow State
     activeWorkflowStepId?: string;
@@ -966,6 +984,17 @@ const server = http.createServer(async (req, res) => {
     // Strip query parameters for routing
     const [pathname, queryPart] = (req.url || '/').split('?');
     logDebug(`[HTTP] Request: ${req.method} ${pathname}`);
+
+    // --- GLOBAL CORS HANDLING ---
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
 
     if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -1720,6 +1749,7 @@ const server = http.createServer(async (req, res) => {
                         totalMessages,
                         finalMessages,
                         transcript: data.transcript, // Optional: don't send full transcript in list if heavy
+                        usage: data.usage,
                         feedback: data.feedback // Include feedback for the list view
                     };
                 })
@@ -3142,6 +3172,18 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
             break;
 
+        case 'session_start':
+            console.log('[Server] Forwarding session_start event to client:', JSON.stringify(event.data));
+            if (ws.readyState === WebSocket.OPEN) {
+                // Forward session_start to client in the format it expects
+                ws.send(JSON.stringify({
+                    type: 'session_start',
+                    sessionId: event.data.sessionId,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+            break;
+
         case 'workflow_update':
             console.log(`[Server] Forwarding workflow update: ${event.data.currentStep}`);
             if (ws.readyState === WebSocket.OPEN) {
@@ -4220,6 +4262,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolEndTime = Date.now();
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
+
+                            // Add Tool Result to Transcript History
+                            session.transcript.push({
+                                role: 'tool_result',
+                                text: `Tool Result: ${typeof cleanResult === 'string' ? cleanResult : JSON.stringify(cleanResult)}`,
+                                timestamp: Date.now(),
+                                // @ts-ignore
+                                toolName: actualToolName,
+                                result: cleanResult
+                            });
 
                         } else {
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');

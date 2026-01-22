@@ -15,6 +15,17 @@ interface HistoryFile {
     totalMessages: number;
     finalMessages: number;
     transcript?: Message[];
+    usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+        cost?: number;
+        sentiment?: number;
+    };
+    feedback?: {
+        score: number;
+        comment?: string;
+    };
 }
 
 interface HistoryViewProps {
@@ -61,6 +72,8 @@ export default function HistoryView({ className }: HistoryViewProps) {
                 summary: `Session ${data.sessionId?.substring(0, 8)}`,
                 totalMessages: data.transcript?.length || 0,
                 finalMessages: 0,
+                usage: data.usage,
+                feedback: data.feedback,
                 transcript: data.transcript?.map((msg: any) => ({
                     ...msg,
                     content: msg.content || msg.text // Handle both content and text fields
@@ -228,9 +241,45 @@ export default function HistoryView({ className }: HistoryViewProps) {
                                 </p>
                             </div>
 
-                            <div className="mt-auto pt-3 flex items-center gap-2 text-xs text-gray-500 border-t border-gray-500/10 w-full">
-                                <Clock className="w-3 h-3" />
-                                <span>{format(new Date(file.date), 'h:mm a')}</span>
+                            <div className="mt-auto pt-3 grid grid-cols-2 gap-y-2 text-[10px] text-gray-500 border-t border-gray-500/10 w-full">
+                                <div className="flex items-center gap-1.5">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{format(new Date(file.date), 'h:mm a')}</span>
+                                </div>
+                                {file.usage && (
+                                    <div className="flex items-center gap-1.5 justify-end">
+                                        {file.usage.sentiment !== undefined && (
+                                            <span className={cn(
+                                                "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                                                file.usage.sentiment > 0.1 ? "bg-green-500/10 text-green-400" :
+                                                    file.usage.sentiment < -0.1 ? "bg-red-500/10 text-red-400" :
+                                                        "bg-gray-500/10 text-gray-400"
+                                            )}>
+                                                {((file.usage.sentiment + 1) * 50).toFixed(0)}% Senti
+                                            </span>
+                                        )}
+                                        <span className="font-medium text-violet-400 ml-1">
+                                            ${((file.usage.cost || 0) > 0 ? file.usage.cost! : 0).toFixed(3)}
+                                        </span>
+                                    </div>
+                                )}
+                                {file.usage && (
+                                    <div className="flex items-center gap-1.5 col-span-2 text-[9px] opacity-70">
+                                        <span>In: {(file.usage.inputTokens || 0).toLocaleString()}</span>
+                                        <span>•</span>
+                                        <span>Out: {(file.usage.outputTokens || 0).toLocaleString()}</span>
+                                    </div>
+                                )}
+                                {file.feedback && (
+                                    <div className="col-span-2 flex items-center gap-1.5 mt-1">
+                                        <span className={cn(
+                                            "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
+                                            file.feedback.score > 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                                        )}>
+                                            {file.feedback.score > 0 ? '👍 Positive' : '👎 Negative'}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </button>
                     ))}
