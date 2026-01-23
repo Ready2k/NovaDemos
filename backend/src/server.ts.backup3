@@ -2539,17 +2539,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Text input does not go through Transcribe, so voice remains unchanged
 
 
-                            // DEMO: Send detected language metadata (will be replaced with actual Transcribe data)
-                            // This demonstrates the frontend language display feature
-                            ws.send(JSON.stringify({
-                                type: 'metadata',
-                                data: {
-                                    detectedLanguage: 'en-US',
-                                    languageConfidence: 0.95
-                                }
-                            }));
-
-
                             // Add user message to transcript for chat history
                             session.transcript.push({
                                 role: 'user',
@@ -3409,21 +3398,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     }
                 }
 
-                // Parse and extract dialect detection tag (first turn only)
-                const dialectMatch = processedText.match(/\[DIALECT:\s*([a-z]{2}-[A-Z]{2})\|(\d*\.?\d+)\]/i);
-                if (dialectMatch) {
-                    const detectedLocale = dialectMatch[1];
-                    const confidence = parseFloat(dialectMatch[2]);
-                    console.log(`[DialectDetection] Nova 2 Sonic detected: ${detectedLocale} (confidence: ${confidence.toFixed(2)})`);
-                    const metadataPayload = {
-                        type: 'metadata',
-                        data: { detectedLanguage: detectedLocale, languageConfidence: confidence }
-                    };
-                    ws.send(JSON.stringify(metadataPayload));
-                    console.log(`[DialectDetection] Sent metadata to frontend:`, JSON.stringify(metadataPayload));
-                    processedText = processedText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]/gi, '').trim();
-                }
-
                 console.log(`[DEBUG] hasJson: ${hasJson}, Enabled Tools: ${JSON.stringify(session.tools?.map(t => t.toolSpec.name))}`);
 
                 // VERBOSE DEBUGGING
@@ -3711,10 +3685,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 if (displayText) {
                     // Remove workflow step tags from user-visible text
                     displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
-
-                    // Remove DIALECT tag from displayText (don't show to user)
-                    displayText = displayText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]\s*/gi, '').trim();
-
 
                     // --- HEURISTIC INTERCEPTOR (Updated for AgentCore Gateway) ---
                     // Matches: XML hallucinations <tool_ call...> ONLY.

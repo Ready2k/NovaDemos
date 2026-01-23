@@ -14,7 +14,7 @@ interface InsightPanelProps {
 import WorkflowVisualizer from '../chat/WorkflowVisualizer';
 
 export default function InsightPanel({ className, isDarkMode = true }: InsightPanelProps) {
-    const { messages } = useApp();
+    const { messages, currentSession } = useApp();
     const { formattedDuration, inputTokens, outputTokens, cost, formatCost, formatTokens } = useSessionStats();
 
     // Calculate average sentiment from messages
@@ -150,6 +150,25 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-x-2 gap-y-4">
+                    {/* Language Detection */}
+                    <div>
+                        <div className={cn(
+                            "uppercase tracking-wider font-semibold text-[11px] mb-0.5 transition-colors duration-300",
+                            isDarkMode ? "text-ink-text-muted" : "!text-gray-600"
+                        )}>Language</div>
+                        <div className={cn(
+                            "text-sm font-semibold transition-colors duration-300 truncate",
+                            isDarkMode ? "text-ink-text-primary" : "text-gray-900"
+                        )}>
+                            {currentSession?.detectedLanguage ? (
+                                <span title={`Confidence: ${(currentSession.languageConfidence ? (currentSession.languageConfidence * 100).toFixed(0) : '0')}%`}>
+                                    {currentSession.detectedLanguage}
+                                </span>
+                            ) : (
+                                <span className="opacity-50 italic">Detecting...</span>
+                            )}
+                        </div>
+                    </div>
                     <div>
                         <div className={cn(
                             "uppercase tracking-wider font-semibold text-[11px] mb-0.5 transition-colors duration-300",

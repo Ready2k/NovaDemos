@@ -21,6 +21,8 @@ export interface Session {
     transcript: Message[];
     brainMode?: string;
     voicePreset?: string;
+    detectedLanguage?: string;
+    languageConfidence?: number;
 }
 
 export interface SessionStats {

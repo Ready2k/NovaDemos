@@ -411,10 +411,6 @@
               class="stat-label">Sentiment:</span> <span id="mainSentimentLabel"
               style="font-weight: 600;">Neutral</span> <span id="mainSentimentScore"
               style="font-size: 0.8em; opacity: 0.7;">(0.0)</span></div>
-          <div class="stat-item" id="detected-language-stat" title="Detected Language" style="display: none;">🌐 <span
-              class="stat-label">Language:</span> <span id="detectedLanguageLabel"
-              style="font-weight: 600;">en-US</span></div>
-
           <div class="stat-item" title="Input Tokens">📥 <span class="stat-label">Input:</span> <span
               id="statInputTokens">0</span></div>
           <div class="stat-item" title="Output Tokens">📤 <span class="stat-label">Output:</span> <span

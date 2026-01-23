@@ -11,8 +11,27 @@ export interface Voice {
     language: string;
     region: string;
     gender: 'male' | 'female';
+    dialect?: string; // Dialect identifier (e.g., 'us-english', 'british-english')
+    locale?: string; // AWS Transcribe locale code (e.g., 'en-US', 'en-GB')
     description?: string;
 }
+
+/**
+ * Voice mapping configuration
+ * Maps locale codes to voice IDs for automatic voice switching
+ */
+export type VoiceMap = Record<string, string>;
+
+export const DEFAULT_VOICE_MAP: VoiceMap = {
+    'en-US': 'matthew',
+    'en-GB': 'amy',
+    'en-AU': 'olivia',
+    'en-IN': 'kiara',
+    'fr-FR': 'ambre',
+    'es-ES': 'tiffany',
+    'es-US': 'tiffany',
+    'fr-CA': 'ambre'
+};
 
 /**
  * Nova 2 Sonic voices - verified working voices only
@@ -21,36 +40,38 @@ export interface Voice {
  */
 export const NOVA_SONIC_VOICES: Voice[] = [
     // English (US) voices - confirmed working
-    { id: "matthew", name: "Matthew", language: "en-US", region: "US", gender: "male", description: "US Male voice" },
-    { id: "tiffany", name: "Tiffany", language: "en-US", region: "US", gender: "female", description: "US Female voice" },
-    
+    { id: "matthew", name: "Matthew", language: "en-US", region: "US", gender: "male", dialect: "us-english", description: "US Male voice" },
+    { id: "tiffany", name: "Tiffany", language: "en-US", region: "US", gender: "female", dialect: "spanish", description: "Polyglot voice (Spanish/English)" },
+
     // English (UK) voices - confirmed working  
-    { id: "amy", name: "Amy", language: "en-GB", region: "UK", gender: "female", description: "British Female voice" },
-    
+    { id: "amy", name: "Amy", language: "en-GB", region: "UK", gender: "female", dialect: "british-english", description: "British Female voice" },
+
     // French voices - confirmed working
-    { id: "florian", name: "Florian", language: "fr-FR", region: "FR", gender: "male", description: "French Male voice" },
-    { id: "ambre", name: "Ambre", language: "fr-FR", region: "FR", gender: "female", description: "French Female voice" },
-    
+    { id: "florian", name: "Florian", language: "fr-FR", region: "FR", gender: "male", dialect: "french", description: "French Male voice" },
+    { id: "ambre", name: "Ambre", language: "fr-FR", region: "FR", gender: "female", dialect: "french", description: "French Female voice" },
+
     // Additional voices that may be supported (conservative list)
     // These are common Polly voices that Nova 2 Sonic likely supports
-    { id: "joanna", name: "Joanna", language: "en-US", region: "US", gender: "female", description: "US Female voice" },
-    { id: "joey", name: "Joey", language: "en-US", region: "US", gender: "male", description: "US Male voice" },
-    { id: "justin", name: "Justin", language: "en-US", region: "US", gender: "male", description: "US Male voice" },
-    { id: "kendra", name: "Kendra", language: "en-US", region: "US", gender: "female", description: "US Female voice" },
-    { id: "kimberly", name: "Kimberly", language: "en-US", region: "US", gender: "female", description: "US Female voice" },
-    { id: "salli", name: "Salli", language: "en-US", region: "US", gender: "female", description: "US Female voice" },
-    
+    { id: "joanna", name: "Joanna", language: "en-US", region: "US", gender: "female", dialect: "us-english", description: "US Female voice" },
+    { id: "joey", name: "Joey", language: "en-US", region: "US", gender: "male", dialect: "us-english", description: "US Male voice" },
+    { id: "justin", name: "Justin", language: "en-US", region: "US", gender: "male", dialect: "us-english", description: "US Male voice" },
+    { id: "kendra", name: "Kendra", language: "en-US", region: "US", gender: "female", dialect: "us-english", description: "US Female voice" },
+    { id: "kimberly", name: "Kimberly", language: "en-US", region: "US", gender: "female", dialect: "us-english", description: "US Female voice" },
+    { id: "salli", name: "Salli", language: "en-US", region: "US", gender: "female", dialect: "us-english", description: "US Female voice" },
+
     // UK voices
-    { id: "brian", name: "Brian", language: "en-GB", region: "UK", gender: "male", description: "British Male voice" },
-    { id: "emma", name: "Emma", language: "en-GB", region: "UK", gender: "female", description: "British Female voice" },
-    
+    { id: "brian", name: "Brian", language: "en-GB", region: "UK", gender: "male", dialect: "british-english", description: "British Male voice" },
+    { id: "emma", name: "Emma", language: "en-GB", region: "UK", gender: "female", dialect: "british-english", description: "British Female voice" },
+
     // Australian voices
-    { id: "nicole", name: "Nicole", language: "en-AU", region: "AU", gender: "female", description: "Australian Female voice" },
-    { id: "russell", name: "Russell", language: "en-AU", region: "AU", gender: "male", description: "Australian Male voice" },
-    
+    { id: "nicole", name: "Nicole", language: "en-AU", region: "AU", gender: "female", dialect: "australian-english", description: "Australian Female voice" },
+    { id: "olivia", name: "Olivia", language: "en-AU", region: "AU", gender: "female", dialect: "australian-english", description: "Australian Female voice" },
+    { id: "russell", name: "Russell", language: "en-AU", region: "AU", gender: "male", dialect: "australian-english", description: "Australian Male voice" },
+
     // Indian English voices (using standard Polly voice IDs)
-    { id: "aditi", name: "Aditi", language: "en-IN", region: "IN", gender: "female", description: "Indian Female voice" },
-    { id: "raveena", name: "Raveena", language: "en-IN", region: "IN", gender: "female", description: "Indian Female voice" },
+    { id: "aditi", name: "Aditi", language: "en-IN", region: "IN", gender: "female", dialect: "indian-english", description: "Indian Female voice" },
+    { id: "kiara", name: "Kiara", language: "en-IN", region: "IN", gender: "female", dialect: "indian-english", description: "Indian Female voice" },
+    { id: "raveena", name: "Raveena", language: "en-IN", region: "IN", gender: "female", dialect: "indian-english", description: "Indian Female voice" },
 ];
 
 /**
@@ -82,9 +103,24 @@ export function getVoiceById(id: string): Voice | undefined {
 }
 
 /**
+ * Get voice by dialect
+ * Returns the first matching voice for the specified dialect
+ */
+export function getVoiceByDialect(dialect: string): Voice | undefined {
+    return NOVA_SONIC_VOICES.find(voice => voice.dialect === dialect);
+}
+
+/**
+ * Get all voices for a specific dialect
+ */
+export function getVoicesByDialect(dialect: string): Voice[] {
+    return NOVA_SONIC_VOICES.filter(voice => voice.dialect === dialect);
+}
+
+/**
  * Format voices for frontend consumption
  */
-export function formatVoicesForFrontend(): Array<{id: string, name: string}> {
+export function formatVoicesForFrontend(): Array<{ id: string, name: string }> {
     return NOVA_SONIC_VOICES.map(voice => ({
         id: voice.id,
         name: `${voice.name} (${voice.region} ${voice.gender === 'male' ? 'Male' : 'Female'})`

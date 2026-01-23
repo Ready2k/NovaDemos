@@ -858,58 +858,6 @@ class VoiceAssistant {
 
         // Add new marker based on score
         if (score > 0.05) {
-
-            /**
-             * Update Detected Language Display
-             * @param {string} locale - Detected locale code (e.g., 'en-US', 'en-GB', 'fr-FR')
-             * @param {number} confidence - Confidence score (0.0 - 1.0)
-             */
-            updateDetectedLanguage(locale, confidence = null) {
-                console.log(`[Language] Detected: ${locale}, Confidence: ${confidence}`);
-
-                const languageStat = document.getElementById('detected-language-stat');
-                const languageLabel = document.getElementById('detectedLanguageLabel');
-
-                if (!languageStat || !languageLabel) {
-                    console.warn('[Language] Language stat elements not found in DOM');
-                    return;
-                }
-
-                // Show the stat
-                languageStat.style.display = 'flex';
-
-                // Format locale for display
-                const localeMap = {
-                    'en-US': '🇺🇸 US English',
-                    'en-GB': '🇬🇧 British English',
-                    'en-AU': '🇦🇺 Australian English',
-                    'en-IN': '🇮🇳 Indian English',
-                    'fr-FR': '🇫🇷 French',
-                    'fr-CA': '🇨🇦 French (Canada)',
-                    'es-ES': '🇪🇸 Spanish',
-                    'es-US': '🇺🇸 Spanish (US)'
-                };
-
-                const displayText = localeMap[locale] || locale;
-                languageLabel.textContent = displayText;
-
-                // Add confidence indicator if available
-                if (confidence !== null && confidence !== undefined) {
-                    const confidencePercent = Math.round(confidence * 100);
-                    languageLabel.title = `Confidence: ${confidencePercent}%`;
-
-                    // Color code based on confidence
-                    if (confidence >= 0.8) {
-                        languageLabel.style.color = '#10b981'; // Green for high confidence
-                    } else if (confidence >= 0.6) {
-                        languageLabel.style.color = '#f59e0b'; // Amber for medium confidence
-                    } else {
-                        languageLabel.style.color = '#ef4444'; // Red for low confidence
-                    }
-                } else {
-                    languageLabel.style.color = '#e2e8f0'; // Default color
-                }
-            }
             const marker = document.createElement('span');
             marker.textContent = ' 😊';
             marker.title = `Positive (${score.toFixed(2)})`;
@@ -2067,14 +2015,12 @@ The user can see your response on a screen.
                                 break;
 
                             case 'metadata':
-                                console.log('[Main] Metadata message received:', message);
                                 if (message.data && message.data.traceId) {
                                     this.currentTraceId = message.data.traceId;
                                     console.log('[Main] Trace ID received via metadata:', this.currentTraceId);
                                 }
                                 // Handle detected language display
                                 if (message.data && message.data.detectedLanguage) {
-                                    console.log('[Main] Calling updateDetectedLanguage with:', message.data.detectedLanguage, message.data.languageConfidence);
                                     this.updateDetectedLanguage(message.data.detectedLanguage, message.data.languageConfidence);
                                 }
                                 break;

@@ -146,6 +146,18 @@ export class SonicClient {
         }
     }
 
+    private loadDialectDetectionPrompt(): string {
+        try {
+            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            const dialectPrompt = fs.readFileSync(path.join(PROMPTS_DIR, 'hidden-dialect_detection.txt'), 'utf-8').trim();
+            console.log(`[SonicClient:${this.id}] Loaded dialect detection prompt`);
+            return dialectPrompt;
+        } catch (err) {
+            console.warn(`[SonicClient:${this.id}] Failed to load dialect detection prompt:`, err);
+            return ""; // Return empty string if not found
+        }
+    }
+
     /**
      * Get current session ID
      */
@@ -385,8 +397,15 @@ export class SonicClient {
         yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStartEvent)) } };
 
         // 4. System Prompt Text Input
-        const systemPromptText = this.sessionConfig.systemPrompt || this.loadDefaultPrompt();
-        console.log('[SonicClient] Using System Prompt:', systemPromptText);
+        const baseSystemPrompt = this.sessionConfig.systemPrompt || this.loadDefaultPrompt();
+        const dialectDetectionPrompt = this.loadDialectDetectionPrompt();
+
+        // Inject dialect detection instructions (hidden from user)
+        const systemPromptText = dialectDetectionPrompt
+            ? `${baseSystemPrompt}\n\n${dialectDetectionPrompt}`
+            : baseSystemPrompt;
+
+        console.log('[SonicClient] Using System Prompt with dialect detection:', systemPromptText.substring(0, 100) + '...');
         const systemTextInputEvent = {
             event: {
                 textInput: {

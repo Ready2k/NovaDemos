@@ -4,37 +4,33 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 
 export function useSessionStats() {
-    const { currentSession, updateSessionStats, settings } = useApp();
+    const { currentSession, updateSessionStats, settings, connectionStatus } = useApp();
     const [duration, setDuration] = useState(0);
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
-    const startTimeRef = useRef<number | null>(null);
 
     // Start duration counter when session starts
     useEffect(() => {
-        if (currentSession && !startTimeRef.current) {
-            startTimeRef.current = Date.now();
-
-            intervalRef.current = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - startTimeRef.current!) / 1000);
-                setDuration(elapsed);
-                updateSessionStats({ duration: elapsed });
-            }, 1000);
-        }
-
-        // Cleanup on session end
-        if (!currentSession && intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-            startTimeRef.current = null;
+        if (!currentSession?.sessionId) {
             setDuration(0);
+            return;
         }
 
-        return () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-            }
-        };
-    }, [currentSession, updateSessionStats]);
+        // Stop timer if disconnected
+        if (connectionStatus === 'disconnected') {
+            return;
+        }
+
+        const startTime = currentSession.startTime ? new Date(currentSession.startTime).getTime() : Date.now();
+
+        // Initial set (in case of re-renders/resume)
+        setDuration(Math.floor((Date.now() - startTime) / 1000));
+
+        const interval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            setDuration(elapsed);
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [currentSession?.sessionId, currentSession?.startTime, connectionStatus]);
 
     // Calculate cost based on tokens and brain mode
     const calculateCost = (inputTokens: number, outputTokens: number): number => {

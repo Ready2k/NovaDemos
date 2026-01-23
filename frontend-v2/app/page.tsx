@@ -197,6 +197,14 @@ export default function Home() {
         if (message.data?.traceId) {
           sessionIdRef.current = message.data.traceId;
         }
+        // Capture detected language if present
+        if (message.data?.detectedLanguage) {
+          console.log('[Session] Language detected:', message.data.detectedLanguage);
+          updateSessionStats({
+            detectedLanguage: message.data.detectedLanguage,
+            languageConfidence: message.data.languageConfidence
+          });
+        }
         break;
 
       case 'debugInfo':
