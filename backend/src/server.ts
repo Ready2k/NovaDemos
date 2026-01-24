@@ -121,6 +121,9 @@ const promptService = new PromptService(langfuse);
 // Knowledge Base Storage - Hoisted
 const KB_FILE = path.join(__dirname, '../../knowledge_bases.json');
 
+// Pending feedback storage to handle race conditions during session closure
+const pendingFeedback = new Map<string, any>();
+
 function loadKnowledgeBases() {
     try {
         if (!fs.existsSync(KB_FILE)) return [];
@@ -605,15 +608,25 @@ function saveTranscript(session: ClientSession) {
 
     try {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `session_${timestamp}_${session.sessionId.substring(0, 8)}.json`;
+        // Use full sessionId for robustness and unique lookup
+        const filename = `session_${timestamp}_${session.sessionId}.json`;
         const filePath = path.join(HISTORY_DIR, filename);
 
         // Calculate Overall Sentiment
         let totalSentiment = 0;
         let sentimentCount = 0;
         session.transcript.forEach((msg: any) => {
-            if (msg.sentiment !== undefined && !isNaN(msg.sentiment)) {
-                totalSentiment += msg.sentiment;
+            if (msg.sentiment !== undefined) {
+                let score = 0;
+                if (typeof msg.sentiment === 'number') {
+                    score = msg.sentiment;
+                } else if (typeof msg.sentiment === 'object' && msg.sentiment !== null && typeof msg.sentiment.score === 'number') {
+                    score = msg.sentiment.score;
+                } else if (typeof msg.sentiment === 'object' && msg.sentiment !== null && typeof msg.sentiment.comparative === 'number') {
+                    score = msg.sentiment.comparative;
+                }
+
+                totalSentiment += score;
                 sentimentCount++;
             }
         });
@@ -643,8 +656,14 @@ function saveTranscript(session: ClientSession) {
                 cost: finalCost,
                 sentiment: averageSentiment
             },
-            feedback: session.feedback // In case it was already stored
+            feedback: session.feedback || pendingFeedback.get(session.sessionId) // Merge pending feedback
         };
+
+        // Clear from pending if used
+        if (pendingFeedback.has(session.sessionId)) {
+            console.log(`[Server] Picking up pending feedback for session ${session.sessionId.substring(0, 8)}...`);
+            pendingFeedback.delete(session.sessionId);
+        }
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         console.log(`[Server] Saved chat history to ${filename}`);
@@ -1343,18 +1362,30 @@ const server = http.createServer(async (req, res) => {
                     const session = Array.from(activeSessions.values())
                         .find(s => s.sessionId === sessionId);
 
-                    if (session && session.langfuseTrace) {
-                        actualTraceId = session.langfuseTrace.id;
-                        console.log(`[Server] Found active session, using Langfuse trace ID: ${actualTraceId}`);
+                    if (session) {
+                        actualTraceId = session.langfuseTrace?.id || traceId || sessionId;
+                        console.log(`[Server] Found active session, storing feedback in memory: ${sessionId}`);
+                        // Store in session memory for saveTranscript
+                        session.feedback = {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        };
                     } else {
-                        console.warn(`[Server] Session ${sessionId} not found in active sessions, using provided traceId`);
+                        console.warn(`[Server] Session ${sessionId} not found in active sessions, storing as pending.`);
+                        // Store as pending for saveTranscript to find later
+                        pendingFeedback.set(sessionId, {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        });
                     }
                 }
 
                 // Fallback: use sessionId as traceId if nothing else available
                 const targetId = actualTraceId || sessionId;
 
-                console.log(`[Server] Feedback Debug: sessionId=${sessionId}, traceId=${traceId}, actualTraceId=${actualTraceId}, targetId=${targetId}, score=${score}`);
+                console.log(`[Server] Feedback Debug: sessionId=${sessionId}, traceId=${traceId}, targetId=${targetId}, score=${score}`);
 
                 if (!targetId) {
                     throw new Error('No valid trace ID or session ID provided');
@@ -1365,19 +1396,26 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 // 1. Send to Langfuse
-                await langfuse.score({
-                    traceId: targetId,
-                    name: name || "user-feedback",
-                    value: score,
-                    comment: comment
-                });
-                console.log(`[Server] Recorded feedback for trace ${targetId}: score=${score}, comment=${comment}`);
-
-                // 2. Persist to Local History File
                 try {
-                    const shortId = (sessionId || targetId).substring(0, 8);
+                    await langfuse.score({
+                        traceId: targetId,
+                        name: name || "user-feedback",
+                        value: score,
+                        comment: comment
+                    });
+                    console.log(`[Server] Recorded feedback for trace ${targetId} in Langfuse.`);
+                } catch (lfErr) {
+                    console.error('[Server] Failed to send score to Langfuse:', lfErr);
+                    // Continue anyway to save locally
+                }
+
+                // 2. Persist to Local History File (Final redundancy if file already exists)
+                try {
                     const files = fs.readdirSync(HISTORY_DIR);
-                    const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
+                    // Match full sessionId in filename for total precision
+                    // Filename format: session_TIMESTAMP_UUID.json
+                    const match = files.find(f => f.includes(sessionId) && f.endsWith('.json')) ||
+                        files.find(f => f.includes(sessionId.substring(0, 8)) && f.endsWith('.json'));
 
                     if (match) {
                         const filePath = path.join(HISTORY_DIR, match);
@@ -1392,13 +1430,10 @@ const server = http.createServer(async (req, res) => {
                         };
 
                         fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
-                        console.log(`[Server] Updated local history file ${match} with feedback.`);
-                    } else {
-                        console.warn(`[Server] Could not find local history file for session ${shortId} to save feedback.`);
+                        console.log(`[Server] Updated local history file ${match} with late feedback.`);
                     }
                 } catch (fsErr) {
-                    console.error('[Server] Failed to save feedback to local file:', fsErr);
-                    // Don't fail the request just because local save failed, Langfuse is primary
+                    console.error('[Server] Failed to update local history file (expected if session not saved yet):', fsErr);
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3424,10 +3459,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 if (event.data.isFinal || isSpeculative) {
+                    const rawText = event.data.transcript || "";
+
+                    // Extract Sentiment from [SENTIMENT: X.X] tag
+                    let sentiment: number | undefined;
+                    const sentimentMatch = rawText.match(/\[SENTIMENT:\s*(-?\d*\.?\d+)\]/i);
+                    if (sentimentMatch) {
+                        sentiment = parseFloat(sentimentMatch[1]);
+                        console.log(`[Server] Extracted sentiment from transcript: ${sentiment}`);
+                    }
+
                     const entry: any = {
                         role: 'assistant',
-                        text: event.data.transcript,
-                        timestamp: Date.now()
+                        text: rawText,
+                        timestamp: Date.now(),
+                        sentiment: sentiment // Store the sentiment score
                     };
 
                     if (isSpeculative) {
@@ -4021,12 +4067,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 }
                             }
 
+                            // Extract sentiment for transmission to UI
+                            let messageSentiment: number | undefined;
+                            const sentimentMatch = displayText.match(/\[SENTIMENT:\s*(-?\d*\.?\d+)\]/i);
+                            if (sentimentMatch) {
+                                messageSentiment = parseFloat(sentimentMatch[1]);
+                            }
+
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
                                 text: finalText,
                                 isFinal: true,
-                                isStreaming: false
+                                isStreaming: false,
+                                sentiment: messageSentiment
                             }));
 
                             // Track message for deduplication (store original full response)
