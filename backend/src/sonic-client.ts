@@ -1255,12 +1255,22 @@ export class SonicClient {
 
                             // AUTO-NUDGE DETECTION: Check for commitment phrases
                             if (!this.hasCommittedToTool && this.currentRole === 'ASSISTANT') {
-                                const lowerText = this.currentTurnTranscript.toLowerCase();
-                                const commitmentPhrases = [
-                                    "check", "verify", "look up", "checking", "verifying", "accessing",
-                                    "searching", "moment", "bear with me", "wait", "pull up"
+                                // IMPROVED: Use strict regex patterns to avoid false positives (e.g. "I can help with checking...")
+                                const commitmentPatterns = [
+                                    // 1. Future explicit action: "I'll check", "Let me verify", "I will search"
+                                    /\b(I'll|I will|let me|allow me to|gonna|going to)\s+(check|verify|look up|access|search|pull up|get|find)\b/i,
+
+                                    // 2. Present continuous with "I am": "I'm checking", "I am verifying"
+                                    /\b(I'm|I am)\s+(checking|verifying|accessing|searching|pulling up|looking up)\b/i,
+
+                                    // 3. Start of sentence/Clause active action: "Checking your...", "Sure, verifying details..."
+                                    /(?:^|[.!?]\s+|(?:\b(?:Ok|Okay|Sure|Alright|Right|Yes|No|Thanks|Thank you)\s*[,.]\s*))(Checking|Verifying|Accessing|Searching|Looking up|Pulling up)\b/i,
+
+                                    // 4. Wait phrases: "Just a moment", "Bear with me"
+                                    /\b(just a moment|bear with me|one moment|hold on)\b/i
                                 ];
-                                if (commitmentPhrases.some(phrase => lowerText.includes(phrase))) {
+
+                                if (commitmentPatterns.some(pattern => pattern.test(this.currentTurnTranscript))) {
                                     this.hasCommittedToTool = true;
                                     console.log(`[SonicClient] Auto-Nudge: Detected commitment phrase. Watching for tool call...`);
                                 }
