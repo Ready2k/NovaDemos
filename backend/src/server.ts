@@ -892,7 +892,15 @@ function loadTools(): any[] {
 }
 
 // Progressive filler system for tool execution feedback
-// Progressive filler system completely disabled per user request
+const FILLER_PHRASES = [
+    "Hmm...",
+    "Erm...",
+    "Ok...",
+    "Let me see...",
+    "Just waiting for the system...",
+    "One moment...",
+    "Bear with me..."
+];
 
 
 function calculateStringSimilarity(str1: string, str2: string): number {
@@ -2476,7 +2484,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
                             const basePrompt = parsed.config.systemPrompt || "";
                             // Stronger header
-                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n\n*** IMMEDIATE TOOL EXECUTION PROTOCOL ***\n- When a step requires a tool (e.g. 'perform_idv_check'), you must call it IN THE SAME TURN as your text response.\n- DO NOT say \"I will check\" and then stop. That is a CRITICAL FAILURE.\n- Correct Pattern: \"Let me check that for you.\" -> [TOOL_CALL]\n- Force yourself to generate the tool call block immediately after the sentence end punctuation.\n\n";
+                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n\n*** IMMEDIATE TOOL EXECUTION PROTOCOL ***\n- When a step requires a tool (e.g. 'perform_idv_check'), you must call it IN THE SAME TURN as your text response.\n- DO NOT say \"I will check\" and then stop. That is a CRITICAL FAILURE.\n- Correct Pattern: \"Let me check that for you.\" -> [TOOL_CALL]\n- Ensure you COMPLETE your sentence verbally before emitting the tool call block. Do not cut off your own audio.\n\n";
                             parsed.config.systemPrompt = basePrompt + strictHeader + workflowSystemPrompt;
                             console.log(`[WorkflowDebug] FINAL SYSTEM PROMPT LENGTH: ${parsed.config.systemPrompt.length}`); // DEBUG
                         } else {
@@ -2925,10 +2933,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     console.log(`[Server] Auto-save parameters: accountNumber=${accountNumber}, sortCode=${sortCode}`);
 
+                    // Generate a simple summary from the transcript
+                    const interactionSummary = session.transcript
+                        .filter(t => t.role === 'user' || t.role === 'assistant')
+                        .map(t => `${t.role.toUpperCase()}: ${t.text}`)
+                        .join('\n')
+                        .substring(0, 500) + (session.transcript.length > 10 ? '...' : '');
+
                     await agentCoreGatewayClient.callTool('manage_recent_interactions', {
                         action: 'PUBLISH',
                         accountNumber: accountNumber,
-                        sortCode: sortCode
+                        sortCode: sortCode,
+                        summary: interactionSummary || "No transcript available.",
+                        outcome: "Completed"
                     });
                     console.log('[Server] ✅ History Auto-Saved Successfully.');
                 } catch (err) {
@@ -3173,7 +3190,7 @@ function convertWorkflowToText(workflow: any): string {
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {
-            text += `   -> ACTION REQUIRED: You MUST call the tool "${node.toolName}" NOW. Do not just say you will call it - actually invoke it.\n`;
+            text += `   -> ACTION REQUIRED: You MUST call the tool "${node.toolName}" after completing your verbal response. Do not cut yourself off.\n`;
         }
 
         // Sub-Workflow Config - MODIFIED FOR DRIP FEED
@@ -3320,11 +3337,38 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
 
             if (role === 'user') {
+                // FILLER SYSTEM: Ignore hidden instructions from transcript
+                if (event.data.transcript && event.data.transcript.startsWith('[HIDDEN]')) {
+                    console.log(`[Server] 🙈 Hiding system instruction from transcript: ${event.data.transcript}`);
+                    return;
+                }
+
                 session.lastUserTranscript = event.data.transcript;
                 session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
             } else if (role === 'assistant' || role === 'model') {
                 const stage = event.data.stage;
                 const isSpeculative = stage === 'SPECULATIVE';
+
+                // FILLER SYSTEM: Filter out assistant responses that match our filler phrases
+                // This prevents "Hmm..." from cluttering the UI if it was system-induced
+                // We use a loose check because the model might add punctuation
+                const text = event.data.transcript || "";
+
+                // Only filter if it looks like a short filler phrase
+                if (text.length < 50) {
+                    const cleanText = text.replace(/[.,!?:;]/g, '').trim().toLowerCase();
+                    const isFiller = FILLER_PHRASES.some(phrase => {
+                        const cleanFiller = phrase.replace(/[.,!?:;]/g, '').trim().toLowerCase();
+                        return cleanText === cleanFiller || cleanText.includes(cleanFiller);
+                    });
+
+                    if (isFiller) {
+                        console.log(`[Server] 🙈 Hiding assistant filler from transcript: "${text}"`);
+                        // We still allow audio to pass through (handleSonicEvent check is for 'audio' type)
+                        // But we stop it from appearing in the UI transcript
+                        return;
+                    }
+                }
 
                 if (event.data.isFinal || isSpeculative) {
                     const entry: any = {
@@ -4002,6 +4046,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+
+            // FILLER WORD SYSTEM: Inject human-sounding filler while waiting
+            // We only do this for the FIRST tool call in a turn to avoid spamming if multiple tools are called quickly
+            if (!session.toolsCalledThisTurn || session.toolsCalledThisTurn.length === 0) {
+                const fillerPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
+                const fillerInstruction = `[HIDDEN] (System Instruction) Please say exactly this phrase naturally to fill time: "${fillerPhrase}"`;
+                console.log(`[Server] 💉 Injecting filler instruction: "${fillerInstruction}"`);
+
+                // Ensure audio is NOT blocked
+                session.isIntercepting = false;
+                session.isInterrupted = false;
+
+                // Fire and forget - don't await to avoid delaying the actual tool execution
+                if (session.sonicClient && session.sonicClient.getSessionId()) {
+                    session.sonicClient.sendText(fillerInstruction).catch(e => console.error("Failed to send filler:", e));
+                }
+            }
 
             // PHANTOM WATCHER: Track tool calls for this turn
             if (!session.toolsCalledThisTurn) {

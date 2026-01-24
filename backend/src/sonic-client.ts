@@ -1289,7 +1289,7 @@ export class SonicClient {
 
                         // AUTO-NUDGE EXECUTION
                         // If model stopped speaking (END_TURN or PARTIAL_TURN) and promised a tool but didn't call it
-                        if ((eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'PARTIAL_TURN') &&
+                        if (eventData.contentEnd.stopReason === 'END_TURN' &&
                             this.currentRole === 'ASSISTANT' &&
                             this.hasCommittedToTool &&
                             !this.hasCalledTool) {
