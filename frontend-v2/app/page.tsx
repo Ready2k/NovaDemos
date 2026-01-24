@@ -454,7 +454,7 @@ export default function Home() {
   return (
     <div className={cn(
       "flex h-screen overflow-hidden transition-colors duration-300",
-      isDarkMode ? "bg-ink-bg" : "bg-white"
+      isDarkMode ? "bg-ink-bg text-ink-text-primary" : "bg-white text-gray-900"
     )}>
       {/* Desktop: Slim iconic sidebar (60px) */}
       <Sidebar className="hidden md:flex" />

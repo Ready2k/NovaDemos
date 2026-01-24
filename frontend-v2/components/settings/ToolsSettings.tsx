@@ -129,7 +129,7 @@ export default function ToolsSettings() {
                     "lg:col-span-1 rounded-xl border overflow-hidden flex flex-col max-h-[600px]",
                     isDarkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-200"
                 )}>
-                    <div className={cn("p-3 border-b text-xs font-semibold uppercase tracking-wider", isDarkMode ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-500")}>
+                    <div className={cn("p-3 border-b text-xs font-semibold uppercase tracking-wider", isDarkMode ? "border-white/10 text-gray-400" : "border-gray-200 text-gray-600")}>
                         Available Tools
                     </div>
                     <div className="overflow-y-auto flex-1 p-2 space-y-2">
@@ -149,7 +149,7 @@ export default function ToolsSettings() {
                                     "w-full text-left p-3 rounded-lg text-sm transition-colors border",
                                     editingTool?.name === tool.name
                                         ? isDarkMode ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-indigo-50 border-indigo-200 text-indigo-700"
-                                        : isDarkMode ? "border-transparent hover:bg-white/5 text-gray-300" : "border-transparent hover:bg-gray-50 text-gray-700"
+                                        : isDarkMode ? "border-transparent hover:bg-white/5 text-gray-300" : "border-transparent hover:bg-gray-50 text-gray-900"
                                 )}
                             >
                                 <div className="font-medium">{tool.name}</div>
@@ -191,7 +191,7 @@ export default function ToolsSettings() {
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-medium mb-1 opacity-70">Tool Name (Unique)</label>
+                                    <label className={cn("block text-xs font-medium mb-1", isDarkMode ? "opacity-70" : "text-gray-700")}>Tool Name (Unique)</label>
                                     <input
                                         type="text"
                                         value={editingTool.name}
@@ -199,48 +199,48 @@ export default function ToolsSettings() {
                                         disabled={!isNew}
                                         className={cn(
                                             "w-full px-3 py-2 rounded-lg text-sm border bg-transparent",
-                                            isDarkMode ? "border-white/20 focus:border-indigo-500" : "border-gray-300 focus:border-indigo-500",
+                                            isDarkMode ? "border-white/20 focus:border-indigo-500 text-white" : "border-gray-300 focus:border-indigo-500 text-gray-900",
                                             !isNew && "opacity-50 cursor-not-allowed"
                                         )}
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium mb-1 opacity-70">Description</label>
+                                    <label className={cn("block text-xs font-medium mb-1", isDarkMode ? "opacity-70" : "text-gray-700")}>Description</label>
                                     <textarea
                                         value={editingTool.description}
                                         onChange={e => setEditingTool({ ...editingTool, description: e.target.value })}
                                         rows={2}
                                         className={cn(
                                             "w-full px-3 py-2 rounded-lg text-sm border bg-transparent",
-                                            isDarkMode ? "border-white/20 focus:border-indigo-500" : "border-gray-300 focus:border-indigo-500"
+                                            isDarkMode ? "border-white/20 focus:border-indigo-500 text-white" : "border-gray-300 focus:border-indigo-500 text-gray-900"
                                         )}
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium mb-1 opacity-70">Instruction (Optional)</label>
+                                    <label className={cn("block text-xs font-medium mb-1", isDarkMode ? "opacity-70" : "text-gray-700")}>Instruction (Optional)</label>
                                     <textarea
                                         value={editingTool.instruction || ''}
                                         onChange={e => setEditingTool({ ...editingTool, instruction: e.target.value })}
                                         rows={2}
                                         className={cn(
                                             "w-full px-3 py-2 rounded-lg text-sm border bg-transparent",
-                                            isDarkMode ? "border-white/20 focus:border-indigo-500" : "border-gray-300 focus:border-indigo-500"
+                                            isDarkMode ? "border-white/20 focus:border-indigo-500 text-white" : "border-gray-300 focus:border-indigo-500 text-gray-900"
                                         )}
                                         placeholder="Specific instructions for how the model should use this tool..."
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium mb-1 opacity-70">Parameters (JSON Schema)</label>
+                                    <label className={cn("block text-xs font-medium mb-1", isDarkMode ? "opacity-70" : "text-gray-700")}>Parameters (JSON Schema)</label>
                                     <textarea
                                         value={editingTool.parameters as string}
                                         onChange={e => setEditingTool({ ...editingTool, parameters: e.target.value })}
                                         rows={10}
                                         className={cn(
                                             "w-full px-3 py-2 rounded-lg text-sm border bg-transparent font-mono",
-                                            isDarkMode ? "border-white/20 focus:border-indigo-500" : "border-gray-300 focus:border-indigo-500",
+                                            isDarkMode ? "border-white/20 focus:border-indigo-500 text-white" : "border-gray-300 focus:border-indigo-500 text-gray-900",
                                             jsonError ? "border-red-500 focus:border-red-500" : ""
                                         )}
                                     />

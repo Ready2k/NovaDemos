@@ -135,7 +135,10 @@ export default function WorkflowSidebar({
                                     <span className="text-xs font-bold uppercase text-violet-500">Edit Node</span>
                                     <button
                                         onClick={() => onDeleteNode(selectedNode.id)}
-                                        className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-900/20"
+                                        className={cn(
+                                            "p-1 rounded transition-colors",
+                                            isDarkMode ? "text-red-400 hover:text-red-300 hover:bg-red-900/20" : "text-red-600 hover:text-red-700 hover:bg-red-100"
+                                        )}
                                         title="Delete Node"
                                     >
                                         <Trash2 className="w-4 h-4" />
@@ -152,62 +155,80 @@ export default function WorkflowSidebar({
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500">Label</label>
+                                        <label className={cn("text-xs", isDarkMode ? "text-gray-500" : "text-gray-600")}>Label</label>
                                         <textarea
                                             value={selectedNode.label}
                                             onChange={e => onUpdateNode({ ...selectedNode, label: e.target.value })}
                                             rows={2}
-                                            className={cn("w-full text-xs p-2 rounded border bg-transparent", isDarkMode ? "border-white/10 text-gray-300" : "border-gray-200")}
+                                            className={cn("w-full text-xs p-2 rounded border bg-transparent", isDarkMode ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-900")}
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs text-gray-500">Type</label>
+                                        <label className={cn("text-xs", isDarkMode ? "text-gray-500" : "text-gray-600")}>Type</label>
                                         <select
                                             value={selectedNode.type}
                                             onChange={e => onUpdateNode({ ...selectedNode, type: e.target.value as any })}
-                                            className={cn("w-full text-xs p-2 rounded border bg-transparent", isDarkMode ? "border-white/10 text-gray-300" : "border-gray-200")}
+                                            className={cn("w-full text-xs p-2 rounded border bg-transparent", isDarkMode ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-900")}
                                         >
-                                            <option value="process">Process</option>
-                                            <option value="decision">Decision</option>
-                                            <option value="tool">Tool</option>
-                                            <option value="workflow">Workflow</option>
-                                            <option value="start">Start</option>
-                                            <option value="end">End</option>
+                                            <option value="process" className={isDarkMode ? "" : "text-black"}>Process</option>
+                                            <option value="decision" className={isDarkMode ? "" : "text-black"}>Decision</option>
+                                            <option value="tool" className={isDarkMode ? "" : "text-black"}>Tool</option>
+                                            <option value="workflow" className={isDarkMode ? "" : "text-black"}>Workflow</option>
+                                            <option value="start" className={isDarkMode ? "" : "text-black"}>Start</option>
+                                            <option value="end" className={isDarkMode ? "" : "text-black"}>End</option>
                                         </select>
                                     </div>
 
                                     {/* Type Specific Fields */}
                                     {selectedNode.type === 'tool' && (
-                                        <div className="p-3 bg-violet-500/10 rounded-lg space-y-2 border border-violet-500/20">
-                                            <label className="text-xs text-violet-300 font-medium">Tool Name</label>
+                                        <div className={cn(
+                                            "p-3 rounded-lg space-y-2 border",
+                                            isDarkMode ? "bg-violet-500/10 border-violet-500/20" : "bg-violet-50 border-violet-200"
+                                        )}>
+                                            <label className={cn("text-xs font-medium", isDarkMode ? "text-violet-300" : "text-violet-700")}>Tool Name</label>
                                             <input
                                                 value={selectedNode.toolName || ''}
                                                 onChange={e => onUpdateNode({ ...selectedNode, toolName: e.target.value })}
                                                 placeholder="e.g. get_balance"
-                                                className="w-full text-xs p-2 rounded border border-white/10 bg-black/20 text-white font-mono"
+                                                className={cn(
+                                                    "w-full text-xs p-2 rounded border font-mono",
+                                                    isDarkMode ? "border-white/10 bg-black/20 text-white" : "border-violet-200 bg-white text-violet-900"
+                                                )}
                                             />
                                         </div>
                                     )}
 
                                     {selectedNode.type === 'workflow' && (
-                                        <div className="p-3 bg-pink-500/10 rounded-lg space-y-2 border border-pink-500/20">
-                                            <label className="text-xs text-pink-300 font-medium">Target Workflow ID</label>
+                                        <div className={cn(
+                                            "p-3 rounded-lg space-y-2 border",
+                                            isDarkMode ? "bg-pink-500/10 border-pink-500/20" : "bg-pink-50 border-pink-200"
+                                        )}>
+                                            <label className={cn("text-xs font-medium", isDarkMode ? "text-pink-300" : "text-pink-700")}>Target Workflow ID</label>
                                             <input
                                                 value={selectedNode.workflowId || ''}
                                                 onChange={e => onUpdateNode({ ...selectedNode, workflowId: e.target.value })}
                                                 placeholder="e.g. banking_dispute"
-                                                className="w-full text-xs p-2 rounded border border-white/10 bg-black/20 text-white font-mono"
+                                                className={cn(
+                                                    "w-full text-xs p-2 rounded border font-mono",
+                                                    isDarkMode ? "border-white/10 bg-black/20 text-white" : "border-pink-200 bg-white text-pink-900"
+                                                )}
                                             />
                                         </div>
                                     )}
                                     {selectedNode.type === 'end' && (
-                                        <div className="p-3 bg-emerald-500/10 rounded-lg space-y-2 border border-emerald-500/20">
-                                            <label className="text-xs text-emerald-300 font-medium">Outcome</label>
+                                        <div className={cn(
+                                            "p-3 rounded-lg space-y-2 border",
+                                            isDarkMode ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200"
+                                        )}>
+                                            <label className={cn("text-xs font-medium", isDarkMode ? "text-emerald-300" : "text-emerald-700")}>Outcome</label>
                                             <input
                                                 value={selectedNode.outcome || ''}
                                                 onChange={e => onUpdateNode({ ...selectedNode, outcome: e.target.value })}
                                                 placeholder="e.g. RESOLVED"
-                                                className="w-full text-xs p-2 rounded border border-white/10 bg-black/20 text-white font-mono"
+                                                className={cn(
+                                                    "w-full text-xs p-2 rounded border font-mono",
+                                                    isDarkMode ? "border-white/10 bg-black/20 text-white" : "border-emerald-200 bg-white text-emerald-900"
+                                                )}
                                             />
                                         </div>
                                     )}

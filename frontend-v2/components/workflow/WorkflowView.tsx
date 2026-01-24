@@ -10,7 +10,10 @@ export default function WorkflowView() {
     const { isDarkMode, workflowState } = useApp();
 
     return (
-        <div className="flex flex-col h-full w-full bg-black/90 text-white">
+        <div className={cn(
+            "flex flex-col h-full w-full",
+            isDarkMode ? "bg-black/90 text-white" : "bg-gray-50 text-gray-900"
+        )}>
             {/* Header */}
             <div className={cn(
                 "flex items-center justify-between px-6 py-4 border-b shrink-0",
@@ -28,7 +31,10 @@ export default function WorkflowView() {
             </div>
 
             {/* Main Area */}
-            <div className="flex-1 w-full h-full overflow-hidden bg-black/90 relative">
+            <div className={cn(
+                "flex-1 w-full h-full overflow-hidden relative",
+                isDarkMode ? "bg-black/90" : "bg-slate-100"
+            )}>
                 <WorkflowDesigner />
             </div>
         </div>

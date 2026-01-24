@@ -58,13 +58,24 @@ export default function WorkflowGraph({
         const getNodeStyle = (node: WorkflowNode) => {
             if (node.id === selectedNodeId) return 'fill:#6366f1,stroke:#818cf8,stroke-width:3px,color:#fff';
 
-            switch (node.type) {
-                case 'start':
-                case 'end': return 'fill:#1f2937,stroke:#3b82f6,color:#fff';
-                case 'decision': return 'fill:#374151,stroke:#f59e0b,color:#fff';
-                case 'tool': return 'fill:#111827,stroke:#8b5cf6,color:#fff';
-                case 'workflow': return 'fill:#111827,stroke:#f43f5e,stroke-width:2px,color:#fff,stroke-dasharray: 5 5';
-                default: return 'fill:#1f2937,stroke:#4b5563,color:#9ca3af';
+            if (isDarkMode) {
+                switch (node.type) {
+                    case 'start':
+                    case 'end': return 'fill:#1f2937,stroke:#3b82f6,color:#fff';
+                    case 'decision': return 'fill:#374151,stroke:#f59e0b,color:#fff';
+                    case 'tool': return 'fill:#111827,stroke:#8b5cf6,color:#fff';
+                    case 'workflow': return 'fill:#111827,stroke:#f43f5e,stroke-width:2px,color:#fff,stroke-dasharray: 5 5';
+                    default: return 'fill:#1f2937,stroke:#4b5563,color:#9ca3af';
+                }
+            } else {
+                switch (node.type) {
+                    case 'start':
+                    case 'end': return 'fill:#f8fafc,stroke:#3b82f6,color:#1e293b';
+                    case 'decision': return 'fill:#fffbeb,stroke:#f59e0b,color:#451a03';
+                    case 'tool': return 'fill:#f5f3ff,stroke:#8b5cf6,color:#2e1065';
+                    case 'workflow': return 'fill:#fff1f2,stroke:#f43f5e,stroke-width:2px,color:#4c0519,stroke-dasharray: 5 5';
+                    default: return 'fill:#f1f5f9,stroke:#94a3b8,color:#475569';
+                }
             }
         };
 
@@ -152,7 +163,11 @@ export default function WorkflowGraph({
     return (
         <div
             ref={containerRef}
-            className={cn("w-full h-full overflow-hidden bg-black/20 relative cursor-grab active:cursor-grabbing", className)}
+            className={cn(
+                "w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing",
+                isDarkMode ? "bg-black/20" : "bg-white/40",
+                className
+            )}
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -160,15 +175,18 @@ export default function WorkflowGraph({
             onMouseLeave={handleMouseUp}
         >
             {/* Controls */}
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 bg-black/50 p-2 rounded-lg border border-white/10 backdrop-blur-sm">
-                <button onClick={() => setScale(s => Math.min(s + 0.2, 5))} className="p-1 hover:bg-white/10 rounded text-white">
+            <div className={cn(
+                "absolute top-4 right-4 z-10 flex flex-col gap-2 p-2 rounded-lg border backdrop-blur-sm",
+                isDarkMode ? "bg-black/50 border-white/10" : "bg-white/80 border-gray-200 shadow-sm"
+            )}>
+                <button onClick={() => setScale(s => Math.min(s + 0.2, 5))} className={cn("p-1 rounded", isDarkMode ? "hover:bg-white/10 text-white" : "hover:bg-gray-100 text-gray-700")}>
                     <Maximize className="w-4 h-4" />
                 </button>
-                <div className="text-xs text-center text-gray-400 font-mono">{Math.round(scale * 100)}%</div>
-                <button onClick={() => setScale(s => Math.max(0.2, s - 0.2))} className="p-1 hover:bg-white/10 rounded text-white">
+                <div className={cn("text-xs text-center font-mono", isDarkMode ? "text-gray-400" : "text-gray-500")}>{Math.round(scale * 100)}%</div>
+                <button onClick={() => setScale(s => Math.max(0.2, s - 0.2))} className={cn("p-1 rounded", isDarkMode ? "hover:bg-white/10 text-white" : "hover:bg-gray-100 text-gray-700")}>
                     <Minimize className="w-4 h-4" />
                 </button>
-                <button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); }} className="p-1 hover:bg-white/10 rounded text-white" title="Fit">
+                <button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); }} className={cn("p-1 rounded", isDarkMode ? "hover:bg-white/10 text-white" : "hover:bg-gray-100 text-gray-700")} title="Fit">
                     <Move className="w-4 h-4" />
                 </button>
             </div>
