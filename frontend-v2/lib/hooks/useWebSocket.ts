@@ -88,10 +88,17 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         }
     }, []);
 
+    const onOpenRef = useRef(onOpen);
+    const onCloseRef = useRef(onClose);
+    const onErrorRef = useRef(onError);
     const onMessageRef = useRef(onMessage);
+
     useEffect(() => {
+        onOpenRef.current = onOpen;
+        onCloseRef.current = onClose;
+        onErrorRef.current = onError;
         onMessageRef.current = onMessage;
-    }, [onMessage]);
+    }, [onOpen, onClose, onError, onMessage]);
 
     // Connect to WebSocket
     const connect = useCallback(() => {
@@ -113,14 +120,14 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
                 console.log('[WebSocket] Connected');
                 setStatus('connected');
                 reconnectAttemptsRef.current = 0;
-                onOpen?.();
+                onOpenRef.current?.();
             };
 
             ws.onclose = (event) => {
                 console.log('[WebSocket] Disconnected', event.code, event.reason);
                 setStatus('disconnected');
                 wsRef.current = null;
-                onClose?.();
+                onCloseRef.current?.();
 
                 // Auto-reconnect if not intentional close
                 if (!intentionalCloseRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -137,7 +144,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
 
             ws.onerror = (error) => {
                 console.error('[WebSocket] Error', error);
-                onError?.(error);
+                onErrorRef.current?.(error);
             };
 
             ws.onmessage = (event) => {
@@ -165,7 +172,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
             console.error('[WebSocket] Connection failed', error);
             setStatus('disconnected');
         }
-    }, [url, reconnectInterval, maxReconnectAttempts, onOpen, onClose, onError, onMessage]);
+    }, [url, reconnectInterval, maxReconnectAttempts]);
 
     // Disconnect from WebSocket
     const disconnect = useCallback(() => {

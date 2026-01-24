@@ -586,7 +586,7 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
 const PORT = 8080;
 
 const SONIC_PATH = '/sonic';
-const FRONTEND_DIR = path.join(__dirname, '../../frontend');
+const FRONTEND_DIR = path.join(__dirname, '../../frontend-v2/out');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
 const PROMPTS_DIR = path.join(__dirname, '../prompts');
 const PRESETS_FILE = path.join(__dirname, '../data/presets.json');

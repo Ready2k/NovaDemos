@@ -130,12 +130,13 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 
 ## 🏗️ Technical Architecture
 
-### Frontend (`/frontend`)
-- **Vanilla JavaScript**: No frameworks, minimal dependencies
-- **WebSocket Client**: Binary audio streaming
-- **Audio Processing**: PCM16 conversion, playback queue management
-- **Chart.js**: Sentiment visualization
-- **LocalStorage**: Settings persistence
+### Frontend (`/frontend-v2`)
+- **Next.js & React**: Modern component-based architecture
+- **TypeScript**: Type-safe frontend implementation
+- **WebSocket Client**: Binary audio streaming with custom hooks
+- **Tailwind CSS**: Modern utility-first styling
+- **Shadcn UI**: Accessible component library
+- **Recharts**: Advanced sentiment visualization
 
 ### Backend (`/backend`)
 - **TypeScript**: Type-safe server implementation
@@ -151,7 +152,7 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Metadata**: Descriptions, parameters, categories
 
 ### Workflows (`/workflows`)
-- **Visual Editor**: Drag-and-drop interface
+- **Visual Editor**: Integrated flow builder
 - **JSON Storage**: Workflow definitions per persona
 - **Dynamic Injection**: Automatic prompt enhancement
 - **Branching Logic**: Conditional flows based on user input
@@ -169,7 +170,15 @@ git clone <repository-url>
 cd Voice_S2S
 ```
 
-### 2. Install Backend Dependencies
+### 2. Install & Build Frontend
+```bash
+cd frontend-v2
+npm install
+npm run build
+cd ..
+```
+
+### 3. Install Backend Dependencies
 ```bash
 cd backend
 npm install
@@ -294,13 +303,13 @@ AI: "Based on your annual income of £45,000, you could borrow up to £202,500 (
 
 ```
 Voice_S2S/
-├── frontend/
-│   ├── index.html              # Main UI
-│   ├── main.js                 # WebSocket client & state management
-│   ├── audio.js                # Audio capture & playback
-│   ├── index.css               # Styling
-│   ├── workflow-editor.html    # Visual workflow builder
-│   └── workflow.html           # Workflow visualizer
+├── frontend-v2/
+│   ├── app/                    # Next.js App Router
+│   ├── components/             # React components
+│   ├── lib/                    # Utilities and hooks
+│   ├── public/                 # Static assets
+│   ├── next.config.ts          # Next.js configuration
+│   └── package.json
 ├── backend/
 │   ├── src/
 │   │   ├── server.ts           # WebSocket server
