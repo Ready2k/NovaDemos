@@ -125,7 +125,7 @@
     {
       "id": "handoff_fraud",
       "label": "Inform & Prepare Handoff\n(Fraud Route)",
-      "type": "end",
+      "type": "process",
       "outcome": "FRAUD_HANDOFF"
     },
     {

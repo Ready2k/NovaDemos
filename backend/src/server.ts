@@ -3337,6 +3337,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
 
             if (role === 'user') {
+                // NEW TURN START: Reset per-turn state
+                session.toolsCalledThisTurn = [];
+                (session as any).fillerTriggered = false;
+
                 // FILLER SYSTEM: Ignore hidden instructions from transcript
                 if (event.data.transcript && event.data.transcript.startsWith('[HIDDEN]')) {
                     console.log(`[Server] 🙈 Hiding system instruction from transcript: ${event.data.transcript}`);
@@ -4058,10 +4062,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 session.isIntercepting = false;
                 session.isInterrupted = false;
 
+                // Flag that we triggered a filler so we can delay the tool result if needed
+                (session as any).fillerTriggered = true;
+
                 // Fire and forget - don't await to avoid delaying the actual tool execution
                 if (session.sonicClient && session.sonicClient.getSessionId()) {
                     session.sonicClient.sendText(fillerInstruction).catch(e => console.error("Failed to send filler:", e));
                 }
+            } else {
+                (session as any).fillerTriggered = false;
             }
 
             // PHANTOM WATCHER: Track tool calls for this turn
@@ -4398,6 +4407,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         // Send the tool result back to Nova Sonic using the native tool result mechanism
                         if (session.sonicClient && session.sonicClient.getSessionId()) {
                             // Send RAW STRING to avoid JSON nesting confusion
+
+                            // RACE CONDITION FIX: If we triggered a filler ("Hmm..."), we must wait for it to be generated/played
+                            // otherwise the tool result will arrive too fast and potentially be ignored or interrupt the filler.
+                            if ((session as any).fillerTriggered) {
+                                console.log('[Server] 🛑 Filler active. Delaying tool result by 1500ms to allow filler audio to start...');
+                                await new Promise(resolve => setTimeout(resolve, 1500));
+                                (session as any).fillerTriggered = false;
+                            }
+
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,
                                 cleanResult,
