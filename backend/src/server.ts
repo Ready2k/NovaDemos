@@ -194,29 +194,22 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     let bestMatchLength = 0;
 
     for (const prevResponse of previousResponses) {
-        if (prevResponse.length < 5) continue; // Skip very short previous messages
+        if (!prevResponse || prevResponse.length < 10) continue; // Skip very short previous messages
 
-        // Strategy 1: strict inclusion (handles "Hello" vs "ello" or prepended noise)
-        // Check if prevResponse is contained in fullResponse near the start
+        // Strategy 1: strict inclusion at the start
         const idx = fullResponse.indexOf(prevResponse);
-        if (idx !== -1 && idx < 15) { // Allow up to 15 chars of noise/prefix (e.g. "Sure. " + repeat)
+        if (idx !== -1 && idx < 10) {
             const matchEnd = idx + prevResponse.length;
             if (prevResponse.length > longestMatch.length) {
                 longestMatch = fullResponse.substring(idx, matchEnd);
                 bestMatchLength = matchEnd;
-                continue;
             }
         }
 
-        // Strategy 2: Fuzzy prefix matching (handles truncation like prev="Hello", full="ello")
-        // Check if fullResponse is a substring of prevResponse (at the end of prevResponse)
-        // OR common prefix logic (existing)
-
-        // Existing Fuzzy Prefix Logic (robust against suffix addition, but sensitive to start)
+        // Strategy 2: Fuzzy prefix matching
         let commonLength = 0;
         const minLength = Math.min(fullResponse.length, prevResponse.length);
 
-        // Try matching with small offsets (0, 1, 2) to handle dropped startup chars
         for (let offset = 0; offset < 3; offset++) {
             let currentCommon = 0;
             for (let i = 0; i < minLength - offset; i++) {
@@ -227,21 +220,13 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
                 }
             }
 
-            // If we matched a significant portion
-            if (currentCommon > 20 && currentCommon > commonLength) {
-                // If checking with offset (full="ello", prev="Hello"), we matched "ello"
-                // The match in fullResponse starts at 0.
+            if (currentCommon > 25 && currentCommon > commonLength) {
                 commonLength = currentCommon;
             }
-
-            // Also check reverse offset (full="Hello", prev="ello") - covered by Strategy 1 usually
-            // But Strategy 1 is exact match. If full="Hello world", prev="ello", Strategy 1 fails.
-            // But "ello" is in "Hello world" at index 1. Strategy 1 covers it.
         }
 
-        // If we found a substantial common prefix (at least 30 characters)
         if (commonLength > 30 && commonLength > bestMatchLength) {
-            longestMatch = fullResponse.substring(0, commonLength); // Approximation
+            longestMatch = fullResponse.substring(0, commonLength);
             bestMatchLength = commonLength;
         }
     }
@@ -249,6 +234,16 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     // If we found a match, extract only the new content
     if (bestMatchLength > 0) {
         const newContent = fullResponse.substring(bestMatchLength).trim();
+
+        // SAFETY CHECK: If newContent is a fragment (less than 15% of original OR very short)
+        // and doesn't look like a real sentence start, return full response.
+        // This prevents "to proceed" type bugs.
+        if (newContent.length < 10 || (newContent.length < fullResponse.length * 0.15)) {
+            if (newContent.match(/^[a-z]/)) { // Starts with lowercase fragment
+                return fullResponse;
+            }
+        }
+
         logDebug(`[ResponseParser] Extracted new content from accumulated response:`);
         logDebug(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
         logDebug(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
@@ -258,6 +253,7 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
 
     return fullResponse;
 }
+
 
 /**
  * Remove internal duplication within a single response
@@ -2993,7 +2989,7 @@ server.listen(PORT, '0.0.0.0', () => {
 /**
  * Handle events from Nova Sonic and forward to WebSocket client
  */
-// --- Text Cleaning Helper for Nova Sonic ---
+// --- Text Cleaning Helper for Nova Sonic (Input to TTS/Model) ---
 function cleanTextForSonic(text: string): string {
     if (!text || typeof text !== 'string') return text;
 
@@ -3020,6 +3016,59 @@ function cleanTextForSonic(text: string): string {
 
     return clean;
 }
+
+/**
+ * Clean assistant transcripts for display in the UI.
+ * Handles stripping hidden tags, fixing punctuation spacing, and cleaning up brackets.
+ */
+function cleanAssistantDisplay(text: string): string {
+    if (!text) return text;
+
+    let clean = text;
+
+    // 1. Remove all specific bracketed tags but keep contents of [Read Digits]
+    clean = clean.replace(/\[STEP:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[DIALECT:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[SENTIMENT:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[TRANSLATION:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[SYSTEM_INJECTION:[^\]]*\]\s*/gi, '');
+
+    // 2. Extract contents of [Read Digits: ...] or just [1 2 3]
+    clean = clean.replace(/\[Read\s+Digits:\s*([^\]]+)\]/gi, '$1');
+
+    // 3. Remove any other [TAG: ...] or [TAG] but be careful not to strip legitimate markdown/UI elements
+    // We only strip tags that are all caps and likely internal.
+    clean = clean.replace(/\[[A-Z0-9_\s]+\s*(?::\s*[^\]]*)?\]/g, '');
+
+    // 4. Fix missing spaces after punctuation (common after tag stripping)
+    // Add space after . ! ? if followed by a letter or number, but NOT for decimals
+    clean = clean.replace(/([.!?])([a-zA-Z0-9])/g, '$1 $2');
+
+    // 5. Ensure space between words and numbers (common after stripping [Read Digits])
+    clean = clean.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+    clean = clean.replace(/(\d)([a-zA-Z])/g, '$1 $2');
+
+    // 6. Clean up stray brackets and punctuation
+    clean = clean.replace(/(\d)\]/g, '$1'); // Fix "12345678]"
+    clean = clean.replace(/\[(?=\s*\d)/g, ''); // Fix "[ 123"
+    clean = clean.replace(/\]\./g, '.'); // Fix "]."
+    clean = clean.replace(/\]\s*([a-zA-Z0-9])/g, ' $1'); // Fix "]word" or "]123"
+
+    // 7. Formatting: Newlines and collapsing spaces
+    clean = clean.replace(/[ \t]+/g, ' '); // Collapse horizontal whitespace
+    clean = clean.replace(/\n\s*\n/g, '\n\n'); // Normalize double newlines
+
+    // 8. Final trim
+    clean = clean.trim();
+
+    // Ensure first letter is capitalized if it's a sentence
+    if (clean.length > 2 && /^[a-z]/.test(clean)) {
+        clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+    }
+
+    return clean;
+}
+
 
 // --- User Transcript Formatting Helper ---
 function formatUserTranscript(text: string): string {
@@ -3800,12 +3849,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 if (displayText) {
-                    // Remove workflow step tags from user-visible text
-                    displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
-
-                    // Remove DIALECT tag from displayText (don't show to user)
-                    displayText = displayText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]\s*/gi, '').trim();
-
+                    // CRITICAL: Apply assistant display cleaning early
+                    if (role === 'assistant') {
+                        displayText = cleanAssistantDisplay(displayText);
+                    } else {
+                        // For user, still remove some technical tags if present
+                        displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
+                        displayText = displayText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]\s*/gi, '').trim();
+                    }
 
                     // --- HEURISTIC INTERCEPTOR (Updated for AgentCore Gateway) ---
                     // Matches: XML hallucinations <tool_ call...> ONLY.
@@ -4051,27 +4102,28 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
 
-            // FILLER WORD SYSTEM: Inject human-sounding filler while waiting
-            // We only do this for the FIRST tool call in a turn to avoid spamming if multiple tools are called quickly
+            // FILLER WORD SYSTEM: DISABLED (Too slow/laggy)
+            // We rely on the model's "Latched Audio" (instructions to say "Let me check..." BEFORE tool call)
+            // This is zero-latency compared to server-side injection.
+
+            /* 
             if (!session.toolsCalledThisTurn || session.toolsCalledThisTurn.length === 0) {
                 const fillerPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
                 const fillerInstruction = `[HIDDEN] (System Instruction) Please say exactly this phrase naturally to fill time: "${fillerPhrase}"`;
                 console.log(`[Server] 💉 Injecting filler instruction: "${fillerInstruction}"`);
 
-                // Ensure audio is NOT blocked
                 session.isIntercepting = false;
                 session.isInterrupted = false;
-
-                // Flag that we triggered a filler so we can delay the tool result if needed
                 (session as any).fillerTriggered = true;
 
-                // Fire and forget - don't await to avoid delaying the actual tool execution
                 if (session.sonicClient && session.sonicClient.getSessionId()) {
                     session.sonicClient.sendText(fillerInstruction).catch(e => console.error("Failed to send filler:", e));
                 }
             } else {
                 (session as any).fillerTriggered = false;
             }
+            */
+            (session as any).fillerTriggered = false; // Always false now
 
             // PHANTOM WATCHER: Track tool calls for this turn
             if (!session.toolsCalledThisTurn) {
@@ -4408,13 +4460,13 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         if (session.sonicClient && session.sonicClient.getSessionId()) {
                             // Send RAW STRING to avoid JSON nesting confusion
 
-                            // RACE CONDITION FIX: If we triggered a filler ("Hmm..."), we must wait for it to be generated/played
-                            // otherwise the tool result will arrive too fast and potentially be ignored or interrupt the filler.
-                            if ((session as any).fillerTriggered) {
-                                console.log('[Server] 🛑 Filler active. Delaying tool result by 1500ms to allow filler audio to start...');
-                                await new Promise(resolve => setTimeout(resolve, 1500));
-                                (session as any).fillerTriggered = false;
-                            }
+                            // RACE CONDITION FIX: "Smart Delay"
+                            // We wait a short 500ms to allow any "Latched Audio" (e.g. "Let me check...") 
+                            // to start playing on the client. If we send the tool result too fast, 
+                            // it might cut off that audio or arrive before the client is ready.
+                            // 500ms is short enough to feel "snappy" but long enough to cover network jitter.
+                            console.log('[Server] ⏱️ Smart Delay: Waiting 500ms before sending tool result...');
+                            await new Promise(resolve => setTimeout(resolve, 500));
 
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,
