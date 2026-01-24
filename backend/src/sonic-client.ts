@@ -62,6 +62,10 @@ export class SonicClient {
     private isTurnComplete: boolean = false; // Track if the previous turn ended
     private lastUserTranscript: string = ''; // Track last user input for context
 
+    // Auto-Nudge State
+    private hasCommittedToTool: boolean = false;
+    private hasCalledTool: boolean = false;
+
     // Langfuse Tracing
     private langfuse: Langfuse;
     private trace: LangfuseTraceClient | null = null;
@@ -83,6 +87,10 @@ export class SonicClient {
     private toolResultQueue: any[] = [];
     private streamController: any = null;
     private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] } = {};
+
+    // Lifecycle Synchronization
+    private inputStreamFinished: Promise<void> | null = null;
+    private resolveInputStreamFinished: (() => void) | null = null;
 
     // 100ms of silence (16kHz * 0.1s * 2 bytes/sample = 3200 bytes)
     private readonly SILENCE_FRAME = Buffer.alloc(3200, 0);
@@ -248,6 +256,11 @@ export class SonicClient {
         }
 
         try {
+            // Initialize lifecycle promise
+            this.inputStreamFinished = new Promise<void>((resolve) => {
+                this.resolveInputStreamFinished = resolve;
+            });
+
             // Create async generator for input stream
             this.inputStream = this.createInputStream();
 
@@ -516,11 +529,8 @@ export class SonicClient {
                 console.log('[SonicClient] Processing tool result:', resultData.toolUseId);
                 console.log('[SonicClient] Tool result data:', JSON.stringify(resultData.result));
 
-                // OPTIMIZED APPROACH: Send tool result as system message to Nova Sonic
-                const resultText = typeof resultData.result === 'string' ? resultData.result : JSON.stringify(resultData.result);
-                console.log(`[SonicClient] Tool result text being sent to Nova Sonic:`, resultText);
-                console.log(`[SonicClient] Tool result text length:`, resultText.length);
-                console.log(`[SonicClient] Tool result text type:`, typeof resultText);
+                // BACK TO BASICS: The "native" toolResult event is unstable/undocumented for Nova Sonic.
+                // We fallback to injecting results as USER TEXT but with system-style formatting.
 
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
@@ -534,15 +544,12 @@ export class SonicClient {
                     };
                     yield { chunk: { bytes: Buffer.from(JSON.stringify(audioEndEvent)) } };
                     this.currentContentName = undefined;
-                    console.log('[SonicClient] Ended audio content before tool result');
+                    // Small delay to ensure model processes the end
+                    await new Promise(resolve => setTimeout(resolve, 20));
                 }
 
-                // BACK TO BASICS: The "native" toolResult event is unstable/undocumented for Nova Sonic.
-                // The historically working solution (commit f4e692e) injected results as USER TEXT.
-                // This reliably provides the context to the model.
-
                 // 2. Send Tool Result as Text Content (Simulated User Message)
-                const textContentName = `tool-result-${Date.now()}`;
+                const textContentName = `tool-result-${resultData.toolUseId}`;
                 const textStartEvent = {
                     event: {
                         contentStart: {
@@ -563,12 +570,14 @@ export class SonicClient {
                     ? resultData.result
                     : JSON.stringify(resultData.result);
 
+                const injectedContent = `[SYSTEM] Tool '${resultData.toolUseId}' output:\n${resultString}\n[INSTRUCTION] user has NOT spoken. Proceed with workflow based on this tool result immediately.`;
+
                 const textInputEvent = {
                     event: {
                         textInput: {
                             promptName: promptName,
                             contentName: textContentName,
-                            content: `Tool '${resultData.toolUseId}' result: ${resultString}`
+                            content: injectedContent
                         }
                     }
                 };
@@ -587,6 +596,47 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textEnd)) } };
                 console.log('[SonicClient] Text-based tool result sequence completed');
+
+                // 4. Send Silent Audio (Required by Nova Sonic if no other audio is present)
+                if (!this.currentContentName) {
+                    const silenceContentName = `audio-silence-tool-${Date.now()}`;
+                    this.currentContentName = silenceContentName;
+
+                    // Start Silence Audio
+                    const silenceStartEvent = {
+                        event: {
+                            contentStart: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                type: "AUDIO",
+                                interactive: true,
+                                role: "USER",
+                                audioInputConfiguration: {
+                                    mediaType: "audio/lpcm",
+                                    sampleRateHertz: 16000,
+                                    sampleSizeBits: 16,
+                                    channelCount: 1,
+                                    audioType: "SPEECH",
+                                    encoding: "base64"
+                                }
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
+
+                    // Send Silence Data
+                    const silenceInputEvent = {
+                        event: {
+                            audioInput: {
+                                promptName: promptName,
+                                contentName: silenceContentName,
+                                content: this.SILENCE_FRAME.toString('base64')
+                            }
+                        }
+                    };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
+                    console.log('[SonicClient] Primed silence after tool result:', silenceContentName);
+                }
             }
 
             // Check for text input first (priority)
@@ -781,9 +831,10 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(contentEndEvent)) } };
                 console.log('[SonicClient] Sent UserAudioContentEndEvent');
+                await new Promise(resolve => setTimeout(resolve, 50)); // Buffer safety
             }
 
-            // 9. Prompt End
+            // 9. PromptEnd
             const promptEndEvent = {
                 event: {
                     promptEnd: {
@@ -793,6 +844,7 @@ export class SonicClient {
             };
             yield { chunk: { bytes: Buffer.from(JSON.stringify(promptEndEvent)) } };
             console.log('[SonicClient] Sent PromptEndEvent');
+            await new Promise(resolve => setTimeout(resolve, 50)); // Buffer safety
 
             // 10. Session End
             const sessionEndEvent = {
@@ -805,6 +857,11 @@ export class SonicClient {
         }
 
         console.log('[SonicClient] Input stream generator ended');
+
+        // Signal completion
+        if (this.resolveInputStreamFinished) {
+            this.resolveInputStreamFinished();
+        }
     }
 
     /**
@@ -906,7 +963,10 @@ export class SonicClient {
         const fillerPhrases = ["Let me check that for you", "I'm still working on that", "Just a moment more"];
         const isFiller = fillerPhrases.some(phrase => text.includes(phrase));
 
-        if (!isFiller) {
+        // Check for System Injection bypass
+        const isSystemInjection = text.includes("[SYSTEM_INJECTION]");
+
+        if (!isFiller && !isSystemInjection) {
             // HALLUCINATION BLOCKER: Check for model self-interruption JSON
             if (text.includes('"interrupted"') && text.includes('true')) {
                 console.warn(`[SonicClient] Ignoring hallucinated interruption signal: "${text}"`);
@@ -1006,6 +1066,8 @@ export class SonicClient {
                             console.log(`[SonicClient] Langfuse: Tracked tool invocation for ${tu.toolName}`);
                         }
 
+                        this.hasCalledTool = true; // Mark tool as called for Auto-Nudge logic
+
                         this.eventCallback?.({
                             type: 'toolUse',
                             data: tu
@@ -1058,6 +1120,10 @@ export class SonicClient {
 
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
+
+                            // Reset Auto-Nudge State
+                            this.hasCommittedToTool = false;
+                            this.hasCalledTool = false;
                         } else if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
                             // If we are NOT resetting, but getting new text, log why
                             console.log(`[SonicClient] EXPLICITLY NOT RESETTING transcript. Appending new TEXT block to existing turn.`);
@@ -1186,6 +1252,19 @@ export class SonicClient {
                                     stage: stage // Pass stage (e.g. SPECULATIVE)
                                 },
                             });
+
+                            // AUTO-NUDGE DETECTION: Check for commitment phrases
+                            if (!this.hasCommittedToTool && this.currentRole === 'ASSISTANT') {
+                                const lowerText = this.currentTurnTranscript.toLowerCase();
+                                const commitmentPhrases = [
+                                    "check", "verify", "look up", "checking", "verifying", "accessing",
+                                    "searching", "moment", "bear with me", "wait", "pull up"
+                                ];
+                                if (commitmentPhrases.some(phrase => lowerText.includes(phrase))) {
+                                    this.hasCommittedToTool = true;
+                                    console.log(`[SonicClient] Auto-Nudge: Detected commitment phrase. Watching for tool call...`);
+                                }
+                            }
                         }
                     }
 
@@ -1197,6 +1276,20 @@ export class SonicClient {
                             type: 'contentEnd',
                             data: eventData.contentEnd
                         });
+
+                        // AUTO-NUDGE EXECUTION
+                        // If model stopped speaking (END_TURN or PARTIAL_TURN) and promised a tool but didn't call it
+                        if ((eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'PARTIAL_TURN') &&
+                            this.currentRole === 'ASSISTANT' &&
+                            this.hasCommittedToTool &&
+                            !this.hasCalledTool) {
+
+                            console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
+                            this.hasCommittedToTool = false; // Prevent double trigger
+
+                            // Programmatic Prompt Injection
+                            this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
+                        }
 
                         // Send final transcript when turn ends
                         if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
@@ -1433,11 +1526,20 @@ export class SonicClient {
             console.log(`[SonicClient] ✓ Finalized Langfuse trace output`);
         }
 
+        // Wait for generator to finish yielding final events (SessionEnd)
+        if (this.inputStreamFinished) {
+            console.log('[SonicClient] Waiting for input stream to finish...');
+            const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2000));
+            await Promise.race([this.inputStreamFinished, timeoutPromise]);
+            console.log('[SonicClient] Input stream finished (or timed out)');
+        }
+
         // Clear input queue
         this.inputQueue = [];
 
-        // Give streams time to close gracefully
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Give streams extra time to flush buffers to network
+        // INCREASED TIMEOUT: AWS SDK buffering can be aggressive
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Reset state
         this.isProcessing = false;

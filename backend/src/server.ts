@@ -194,28 +194,54 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     let bestMatchLength = 0;
 
     for (const prevResponse of previousResponses) {
-        // First try exact match
-        if (fullResponse.startsWith(prevResponse) && prevResponse.length > longestMatch.length) {
-            longestMatch = prevResponse;
-            bestMatchLength = prevResponse.length;
-            continue;
-        }
+        if (prevResponse.length < 5) continue; // Skip very short previous messages
 
-        // Try fuzzy matching - find the longest common prefix
-        let commonLength = 0;
-        const minLength = Math.min(fullResponse.length, prevResponse.length);
-
-        for (let i = 0; i < minLength; i++) {
-            if (fullResponse[i] === prevResponse[i]) {
-                commonLength = i + 1;
-            } else {
-                break;
+        // Strategy 1: strict inclusion (handles "Hello" vs "ello" or prepended noise)
+        // Check if prevResponse is contained in fullResponse near the start
+        const idx = fullResponse.indexOf(prevResponse);
+        if (idx !== -1 && idx < 15) { // Allow up to 15 chars of noise/prefix (e.g. "Sure. " + repeat)
+            const matchEnd = idx + prevResponse.length;
+            if (prevResponse.length > longestMatch.length) {
+                longestMatch = fullResponse.substring(idx, matchEnd);
+                bestMatchLength = matchEnd;
+                continue;
             }
         }
 
-        // If we found a substantial common prefix (at least 50 characters)
-        if (commonLength > 50 && commonLength > bestMatchLength) {
-            longestMatch = fullResponse.substring(0, commonLength);
+        // Strategy 2: Fuzzy prefix matching (handles truncation like prev="Hello", full="ello")
+        // Check if fullResponse is a substring of prevResponse (at the end of prevResponse)
+        // OR common prefix logic (existing)
+
+        // Existing Fuzzy Prefix Logic (robust against suffix addition, but sensitive to start)
+        let commonLength = 0;
+        const minLength = Math.min(fullResponse.length, prevResponse.length);
+
+        // Try matching with small offsets (0, 1, 2) to handle dropped startup chars
+        for (let offset = 0; offset < 3; offset++) {
+            let currentCommon = 0;
+            for (let i = 0; i < minLength - offset; i++) {
+                if (fullResponse[i] === prevResponse[i + offset]) {
+                    currentCommon++;
+                } else {
+                    break;
+                }
+            }
+
+            // If we matched a significant portion
+            if (currentCommon > 20 && currentCommon > commonLength) {
+                // If checking with offset (full="ello", prev="Hello"), we matched "ello"
+                // The match in fullResponse starts at 0.
+                commonLength = currentCommon;
+            }
+
+            // Also check reverse offset (full="Hello", prev="ello") - covered by Strategy 1 usually
+            // But Strategy 1 is exact match. If full="Hello world", prev="ello", Strategy 1 fails.
+            // But "ello" is in "Hello world" at index 1. Strategy 1 covers it.
+        }
+
+        // If we found a substantial common prefix (at least 30 characters)
+        if (commonLength > 30 && commonLength > bestMatchLength) {
+            longestMatch = fullResponse.substring(0, commonLength); // Approximation
             bestMatchLength = commonLength;
         }
     }
@@ -663,141 +689,158 @@ async function loadPrompt(filename: string): Promise<string> {
 // Cache for prompts to avoid expensive Langfuse sync on every request
 let promptsCache: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] | null = null;
 let lastPromptsSyncTime = 0;
+let promptsSyncPromise: Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[]> | null = null;
 const PROMPTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 async function listPrompts(forceRefresh = false): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[]> {
     const now = Date.now();
+
+    // 1. Return cached data if valid
     if (!forceRefresh && promptsCache && (now - lastPromptsSyncTime < PROMPTS_CACHE_TTL)) {
         // console.log('[Server] Returning cached prompts');
         return promptsCache;
     }
 
+    // 2. Return active promise if already syncing (Deduplication)
+    if (promptsSyncPromise) {
+        console.log('[Server] Sync already in progress, attaching to existing promise...');
+        return promptsSyncPromise;
+    }
+
     console.log('[Server] Syncing prompts (Source: Langfuse + Local)...');
 
-    try {
-        // 1. Get Prompts from Langfuse
-        const cloudPrompts = new Set<string>();
+    // 3. Start new sync and store promise
+    promptsSyncPromise = (async () => {
         try {
-            // @ts-ignore - accessing internal API if needed or public API
-            const response = await langfuse.api.promptsList({ limit: 100 });
-            // response.data is array of prompts with .name
-            if (response && response.data) {
-                response.data.forEach((p: any) => cloudPrompts.add(p.name));
+            // 1. Get Prompts from Langfuse
+            const cloudPrompts = new Set<string>();
+            try {
+                // @ts-ignore - accessing internal API if needed or public API
+                const response = await langfuse.api.promptsList({ limit: 100 });
+                // response.data is array of prompts with .name
+                if (response && response.data) {
+                    response.data.forEach((p: any) => cloudPrompts.add(p.name));
+                }
+            } catch (e) {
+                console.warn('[Server] Failed to list prompts from Langfuse API, source "cloud" unavailable:', e);
             }
-        } catch (e) {
-            console.warn('[Server] Failed to list prompts from Langfuse API, source "cloud" unavailable:', e);
-        }
 
-        // 2. Get Local Files
-        const localFiles = new Set<string>();
-        try {
-            if (!fs.existsSync(PROMPTS_DIR)) {
-                fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+            // 2. Get Local Files
+            const localFiles = new Set<string>();
+            try {
+                if (!fs.existsSync(PROMPTS_DIR)) {
+                    fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+                }
+                const files = fs.readdirSync(PROMPTS_DIR);
+                files.filter(f => f.endsWith('.txt')).forEach(f => localFiles.add(f.replace('.txt', '')));
+            } catch (e) {
+                console.error('[Server] Failed to read local prompts directory:', e);
             }
-            const files = fs.readdirSync(PROMPTS_DIR);
-            files.filter(f => f.endsWith('.txt')).forEach(f => localFiles.add(f.replace('.txt', '')));
-        } catch (e) {
-            console.error('[Server] Failed to read local prompts directory:', e);
-        }
 
-        // 3. Union of all prompt names
-        const allNames = Array.from(new Set([...cloudPrompts, ...localFiles]));
-        const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] = [];
+            // 3. Union of all prompt names
+            const allNames = Array.from(new Set([...cloudPrompts, ...localFiles]));
+            const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] = [];
 
-        // Fetch in batches to avoid overwhelming the Langfuse API/Network
-        const BATCH_SIZE = 5;
-        for (let i = 0; i < allNames.length; i += BATCH_SIZE) {
-            const batch = allNames.slice(i, i + BATCH_SIZE);
-            console.log(`[Server] Syncing prompts batch ${i / BATCH_SIZE + 1} (${batch.length} items)...`);
+            // Fetch in batches to avoid overwhelming the Langfuse API/Network
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < allNames.length; i += BATCH_SIZE) {
+                const batch = allNames.slice(i, i + BATCH_SIZE);
+                console.log(`[Server] Syncing prompts batch ${i / BATCH_SIZE + 1} (${batch.length} items)...`);
 
-            const batchResults = await Promise.all(
-                batch.map(async promptName => {
-                    let displayName = promptName;
-                    const filename = promptName + '.txt';
+                const batchResults = await Promise.all(
+                    batch.map(async promptName => {
+                        let displayName = promptName;
+                        const filename = promptName + '.txt';
 
-                    // Formatting names
-                    if (displayName.startsWith('core-')) {
-                        displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
-                    } else if (displayName.startsWith('persona-')) {
-                        displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
-                    } else {
-                        displayName = displayName.replace(/_/g, ' ');
-                    }
-                    displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+                        // Formatting names
+                        if (displayName.startsWith('core-')) {
+                            displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
+                        } else if (displayName.startsWith('persona-')) {
+                            displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
+                        } else {
+                            displayName = displayName.replace(/_/g, ' ');
+                        }
+                        displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
 
-                    let source: 'langfuse' | 'local' = 'local';
-                    let content = '';
-                    let config: any = {};
+                        let source: 'langfuse' | 'local' = 'local';
+                        let content = '';
+                        let config: any = {};
 
-                    // Try to fetch from Langfuse first
-                    try {
-                        if (cloudPrompts.has(promptName)) {
-                            const prompt = await langfuse.getPrompt(promptName);
-                            config = (prompt as any).config || {};
+                        // Try to fetch from Langfuse first
+                        try {
+                            if (cloudPrompts.has(promptName)) {
+                                const prompt = await langfuse.getPrompt(promptName);
+                                config = (prompt as any).config || {};
 
-                            // Extract content based on prompt type
-                            if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
-                                const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
-                                content = systemMsg?.content || '';
+                                // Extract content based on prompt type
+                                if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
+                                    const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
+                                    content = systemMsg?.content || '';
+                                } else {
+                                    content = prompt.compile();
+                                }
+                                source = 'langfuse';
+
+                                // Update local cache
+                                try {
+                                    const localPath = path.join(PROMPTS_DIR, filename);
+                                    fs.writeFileSync(localPath, content.trim());
+                                } catch (writeErr) {
+                                    console.error(`[Server] Failed to cache prompt ${promptName}:`, writeErr);
+                                }
                             } else {
-                                content = prompt.compile();
+                                throw new Error("Local only");
                             }
-                            source = 'langfuse';
-
-                            // Update local cache
+                        } catch (err) {
+                            // Fallback to local file if Langfuse fails or is skipped
+                            source = 'local';
                             try {
                                 const localPath = path.join(PROMPTS_DIR, filename);
-                                fs.writeFileSync(localPath, content.trim());
-                            } catch (writeErr) {
-                                console.error(`[Server] Failed to cache prompt ${promptName}:`, writeErr);
-                            }
-                        } else {
-                            throw new Error("Local only");
-                        }
-                    } catch (err) {
-                        // Fallback to local file if Langfuse fails or is skipped
-                        source = 'local';
-                        try {
-                            const localPath = path.join(PROMPTS_DIR, filename);
-                            if (fs.existsSync(localPath)) {
-                                let rawContent = fs.readFileSync(localPath, 'utf-8');
-                                // Parse Config if present
-                                const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
-                                if (parts.length > 1) {
-                                    content = parts[0].trim();
-                                    try {
-                                        config = JSON.parse(parts[1].trim());
-                                    } catch (e) {
-                                        console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
+                                if (fs.existsSync(localPath)) {
+                                    let rawContent = fs.readFileSync(localPath, 'utf-8');
+                                    // Parse Config if present
+                                    const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
+                                    if (parts.length > 1) {
+                                        content = parts[0].trim();
+                                        try {
+                                            config = JSON.parse(parts[1].trim());
+                                        } catch (e) {
+                                            console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
+                                        }
+                                    } else {
+                                        content = rawContent.trim();
                                     }
-                                } else {
-                                    content = rawContent.trim();
                                 }
+                            } catch (localErr) {
+                                console.error(`[Server] Failed to load local backup for ${promptName}:`, localErr);
                             }
-                        } catch (localErr) {
-                            console.error(`[Server] Failed to load local backup for ${promptName}:`, localErr);
                         }
-                    }
 
-                    if (!content) return null;
-                    return { id: promptName, name: displayName, content, source, config };
-                })
-            );
+                        if (!content) return null;
+                        return { id: promptName, name: displayName, content, source, config };
+                    })
+                );
 
-            // @ts-ignore - filter out nulls
-            promptsWithSource.push(...batchResults.filter(p => p !== null));
+                // @ts-ignore - filter out nulls
+                promptsWithSource.push(...batchResults.filter(p => p !== null));
+            }
+
+            // Update Cache
+            promptsCache = promptsWithSource;
+            lastPromptsSyncTime = Date.now();
+            console.log(`[Server] Prompt sync complete. Cached ${promptsWithSource.length} prompts.`);
+
+            return promptsWithSource;
+        } catch (e) {
+            console.error('[Server] listPrompts failed:', e);
+            return [];
+        } finally {
+            // Clear the promise so next request can start a new sync if needed
+            promptsSyncPromise = null;
         }
+    })();
 
-        // Update Cache
-        promptsCache = promptsWithSource;
-        lastPromptsSyncTime = Date.now();
-        console.log(`[Server] Prompt sync complete. Cached ${promptsWithSource.length} prompts.`);
-
-        return promptsWithSource;
-    } catch (e) {
-        console.error('[Server] listPrompts failed:', e);
-        return [];
-    }
+    return promptsSyncPromise;
 }
 
 function loadTools(): any[] {
@@ -2433,7 +2476,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
                             const basePrompt = parsed.config.systemPrompt || "";
                             // Stronger header
-                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
+                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n\n*** IMMEDIATE TOOL EXECUTION PROTOCOL ***\n- When a step requires a tool (e.g. 'perform_idv_check'), you must call it IN THE SAME TURN as your text response.\n- DO NOT say \"I will check\" and then stop. That is a CRITICAL FAILURE.\n- Correct Pattern: \"Let me check that for you.\" -> [TOOL_CALL]\n- Force yourself to generate the tool call block immediately after the sentence end punctuation.\n\n";
                             parsed.config.systemPrompt = basePrompt + strictHeader + workflowSystemPrompt;
                             console.log(`[WorkflowDebug] FINAL SYSTEM PROMPT LENGTH: ${parsed.config.systemPrompt.length}`); // DEBUG
                         } else {
@@ -2946,7 +2989,7 @@ function cleanTextForSonic(text: string): string {
     // First, handle bold and italic (preserve the text, remove markers)
     clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');  // **text** -> text
     clean = clean.replace(/\*([^*]+)\*/g, '$1');      // *text* -> text
-    clean = clean.replace(/_([^_]+)_/g, '$1');        // _text_ -> text
+    // clean = clean.replace(/_([^_]+)_/g, '$1');        // _text_ -> text (Disabled to protect JSON keys)
     // Remove remaining markdown (headers, code blocks)
     clean = clean.replace(/[#`]/g, '');
     // Collapse newlines

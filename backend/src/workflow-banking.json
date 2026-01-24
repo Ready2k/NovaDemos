@@ -18,12 +18,12 @@
     },
     {
       "id": "check_auth",
-      "label": "Is 'auth_status' VERIFIED?",
+      "label": "Is 'auth_status' VERIFIED? If NO, GoTo [request_details] IMMEDIATELY. Do not speak in this state.",
       "type": "decision"
     },
     {
       "id": "request_details",
-      "label": "Request Details & Call\n'perform_idv_check'",
+      "label": "Identity Verification. IF you have Account & Sort Code -> CALL 'perform_idv_check' NOW. IF NOT -> Ask for them.",
       "type": "tool",
       "toolName": "perform_idv_check"
     },
@@ -59,6 +59,17 @@
       "id": "manage_dispute",
       "label": "Manage Existing Dispute\n(Check Cooling-Off & Status)",
       "type": "process"
+    },
+    {
+      "id": "route_service",
+      "label": "Determine Intent: If asking for Balance/Funds -> 'Balance'. If asking for Transactions/Statement -> 'Transactions'.",
+      "type": "decision"
+    },
+    {
+      "id": "show_balance",
+      "label": "Call 'agentcore_balance'. Then ask if they need anything else.",
+      "type": "tool",
+      "toolName": "agentcore_balance"
     },
     {
       "id": "check_cooling",
@@ -223,8 +234,22 @@
     },
     {
       "from": "check_dispute",
-      "to": "query_txn",
+      "to": "route_service",
       "label": "No"
+    },
+    {
+      "from": "route_service",
+      "to": "show_balance",
+      "label": "Balance"
+    },
+    {
+      "from": "route_service",
+      "to": "query_txn",
+      "label": "Transactions"
+    },
+    {
+      "from": "show_balance",
+      "to": "publish_summary"
     },
     {
       "from": "manage_dispute",
