@@ -7,9 +7,10 @@ import WaveformVisualizer from './WaveformVisualizer';
 interface IntelligenceOrbProps {
     sentiment?: number;
     isActive?: boolean;
+    getAudioData?: () => Uint8Array | null;
 }
 
-export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive }: IntelligenceOrbProps) {
+export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive, getAudioData }: IntelligenceOrbProps) {
     const { messages, connectionStatus } = useApp();
 
     // Calculate average sentiment from recent messages (last 5)
@@ -35,7 +36,7 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
 
             {/* Wide Horizontal Waveform Container - Responsive Height */}
             <div className="relative w-full max-w-4xl h-20 md:h-32 rounded-2xl bg-gradient-to-br from-ink-surface/80 to-ink-surface/40 border border-white/10 backdrop-blur-xl overflow-hidden shadow-2xl">
-                <WaveformVisualizer isActive={isActive} />
+                <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} />
             </div>
         </div>
     );

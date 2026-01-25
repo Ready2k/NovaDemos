@@ -511,7 +511,7 @@ export default function Home() {
           {activeView === 'chat' ? (
             <>
               {/* Intelligence Orb (center stage) */}
-              <IntelligenceOrb />
+              <IntelligenceOrb getAudioData={audioProcessor.getAudioData} />
 
               {/* Chat Container - now with proper flex */}
               <div className="flex-1 overflow-hidden">
