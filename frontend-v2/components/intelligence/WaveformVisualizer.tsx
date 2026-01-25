@@ -14,11 +14,11 @@ interface WaveformVisualizerProps {
 export default function WaveformVisualizer({
     isActive = true,
     isThinking = false,
-    mode = 'idle', // 'idle' | 'user' | 'agent'
+    mode = 'idle', // 'idle' | 'user' | 'agent' | 'dormant'
     getAudioData,
     speed = 1.0,
     sensitivity = 1.0
-}: WaveformVisualizerProps & { mode?: 'idle' | 'user' | 'agent' }) {
+}: WaveformVisualizerProps & { mode?: 'idle' | 'user' | 'agent' | 'dormant' }) {
     const { isDarkMode } = useApp();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const volumeRef = useRef(0);
@@ -119,7 +119,10 @@ export default function WaveformVisualizer({
             layers.forEach((layer, i) => {
                 ctx.beginPath();
                 ctx.strokeStyle = layer.color;
-                ctx.globalAlpha = layer.opacity;
+                // Opacity Logic
+                let layerOpacity = layer.opacity;
+                if (mode === 'dormant') layerOpacity = 0.05; // Almost invisible line
+                ctx.globalAlpha = layerOpacity;
                 ctx.lineWidth = layer.lineWidth || 3;
 
                 if (isActive || isThinking) {
@@ -131,29 +134,29 @@ export default function WaveformVisualizer({
                     const normX = x / width;
                     const taper = Math.pow(Math.sin(normX * Math.PI), 2);
 
-                    let y;
-                    if (isThinking) {
-                        // THINKING MODE
-                        const orbit = Math.sin(x * 0.02 + phase + i);
-                        y = centerY + (orbit * 20 * activeVol * taper);
-                    } else if (!isActive || mode === 'idle') {
-                        // IDLE MODE: Standing Wave Ripple (No horizontal travel)
-                        // It ripples up and down in place
-                        const standing = Math.sin((x * layer.freq) + i); // Static shape
-                        const ripple = Math.sin((phase * layer.speed * 4) + i); // Modulate amplitude
+                    let y = centerY; // Default flat
 
-                        // Result: The wave sits in place but breathes/ripples
-                        y = centerY + (standing * (layer.amp + (ripple * 5)) * taper);
-                    } else {
-                        // ACTIVE MODE: Pure Horizontal Flow
-                        // Remove complex modulations that cause visual stutter
-                        // Speed multiplier ensures it looks like it's traveling
+                    if (mode !== 'dormant') {
+                        if (isThinking) {
+                            // THINKING MODE
+                            const orbit = Math.sin(x * 0.02 + phase + i);
+                            y = centerY + (orbit * 20 * activeVol * taper);
+                        } else if (!isActive || mode === 'idle') {
+                            // IDLE MODE: Standing Wave Ripple (No horizontal travel)
+                            // It ripples up and down in place
+                            const standing = Math.sin((x * layer.freq) + i); // Static shape
+                            const ripple = Math.sin((phase * layer.speed * 4) + i); // Modulate amplitude
 
-                        const flowPhase = phase * layer.speed * 25; // 25x speed
-                        const flowFn = Math.sin((x * layer.freq) + flowPhase + i);
+                            // Result: The wave sits in place but breathes/ripples
+                            y = centerY + (standing * (layer.amp + (ripple * 5)) * taper);
+                        } else {
+                            // ACTIVE MODE: Pure Horizontal Flow
+                            const flowPhase = phase * layer.speed * 25; // 25x speed
+                            const flowFn = Math.sin((x * layer.freq) + flowPhase + i);
 
-                        const currentAmp = layer.amp + (activeVol * 50);
-                        y = centerY + (flowFn * currentAmp * taper);
+                            const currentAmp = layer.amp + (activeVol * 50);
+                            y = centerY + (flowFn * currentAmp * taper);
+                        }
                     }
 
                     if (x === 0) ctx.moveTo(x, y);

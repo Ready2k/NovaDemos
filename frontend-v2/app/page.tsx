@@ -510,10 +510,12 @@ export default function Home() {
         <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
           {activeView === 'chat' ? (
             <>
-              {/* Intelligence Orb (center stage) */}
-              <IntelligenceOrb getAudioData={audioProcessor.getAudioData} />
+              {/* Intelligence Orb (Fixed Header Height ~ 85px to 100px) */}
+              <div className="w-full h-[100px] flex-shrink-0">
+                <IntelligenceOrb getAudioData={audioProcessor.getAudioData} />
+              </div>
 
-              {/* Chat Container - now with proper flex */}
+              {/* Chat Container - takes remaining space */}
               <div className="flex-1 overflow-hidden">
                 <ChatContainer isDarkMode={isDarkMode} />
               </div>

@@ -216,6 +216,24 @@ export default function GeneralSettings() {
                             Real-time GPU fluid dynamics (GLSL)
                         </div>
                     </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'particle_vortex' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all md:col-span-2",
+                            settings.visualizationStyle === 'particle_vortex'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Particle Vortex</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Hybrid 3D Constellation & Vortex
+                        </div>
+                    </button>
                 </div>
             </section>
         </div>

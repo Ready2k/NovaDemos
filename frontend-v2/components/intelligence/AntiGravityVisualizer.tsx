@@ -8,7 +8,7 @@ interface AntiGravityProps {
     getAudioData?: () => Uint8Array | null;
     speed?: number;
     sensitivity?: number;
-    mode?: 'idle' | 'user' | 'agent';
+    mode?: 'idle' | 'user' | 'agent' | 'dormant';
     isToolActive?: boolean; // New Prop
 }
 
@@ -45,13 +45,14 @@ export default function AntiGravityVisualizer({
     const frameCount = useRef(0);
     const evolutionLevel = useRef(0);
     const toolOpacity = useRef(0); // Smooth transition for tool cluster
+    const visualizerAlpha = useRef(1.0); // For dormant mode fade out
 
-    // CONFIG
+    // CONFIG - SCALED DOWN FOR HEADER BAR (h=100px)
     const PARTICLE_COUNT = 150;
     const TOOL_PARTICLE_COUNT = 40;
-    const BASE_RADIUS = 100;
-    const TOOL_RADIUS = 35;
-    const TOOL_ORBIT_RADIUS = 180; // Distance from center
+    const BASE_RADIUS = 28;       // Fits in 100px height (dia=56)
+    const TOOL_RADIUS = 10;
+    const TOOL_ORBIT_RADIUS = 60; // Closer orbit
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -155,6 +156,14 @@ export default function AntiGravityVisualizer({
             const cy = h / 2;
 
             ctx.clearRect(0, 0, w, h);
+
+            // Visibility / Mode Handling
+            // If dormant, fade out significantly
+            if (mode === 'dormant') {
+                ctx.globalAlpha = 0.1;
+            } else {
+                ctx.globalAlpha = 1.0;
+            }
 
             // C. PHYSICS
             const time = frameCount.current * 0.005 * speed;

@@ -34,31 +34,33 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
         : (connectionStatus === 'connected' || connectionStatus === 'recording');
 
     // Determine Mode for Fluid Visualizer
-    const fluidMode = connectionStatus === 'recording' ? 'user' :
-        connectionStatus === 'connected' ? 'agent' : 'idle';
+    // Determine Mode for Fluid Visualizer & Others
+    const fluidMode = connectionStatus === 'disconnected' ? 'dormant' :
+        connectionStatus === 'recording' ? 'user' :
+            connectionStatus === 'connected' ? 'agent' : 'idle';
 
     // Visualizer Selection
     const renderVisualizer = () => {
         switch (settings.visualizationStyle) {
             case 'fluid_physics':
-                return <FluidVisualizer mode={fluidMode} getAudioData={getAudioData} />;
+                return <FluidVisualizer mode={fluidMode} getAudioData={getAudioData} isToolActive={isToolActive} />;
             case 'anti_gravity':
                 return <AntiGravityVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} isToolActive={isToolActive} />;
             case 'particle_vortex':
-                return <ParticleVortexVisualizer isActive={isActive} getAudioData={getAudioData} />;
+                return <ParticleVortexVisualizer mode={fluidMode} getAudioData={getAudioData} isToolActive={isToolActive} />;
             case 'simple_wave':
             default:
-                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} />;
+                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} isThinking={isToolActive} />;
         }
     };
 
     return (
-        <div className="relative w-full px-8 py-4 md:py-6 flex items-center justify-center">
+        <div className="relative w-full h-full flex items-center justify-center p-0">
             {/* Sentiment Halo */}
             <SentimentHalo sentiment={sentiment} />
 
-            {/* Wide Horizontal Waveform Container - Responsive Height */}
-            <div className="relative w-full max-w-4xl h-20 md:h-32 rounded-2xl bg-gradient-to-br from-ink-surface/80 to-ink-surface/40 border border-white/10 backdrop-blur-xl overflow-hidden shadow-2xl">
+            {/* Wide Horizontal Waveform Container - Full Space Usage */}
+            <div className="relative w-full h-full overflow-hidden">
                 {renderVisualizer()}
             </div>
         </div>

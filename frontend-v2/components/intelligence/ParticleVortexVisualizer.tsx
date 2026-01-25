@@ -30,7 +30,7 @@ const CONFIG = {
 };
 
 interface VortexSceneProps {
-    mode?: 'idle' | 'user' | 'agent';
+    mode?: 'idle' | 'user' | 'agent' | 'dormant';
     getAudioData?: () => Uint8Array | null;
     speed?: number;
     sensitivity?: number;
@@ -133,11 +133,15 @@ function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivi
         else if (mode === 'agent') targetColor.copy(C_AGENT);
         else targetColor.copy(C_IDLE);
 
-        // --- MANAGE VISIBILITY (Growth) ---
+        // --- MANAGE VISIBILITY (Growth / Dormant) ---
         // Main Mesh: Set count based on growth.
         // START SMALL: 1% at growth=0.0
-        const mainPct = Math.max(0.01, growth); // Start with fewer dots
-        const visibleMainCount = Math.floor(particles.mainTotal * mainPct);
+        let visibleMainCount = Math.floor(particles.mainTotal * Math.max(0.01, growth));
+
+        if (mode === 'dormant') {
+            visibleMainCount = 0; // Hide everything
+        }
+
         mainMeshRef.current.count = visibleMainCount;
 
         // Tool Mesh: Toggle visibility
@@ -412,8 +416,8 @@ function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivi
 // --- MAIN WRAPPER ---
 export default function HybridConstellationVisualizer(props: any) {
     return (
-        <div className="w-full h-full bg-black rounded-xl overflow-hidden shadow-3xl">
-            <Canvas camera={{ position: [0, 0, 90], fov: 45 }} dpr={[1, 2]}>
+        <div className="w-full h-full overflow-hidden">
+            <Canvas camera={{ position: [0, 0, 90], fov: 45 }} dpr={[1, 2]} gl={{ alpha: true }}>
                 <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.3} />
                 <HybridVortexScene {...props} />
             </Canvas>

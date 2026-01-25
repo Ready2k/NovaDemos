@@ -65,7 +65,7 @@ function createHazeTexture() {
 
 // --- MAIN SCENE ---
 interface NeuralProps {
-    mode?: 'idle' | 'user' | 'agent';
+    mode?: 'idle' | 'user' | 'agent' | 'dormant';
     getAudioData?: () => Uint8Array | null;
     isToolActive?: boolean; // NEW: Tool Support
 }
@@ -352,9 +352,8 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
 // --- EXPORT ---
 export default function NeuralNetworkVisualizer(props: NeuralProps) {
     return (
-        <div className="w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl relative">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#0a0a15_0%,_#000000_100%)] z-0 pointer-events-none" />
-            <Canvas camera={{ position: [0, 0, 45], fov: 60 }} dpr={[1, 2]}>
+        <div className="w-full h-full overflow-hidden relative">
+            <Canvas camera={{ position: [0, 0, 45], fov: 60 }} dpr={[1, 2]} gl={{ alpha: true }}>
                 <OrbitControls enableZoom={false} autoRotate autoRotateSpeed={0.5} />
                 <NetworkScene {...props} />
             </Canvas>
