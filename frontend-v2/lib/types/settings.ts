@@ -24,6 +24,7 @@ export interface AppSettings {
     voicePreset: string;
     personaPreset: string;
     enableGuardrails: boolean;
+    visualizationStyle?: 'simple_wave' | 'data_constellation' | 'data_constellation_v2' | 'anti_gravity' | 'fluid_physics';
 
     // Persona Settings
     systemPrompt: string;

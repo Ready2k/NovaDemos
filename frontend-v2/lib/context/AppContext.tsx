@@ -12,6 +12,7 @@ import type {
     KeyMoment,
 } from '@/lib/types';
 
+
 interface AppState {
     // Connection
     connectionStatus: ConnectionStatus;
@@ -103,6 +104,7 @@ const defaultSettings: AppSettings = {
     showWorkflowVisualization: true,
     linkedWorkflows: [],
     debugMode: false,
+    visualizationStyle: 'simple_wave',
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {

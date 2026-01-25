@@ -2,6 +2,10 @@
 
 import { useApp } from '@/lib/context/AppContext';
 import SentimentHalo from './SentimentHalo';
+import DataConstellationVisualizer from './DataConstellationVisualizer';
+import DataConstellationV2Visualizer from './DataConstellationV2Visualizer';
+import AntiGravityVisualizer from './AntiGravityVisualizer';
+import FluidVisualizer from './FluidVisualizer';
 import WaveformVisualizer from './WaveformVisualizer';
 
 interface IntelligenceOrbProps {
@@ -11,7 +15,7 @@ interface IntelligenceOrbProps {
 }
 
 export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive, getAudioData }: IntelligenceOrbProps) {
-    const { messages, connectionStatus } = useApp();
+    const { messages, connectionStatus, settings } = useApp();
 
     // Calculate average sentiment from recent messages (last 5)
     const recentMessages = messages.slice(-5);
@@ -29,6 +33,27 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
         ? propIsActive
         : (connectionStatus === 'connected' || connectionStatus === 'recording');
 
+    // Determine Mode for Fluid Visualizer
+    const fluidMode = connectionStatus === 'recording' ? 'user' :
+        connectionStatus === 'connected' ? 'agent' : 'idle';
+
+    // Visualizer Selection
+    const renderVisualizer = () => {
+        switch (settings.visualizationStyle) {
+            case 'fluid_physics':
+                return <FluidVisualizer mode={fluidMode} getAudioData={getAudioData} />;
+            case 'anti_gravity':
+                return <AntiGravityVisualizer isActive={isActive} getAudioData={getAudioData} />;
+            case 'data_constellation_v2':
+                return <DataConstellationV2Visualizer isActive={isActive} getAudioData={getAudioData} />;
+            case 'data_constellation':
+                return <DataConstellationVisualizer isActive={isActive} getAudioData={getAudioData} />;
+            case 'simple_wave':
+            default:
+                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} />;
+        }
+    };
+
     return (
         <div className="relative w-full px-8 py-4 md:py-6 flex items-center justify-center">
             {/* Sentiment Halo */}
@@ -36,7 +61,7 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
 
             {/* Wide Horizontal Waveform Container - Responsive Height */}
             <div className="relative w-full max-w-4xl h-20 md:h-32 rounded-2xl bg-gradient-to-br from-ink-surface/80 to-ink-surface/40 border border-white/10 backdrop-blur-xl overflow-hidden shadow-2xl">
-                <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} />
+                {renderVisualizer()}
             </div>
         </div>
     );

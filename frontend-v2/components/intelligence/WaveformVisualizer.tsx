@@ -6,9 +6,11 @@ import { useApp } from '@/lib/context/AppContext';
 interface WaveformVisualizerProps {
     isActive?: boolean;
     getAudioData?: () => Uint8Array | null;
+    speed?: number;
+    sensitivity?: number;
 }
 
-export default function WaveformVisualizer({ isActive = true, getAudioData }: WaveformVisualizerProps) {
+export default function WaveformVisualizer({ isActive = true, getAudioData, speed = 1.0, sensitivity = 1.0 }: WaveformVisualizerProps) {
     const { isDarkMode } = useApp();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const volumeRef = useRef(0);
@@ -24,15 +26,22 @@ export default function WaveformVisualizer({ isActive = true, getAudioData }: Wa
         let phase = 0;
 
         const resize = () => {
-            canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-            canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            const parent = canvas.parentElement;
+            if (parent) {
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = parent.offsetWidth * dpr;
+                canvas.height = parent.offsetHeight * dpr;
+                ctx.scale(dpr, dpr);
+                canvas.style.width = `${parent.offsetWidth}px`;
+                canvas.style.height = `${parent.offsetHeight}px`;
+            }
         };
 
         resize();
         window.addEventListener('resize', resize);
 
         const draw = () => {
+            if (!canvas) return;
             const width = canvas.offsetWidth;
             const height = canvas.offsetHeight;
             const centerY = height / 2;
@@ -48,6 +57,7 @@ export default function WaveformVisualizer({ isActive = true, getAudioData }: Wa
                     const subArray = data.slice(0, 32);
                     const sum = subArray.reduce((acc, val) => acc + val, 0);
                     currentVolume = sum / (32 * 255);
+                    currentVolume *= sensitivity; // Apply Sensitivity
                 }
             }
 
@@ -57,17 +67,17 @@ export default function WaveformVisualizer({ isActive = true, getAudioData }: Wa
 
             // Multipliers
             const baseAmp = isActive ? Math.max(0.1, vol) : 0.05;
-            const speedMultiplier = 1 + (vol * 2);
-            const amplitudeMultiplier = 1 + (vol * 4); // More dramatic response
+            const speedMultiplier = (1 + (vol * 0.8)) * speed;
+            const amplitudeMultiplier = 1 + (vol * 3);
 
             // Layer configuration
             const layers = [
-                { color: 'rgba(6, 182, 212, 0.4)', freq: 0.012, speed: 0.02, amp: 20 },
-                { color: 'rgba(139, 92, 246, 0.4)', freq: 0.015, speed: 0.03, amp: 15 },
-                { color: 'rgba(16, 185, 129, 0.4)', freq: 0.02, speed: 0.04, amp: 10 },
+                { color: 'rgba(6, 182, 212, 0.4)', freq: 0.012, speed: 0.015, amp: 20 },
+                { color: 'rgba(139, 92, 246, 0.4)', freq: 0.015, speed: 0.02, amp: 15 },
+                { color: 'rgba(16, 185, 129, 0.4)', freq: 0.02, speed: 0.025, amp: 10 },
                 {
                     color: isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(15, 15, 15, 0.9)',
-                    freq: 0.008, speed: 0.025, amp: 8, lineWidth: 2.5
+                    freq: 0.008, speed: 0.015, amp: 8, lineWidth: 2.5
                 }
             ];
 
@@ -111,7 +121,7 @@ export default function WaveformVisualizer({ isActive = true, getAudioData }: Wa
                 ctx.stroke();
             });
 
-            phase += 0.05;
+            phase += 0.02 * speed; // Slower phase scaling
             animationId = requestAnimationFrame(draw);
         };
 
@@ -121,7 +131,7 @@ export default function WaveformVisualizer({ isActive = true, getAudioData }: Wa
             window.removeEventListener('resize', resize);
             cancelAnimationFrame(animationId);
         };
-    }, [isActive, getAudioData, isDarkMode]);
+    }, [isActive, getAudioData, isDarkMode, speed, sensitivity]);
 
     return <canvas ref={canvasRef} className="w-full h-full" />;
 }

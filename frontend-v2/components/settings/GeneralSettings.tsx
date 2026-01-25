@@ -156,6 +156,104 @@ export default function GeneralSettings() {
                     </button>
                 </div>
             </section>
+
+            {/* Visualization Style */}
+            <section className="flex flex-col gap-4">
+                <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    Visualization Style
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'simple_wave' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            (settings.visualizationStyle === 'simple_wave' || !settings.visualizationStyle)
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Simple Wave</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Classic waveform visualization
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'data_constellation' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.visualizationStyle === 'data_constellation'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Data Constellation</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Cinematic 3D abstract network
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'data_constellation_v2' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.visualizationStyle === 'data_constellation_v2'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Data Constellation v2</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Advanced: Plexus effect, 2D drift
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'anti_gravity' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.visualizationStyle === 'anti_gravity'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Anti-Gravity</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Mesmerizing organic particle sphere
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'fluid_physics' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all md:col-span-2",
+                            settings.visualizationStyle === 'fluid_physics'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Fluid Physics</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Real-time GPU fluid dynamics (GLSL)
+                        </div>
+                    </button>
+                </div>
+            </section>
         </div>
     );
 }
