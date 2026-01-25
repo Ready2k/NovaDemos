@@ -31,5 +31,8 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
+# Open the browser after a short delay (MacOs specific)
+(sleep 3 && open "http://localhost:3000/visualizer-test") &
+
 # Run dev server
 npm run dev

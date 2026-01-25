@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Play, Square, User, Bot, Sparkles, Activity, Globe, Zap, Droplets, Wind, Box } from 'lucide-react';
+import { Mic, MicOff, Play, Square, User, Bot, Sparkles, Activity, Globe, Zap, Droplets, Wind, Box, Maximize, Minimize } from 'lucide-react';
 import FluidVisualizer from '@/components/intelligence/FluidVisualizer';
 import AntiGravityVisualizer from '@/components/intelligence/AntiGravityVisualizer';
 import WaveformVisualizer from '@/components/intelligence/WaveformVisualizer';
@@ -16,6 +16,7 @@ export default function VisualizerTestPage() {
     const [isListening, setIsListening] = useState(false);
     const [visualizer, setVisualizer] = useState<'fluid' | 'antigravity' | 'constellation_v2' | 'constellation' | 'wave' | 'particle_vortex'>('fluid');
     const [manualMode, setManualMode] = useState<'idle' | 'user' | 'agent'>('idle');
+    const [isLiveView, setIsLiveView] = useState(false); // NEW: Live View Toggle
     const [speed, setSpeed] = useState(0.5);
     const [sensitivity, setSensitivity] = useState(1.0);
     const [growth, setGrowth] = useState(0.0); // Start empty
@@ -110,7 +111,7 @@ export default function VisualizerTestPage() {
     };
 
     return (
-        <div className="min-h-screen bg-black text-white p-6 flex flex-col gap-6">
+        <div className="min-h-screen bg-black text-white p-6 flex flex-col gap-6 bg-gradient-to-b from-gray-900 via-[#050505] to-black transition-all duration-700">
             <header className="flex justify-between items-center border-b border-gray-800 pb-4">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
                     Visualizer Test Harness
@@ -120,30 +121,64 @@ export default function VisualizerTestPage() {
                 </div>
             </header>
 
-            <main className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <main className="flex-1 flex flex-col gap-12 transition-all duration-500 max-w-[1600px] mx-auto w-full">
 
                 {/* Visualizer Display */}
-                <div className="lg:col-span-2 relative bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl h-[600px] flex items-center justify-center">
-                    {!isListening && (
-                        <div className="absolute z-10 text-center text-gray-500">
-                            <MicOff className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <div>Microphone Active</div>
-                            <div className="text-xs opacity-50">(Visualizer may be idle)</div>
+                {/* We wrap this in a container that handles the width transition gracefully */}
+                <div className="transition-all duration-500 ease-in-out flex flex-col items-center justify-center py-6">
+
+                    <div className={`relative bg-gray-900/50 backdrop-blur-xl overflow-hidden border border-gray-800 shadow-2xl transition-all duration-700 ease-[cubic-bezier(0.4,0,0.2,1)] flex items-center justify-center ${isLiveView
+                        ? 'w-[1124px] h-[84.5px] rounded-[42px]' // Live Dimensions (Pill/Bar shape implies rounded corners usually, but safe to just stick to dims if unsure. I'll use rounded-full or large radius for 'Live' feel, or user just said dimensions. I'll use rounded-2xl to match specific request context if implies bar)
+                        : 'w-full h-[600px] rounded-2xl'
+                        }`}>
+                        {!isListening && (
+                            <div className="absolute z-10 text-center text-gray-500 pointer-events-none">
+                                <MicOff className={`mx-auto mb-2 opacity-50 ${isLiveView ? 'w-4 h-4' : 'w-12 h-12'}`} />
+                                {!isLiveView && (
+                                    <>
+                                        <div>Microphone Active</div>
+                                        <div className="text-xs opacity-50">(Visualizer may be idle)</div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="w-full h-full">
+                            {renderVisualizer()}
+                        </div>
+
+                        {/* Overlay Label (Hide in Live View for cleanliness, or make small) */}
+                        {!isLiveView && (
+                            <div className="absolute top-4 left-4 bg-black/50 backdrop-blur px-3 py-1 rounded-full text-xs font-mono border border-white/10 uppercase tracking-widest">
+                                {visualizer} • {manualMode}
+                            </div>
+                        )}
+                    </div>
+                    {isLiveView && (
+                        <div className="mt-6 flex flex-col items-center gap-2">
+                            <p className="text-gray-500 text-xs font-mono tracking-widest uppercase">Live View Mode (1124px x 84.5px)</p>
+                            <div className="h-px w-24 bg-gradient-to-r from-transparent via-gray-700 to-transparent"></div>
                         </div>
                     )}
-
-                    <div className="w-full h-full">
-                        {renderVisualizer()}
-                    </div>
-
-                    {/* Overlay Label */}
-                    <div className="absolute top-4 left-4 bg-black/50 backdrop-blur px-3 py-1 rounded-full text-xs font-mono border border-white/10 uppercase tracking-widest">
-                        {visualizer} • {manualMode}
-                    </div>
                 </div>
 
                 {/* Controls */}
-                <div className="flex flex-col gap-6">
+                <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-w-7xl mx-auto transition-all duration-500">
+
+                    {/* 0. View Settings */}
+                    <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800">
+                        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">View Settings</h2>
+                        <button
+                            onClick={() => setIsLiveView(!isLiveView)}
+                            className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 font-bold transition-all ${isLiveView
+                                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                                : 'bg-black/40 text-gray-500 border border-gray-800 hover:bg-white/5'
+                                }`}
+                        >
+                            {isLiveView ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                            {isLiveView ? "EXIT LIVE VIEW" : "SHOW LIVE VIEW"}
+                        </button>
+                    </div>
 
                     {/* 1. Audio Control */}
                     <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800">
