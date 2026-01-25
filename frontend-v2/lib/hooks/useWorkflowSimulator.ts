@@ -4,55 +4,57 @@ import { Message } from '../types';
 
 interface UseWorkflowSimulatorProps {
     isActive: boolean;
+    isConnected: boolean;
     messages: Message[];
     onSendMessage: (text: string) => void;
     testPersona?: string;
     stopSimulation: () => void;
 }
 
-export function useWorkflowSimulator({ isActive, messages, onSendMessage, testPersona, stopSimulation }: UseWorkflowSimulatorProps) {
+export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, stopSimulation }: UseWorkflowSimulatorProps) {
     const [isThinking, setIsThinking] = useState(false);
-    const lastProcessedMessageParams = useRef<{ id: number, role: string } | null>(null);
+    const waitingForEcho = useRef(false);
+    const lastMessageCount = useRef(messages.length);
+
+    // Reset waiting state if messages length changes
+    useEffect(() => {
+        if (messages.length > lastMessageCount.current) {
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg.role === 'user') {
+                waitingForEcho.current = false;
+            }
+        }
+        lastMessageCount.current = messages.length;
+    }, [messages]);
 
     // Default persona if none provided
     const effectivePersona = testPersona || "You are a helpful user testing the system.";
 
     useEffect(() => {
-        if (!isActive || isThinking) return;
+        if (!isActive || !isConnected || isThinking || waitingForEcho.current) return;
+
+        // CRITICAL: Wait for the Agent to greet first (don't speak if messages is empty)
+        if (messages.length === 0) {
+            return;
+        }
 
         const lastMessage = messages[messages.length - 1];
 
-        // If no messages (start), or last message was from Assistant, it's User's (Simulator's) turn.
-        // Also ensure we haven't already processed this exact message state
-        if (!lastMessage) {
-            // Start of conversation - wait for greeting? 
-            // Usually the user speaks first to wake the agent, OR agent speaks first.
-            // If agent speaks first (Welcome), we wait for it.
-            // If we need to start, we can trigger a "Hello".
-            // Let's check if the list is empty. If so, maybe send "Hello".
-            // But usually there is a welcome message.
+        // If last message was from User, it's the Agent's turn. We wait.
+        if (lastMessage && lastMessage.role === 'user') {
+            // Safety reset if we were waiting for echo and it arrived
+            waitingForEcho.current = false;
             return;
         }
 
-        if (lastMessage.role === 'user') {
-            // It's our own message, wait for assistant.
-            return;
-        }
-
-        // Check if we already processed this
-        // Simple check: if last processed was this message ID
-        // (Assuming index is ID or we use timestamp)
-        // With streaming, we need to wait for `isFinal`.
-        // Our `messages` prop SHOULD contain only finalized messages or we check `isFinal` property?
-        // The `Message` type in `types/index.ts` usually has `isFinal`.
-        // Let's assume `messages` updates on every chunk. We wait for stability?
-        // Actually, `messages` in `page.tsx` are usually cumulative.
-        // Let's check `types/session.ts` for Message definition.
-
-        // Assuming lastMessage is valid trigger.
         // We delay slightly to simulate thinking and not hammer the server.
         const timeoutId = setTimeout(async () => {
-            if (isThinking) return;
+            // Re-check conditions inside timeout
+            if (isThinking || waitingForEcho.current || !isActive) return;
+
+            // Double check messages haven't updated in the interim
+            const currentLast = messages[messages.length - 1];
+            if (!currentLast || currentLast.role === 'user') return;
 
             // Generate Response
             setIsThinking(true);
@@ -77,7 +79,23 @@ export function useWorkflowSimulator({ isActive, messages, onSendMessage, testPe
                 const data = await res.json();
 
                 if (data.response) {
-                    onSendMessage(data.response);
+                    let text = data.response;
+                    let isDone = false;
+
+                    if (text.includes('[DONE]')) {
+                        text = text.replace('[DONE]', '').trim();
+                        isDone = true;
+                    }
+
+                    onSendMessage(text);
+                    waitingForEcho.current = true; // Mark as waiting for transcript update
+
+                    if (isDone) {
+                        console.log('[Simulator] Objective achieved. Terminating simulation...');
+                        setTimeout(() => {
+                            stopSimulation();
+                        }, 1500); // Small delay to let the final message be sent/seen
+                    }
                 }
 
             } catch (e) {
@@ -86,11 +104,11 @@ export function useWorkflowSimulator({ isActive, messages, onSendMessage, testPe
             } finally {
                 setIsThinking(false);
             }
-        }, 2000); // 2s delay for realism
+        }, 1000); // 1s delay for realism
 
         return () => clearTimeout(timeoutId);
 
-    }, [isActive, messages, effectivePersona, isThinking, onSendMessage, stopSimulation]);
+    }, [isActive, isConnected, messages, effectivePersona, isThinking, onSendMessage, stopSimulation]);
 
     return { isThinking };
 }

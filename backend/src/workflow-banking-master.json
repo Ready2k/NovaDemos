@@ -149,5 +149,6 @@
       "from": "publish_summary",
       "to": "master_end"
     }
-  ]
+  ],
+  "testPersona": "I am a customer with account 12345678 and sort code 112233. My goal is to check my balance. Please walk me through the workflow starting from master_start. Perform the ID&V check, skip the triage handoff, and provide my balance using the investigation path. Once finished, ensure you publish the summary to end the session."
 }

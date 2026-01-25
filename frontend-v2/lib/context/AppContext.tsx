@@ -86,6 +86,8 @@ const defaultSettings: AppSettings = {
     brainMode: 'raw_nova',
     voicePreset: 'matthew',
     personaPreset: '',
+    agentId: '',
+    agentAliasId: '',
     enableGuardrails: true,
     systemPrompt: 'You are a warm, professional, and helpful AI assistant. Give accurate answers that sound natural, direct, and human. Start by answering the user\'s question clearly in 1–2 sentences. Then, expand only enough to make the answer understandable, staying within 3–5 short sentences total. Avoid sounding like a lecture or essay.',
     speechPrompt: '',
@@ -143,6 +145,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
+                    // Ensure simulation mode is OFF on reload
+                    parsed.simulationMode = false;
                     setSettings(prev => ({ ...prev, ...parsed }));
                 } catch (e) {
                     console.error('Failed to parse settings', e);

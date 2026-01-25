@@ -25,8 +25,13 @@ export class SimulationService {
             console.log(`[Simulation] Generating response for persona: "${persona.substring(0, 50)}..."`);
 
             // Construct Prompt
-            const systemPrompt = `You are playing the role of a user testing a voice assistant system.
+            const systemPrompt = `You are playing the role of a CUSTOMER (User) testing a voice assistant system (the Agent).
 Your goal is to interact with the AI agent naturally to verify if it handles your request correctly.
+
+IMPORTANT: 
+- YOU ARE THE CUSTOMER. 
+- THE CONVERSATION HISTORY SHOWS YOUR PAST INTERACTIONS AS 'assistant' AND THE AGENT'S AS 'user' (inverted for model training).
+- DO NOT ACT AS THE ASSISTANT. YOU ARE THE ONE ASKING FOR HELP OR PROVIDING INFORMATION.
 
 YOUR PERSONA:
 ${persona}
@@ -36,7 +41,9 @@ INSTRUCTIONS:
 2. Respond naturally, as if speaking. Keep responses concise (1-3 sentences).
 3. Do not be overly helpful, but answer questions if the agent asks them.
 4. If the agent makes a mistake, point it out naturally.
-5. Do NOT include any prefixes like "User:" or "Response:". Just output the spoken text.
+5. If the conversation has reached its natural conclusion (you have the info you need and goodbyes have been exchanged), append the token "[DONE]" to the end of your final response.
+6. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add [DONE].
+7. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
 `;
 
             // Format history for Claude 3 (user/assistant turns)
@@ -101,6 +108,10 @@ INSTRUCTIONS:
                 temperature: 0.7
             };
 
+            console.log(`[Simulation] Sending ${collapsedMessages.length} messages to Bedrock...`);
+            // Log roles for validation check
+            console.log(`[Simulation] Roles: ${collapsedMessages.map(m => m.role).join(' -> ')}`);
+
             const command = new InvokeModelCommand({
                 modelId: MODEL_ID,
                 contentType: "application/json",
@@ -113,6 +124,7 @@ INSTRUCTIONS:
             const body = JSON.parse(decoded);
 
             const text = body.content[0]?.text || "";
+            console.log(`[Simulation] Received response: "${text.substring(0, 50)}..."`);
             return text.trim();
 
         } catch (error) {

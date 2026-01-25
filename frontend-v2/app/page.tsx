@@ -94,8 +94,8 @@ export default function Home() {
                 enableGuardrails: settings.enableGuardrails ?? true,
                 selectedTools: settings.enabledTools || [],
                 linkedWorkflows: settings.linkedWorkflows || [],
-                agentId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
-                agentAliasId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
+                agentId: settings.agentId,
+                agentAliasId: settings.agentAliasId,
               },
             });
           }
@@ -342,8 +342,9 @@ export default function Home() {
           speechPrompt: settings.speechPrompt || '',
           enableGuardrails: settings.enableGuardrails ?? true,
           selectedTools: settings.enabledTools || [],
-          agentId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
-          agentAliasId: settings.brainMode === 'bedrock_agent' ? undefined : undefined,
+          linkedWorkflows: settings.linkedWorkflows || [],
+          agentId: settings.agentId,
+          agentAliasId: settings.agentAliasId,
         }
       });
     }
@@ -383,13 +384,24 @@ export default function Home() {
   }, [isConnected, send]);
 
   // --- Workflow Simulator ---
+  // Auto-connect if simulation is active
+  useEffect(() => {
+    if (settings.simulationMode && connectionStatus === 'disconnected') {
+      console.log('[App] Auto-connecting for simulation...');
+      connect();
+    }
+  }, [settings.simulationMode, connectionStatus, connect]);
+
   const stopSimulation = useCallback(() => {
     updateSettings({ simulationMode: false });
-  }, [updateSettings]);
+    disconnect();
+    console.log('[App] Simulation stopped and disconnected.');
+  }, [updateSettings, disconnect]);
 
   const { isThinking: isSimulatingThinking } = useWorkflowSimulator({
     isActive: settings.simulationMode || false,
-    messages: currentSession?.transcript || [],
+    isConnected,
+    messages: messages,
     // @ts-ignore - The hook generally passes a string response, handleSendMessage accepts string.
     onSendMessage: handleSendMessage,
     testPersona: settings.simulationPersona,
@@ -432,6 +444,8 @@ export default function Home() {
         setFinishedSessionId(finalId);
         setShowSurvey(true);
       }
+      // Ensure simulation stops if we manual disconnect
+      updateSettings({ simulationMode: false });
       disconnect();
     } else {
       // Connecting

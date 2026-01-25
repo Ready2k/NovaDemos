@@ -23,6 +23,8 @@ export interface AppSettings {
     brainMode: BrainMode;
     voicePreset: string;
     personaPreset: string;
+    agentId?: string;
+    agentAliasId?: string;
     enableGuardrails: boolean;
     visualizationStyle?: 'simple_wave' | 'anti_gravity' | 'fluid_physics' | 'particle_vortex' | 'pulse_waveform';
     physicsSpeed?: number;

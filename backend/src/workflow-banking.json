@@ -1,5 +1,4 @@
 {
-  "title": "Secure Transaction Assistance Agent Workflow",
   "nodes": [
     {
       "id": "start",
@@ -355,5 +354,6 @@
       "to": "Gambling_end",
       "label": ""
     }
-  ]
+  ],
+  "testPersona": "I am a customer with account 12345678 and sort code 112233. My goal is to check my balance - I'm expect a balance of £1200. Once I have this information, DISCONNECT"
 }

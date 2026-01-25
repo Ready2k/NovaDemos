@@ -9,7 +9,7 @@ import WorkflowSidebar from './WorkflowSidebar';
 import { Save, Plus, Trash2, Play, RefreshCw } from 'lucide-react';
 
 export default function WorkflowDesigner() {
-    const { isDarkMode, navigateTo, updateSettings, settings } = useApp();
+    const { isDarkMode, navigateTo, updateSettings, settings, resetSession } = useApp();
     const [workflows, setWorkflows] = useState<{ id: string, name: string }[]>([]);
     const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
     const [workflow, setWorkflow] = useState<WorkflowDefinition>({ id: 'new', nodes: [], edges: [] });
@@ -95,6 +95,10 @@ export default function WorkflowDesigner() {
 
     const handleStartTest = async (mode: 'manual' | 'auto') => {
         if (!currentWorkflowId) return;
+
+        // Reset session to ensure clean slate for simulation
+        resetSession();
+
         try {
             // 1. Save w/ Persona
             setShowTestConfig(false);
