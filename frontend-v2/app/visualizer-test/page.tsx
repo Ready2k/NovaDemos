@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Play, Square, User, Bot, Sparkles, Activity, Globe, Zap, Droplets, Wind } from 'lucide-react';
+import { Mic, MicOff, Play, Square, User, Bot, Sparkles, Activity, Globe, Zap, Droplets, Wind, Box } from 'lucide-react';
 import FluidVisualizer from '@/components/intelligence/FluidVisualizer';
 import AntiGravityVisualizer from '@/components/intelligence/AntiGravityVisualizer';
 import DataConstellationV2Visualizer from '@/components/intelligence/DataConstellationV2Visualizer';
@@ -20,6 +20,8 @@ export default function VisualizerTestPage() {
     const [manualMode, setManualMode] = useState<'idle' | 'user' | 'agent'>('idle');
     const [speed, setSpeed] = useState(0.5);
     const [sensitivity, setSensitivity] = useState(1.0);
+    const [growth, setGrowth] = useState(0.0); // Start empty
+    const [isToolActive, setIsToolActive] = useState(false);
     const [audioData, setAudioData] = useState<Uint8Array | null>(null);
 
     // ... (keep audio ref) ...
@@ -90,20 +92,22 @@ export default function VisualizerTestPage() {
             isActive: true,
             getAudioData: getAudioData,
             speed: speed,
-            sensitivity: sensitivity
+            sensitivity: sensitivity,
+            growth: growth,
+            isToolActive: isToolActive
         };
 
         switch (visualizer) {
             case 'fluid':
-                return <FluidVisualizer mode={manualMode} getAudioData={getAudioData} speed={speed} sensitivity={sensitivity} />;
+                return <FluidVisualizer mode={manualMode} getAudioData={getAudioData} isToolActive={isToolActive} {...({ speed, sensitivity } as any)} />;
             case 'antigravity':
                 return <AntiGravityVisualizer {...commonProps} />;
             case 'constellation_v2':
-                return <DataConstellationV2Visualizer {...commonProps} />;
+                return <DataConstellationV2Visualizer {...(commonProps as any)} />;
             case 'constellation':
-                return <DataConstellationVisualizer {...commonProps} />;
+                return <DataConstellationVisualizer {...(commonProps as any)} />;
             case 'wave':
-                return <WaveformVisualizer {...commonProps} />;
+                return <WaveformVisualizer {...(commonProps as any)} />;
             case 'particle_vortex':
                 return <ParticleVortexVisualizer {...commonProps} mode={manualMode} />;
             default:
@@ -260,6 +264,38 @@ export default function VisualizerTestPage() {
                                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
                             />
                         </div>
+                    </div>
+
+                    {/* 5. Tool Simulation (Dynamic Growth) */}
+                    <div className="bg-gray-900/50 p-6 rounded-xl border border-gray-800">
+                        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Dynamic Events</h2>
+
+                        <div className="mb-4">
+                            <div className="flex justify-between text-xs mb-2">
+                                <span className="text-gray-400">Context Growth (Time)</span>
+                                <span className="text-green-400">{(growth * 100).toFixed(0)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1.0"
+                                step="0.05"
+                                value={growth}
+                                onChange={(e) => setGrowth(parseFloat(e.target.value))}
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                            />
+                        </div>
+
+                        <button
+                            onClick={() => setIsToolActive(!isToolActive)}
+                            className={`w-full py-3 rounded-lg flex items-center justify-center gap-2 font-bold transition-all ${isToolActive
+                                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50'
+                                : 'bg-black/40 text-gray-500 border border-gray-800 hover:bg-white/5'
+                                }`}
+                        >
+                            <Box className="w-4 h-4" />
+                            {isToolActive ? "TOOL ACTIVE (ID&V)" : "SIMULATE TOOL (ID&V)"}
+                        </button>
                     </div>
                 </div>
             </main>
