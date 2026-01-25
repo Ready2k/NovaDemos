@@ -1,12 +1,9 @@
-'use client';
-
 import { useApp } from '@/lib/context/AppContext';
 import SentimentHalo from './SentimentHalo';
-import DataConstellationVisualizer from './DataConstellationVisualizer';
-import DataConstellationV2Visualizer from './DataConstellationV2Visualizer';
 import AntiGravityVisualizer from './AntiGravityVisualizer';
 import FluidVisualizer from './FluidVisualizer';
 import WaveformVisualizer from './WaveformVisualizer';
+import ParticleVortexVisualizer from './ParticleVortexVisualizer';
 
 interface IntelligenceOrbProps {
     sentiment?: number;
@@ -15,7 +12,10 @@ interface IntelligenceOrbProps {
 }
 
 export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive, getAudioData }: IntelligenceOrbProps) {
-    const { messages, connectionStatus, settings } = useApp();
+    const { messages, connectionStatus, settings, workflowState } = useApp();
+
+    // Determine if a tool/workflow is currently processing
+    const isToolActive = workflowState?.status === 'active';
 
     // Calculate average sentiment from recent messages (last 5)
     const recentMessages = messages.slice(-5);
@@ -43,14 +43,12 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
             case 'fluid_physics':
                 return <FluidVisualizer mode={fluidMode} getAudioData={getAudioData} />;
             case 'anti_gravity':
-                return <AntiGravityVisualizer isActive={isActive} getAudioData={getAudioData} />;
-            case 'data_constellation_v2':
-                return <DataConstellationV2Visualizer isActive={isActive} getAudioData={getAudioData} />;
-            case 'data_constellation':
-                return <DataConstellationVisualizer isActive={isActive} getAudioData={getAudioData} />;
+                return <AntiGravityVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} isToolActive={isToolActive} />;
+            case 'particle_vortex':
+                return <ParticleVortexVisualizer isActive={isActive} getAudioData={getAudioData} />;
             case 'simple_wave':
             default:
-                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} />;
+                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} />;
         }
     };
 

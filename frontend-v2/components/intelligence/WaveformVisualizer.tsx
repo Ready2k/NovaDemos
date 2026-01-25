@@ -5,35 +5,70 @@ import { useApp } from '@/lib/context/AppContext';
 
 interface WaveformVisualizerProps {
     isActive?: boolean;
+    isThinking?: boolean; // New prop
     getAudioData?: () => Uint8Array | null;
     speed?: number;
     sensitivity?: number;
 }
 
-export default function WaveformVisualizer({ isActive = true, getAudioData, speed = 1.0, sensitivity = 1.0 }: WaveformVisualizerProps) {
+export default function WaveformVisualizer({
+    isActive = true,
+    isThinking = false,
+    mode = 'idle', // 'idle' | 'user' | 'agent'
+    getAudioData,
+    speed = 1.0,
+    sensitivity = 1.0
+}: WaveformVisualizerProps & { mode?: 'idle' | 'user' | 'agent' }) {
     const { isDarkMode } = useApp();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const volumeRef = useRef(0);
+    const thinkingBuffer = useRef(0); // For smooth transition to thinking
+
+    // Color Palettes
+    interface WaveLayer {
+        color: string;
+        opacity: number;
+        freq: number;
+        speed: number;
+        amp: number;
+        lineWidth?: number;
+    }
+
+    const THEMES: Record<string, WaveLayer[]> = {
+        user: [
+            { color: '#06b6d4', opacity: 0.5, freq: 0.012, speed: 0.015, amp: 35 }, // Cyan
+            { color: '#22d3ee', opacity: 0.5, freq: 0.018, speed: 0.012, amp: 25 }, // Light Blue
+            { color: '#10b981', opacity: 0.3, freq: 0.022, speed: 0.025, amp: 15 }, // Emerald
+        ],
+        agent: [
+            { color: '#8b5cf6', opacity: 0.5, freq: 0.012, speed: 0.015, amp: 35 }, // Violet
+            { color: '#d946ef', opacity: 0.5, freq: 0.018, speed: 0.012, amp: 25 }, // Fuchsia
+            { color: '#f59e0b', opacity: 0.3, freq: 0.022, speed: 0.025, amp: 15 }, // Amber
+        ],
+        idle: [
+            { color: '#64748b', opacity: 0.3, freq: 0.01, speed: 0.005, amp: 20 },
+            { color: '#94a3b8', opacity: 0.3, freq: 0.015, speed: 0.008, amp: 15 }, // Was -0.01
+            { color: '#cbd5e1', opacity: 0.2, freq: 0.02, speed: 0.01, amp: 10 },
+        ]
+    };
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         let animationId: number;
         let phase = 0;
 
+        // Resize Logic
         const resize = () => {
             const parent = canvas.parentElement;
             if (parent) {
-                const dpr = window.devicePixelRatio || 1;
+                const dpr = window.devicePixelRatio || 2;
                 canvas.width = parent.offsetWidth * dpr;
                 canvas.height = parent.offsetHeight * dpr;
                 ctx.scale(dpr, dpr);
-                canvas.style.width = `${parent.offsetWidth}px`;
-                canvas.style.height = `${parent.offsetHeight}px`;
             }
         };
 
@@ -41,97 +76,105 @@ export default function WaveformVisualizer({ isActive = true, getAudioData, spee
         window.addEventListener('resize', resize);
 
         const draw = () => {
-            if (!canvas) return;
             const width = canvas.offsetWidth;
             const height = canvas.offsetHeight;
             const centerY = height / 2;
 
             ctx.clearRect(0, 0, width, height);
 
-            // Calculate volume
-            let currentVolume = 0;
-            if (isActive && getAudioData) {
+            // Handle States & Volume
+            let vol = 0;
+            if (isThinking) {
+                // Smoothly ramp up a "simulated" pulse for thinking
+                thinkingBuffer.current = Math.min(thinkingBuffer.current + 0.05, 1);
+                vol = (Math.sin(phase * 0.5) * 0.2 + 0.3) * thinkingBuffer.current;
+            } else if (isActive && getAudioData) {
+                thinkingBuffer.current = 0;
                 const data = getAudioData();
                 if (data) {
-                    // Average first 32 bins (low frequencies)
-                    const subArray = data.slice(0, 32);
-                    const sum = subArray.reduce((acc, val) => acc + val, 0);
-                    currentVolume = sum / (32 * 255);
-                    currentVolume *= sensitivity; // Apply Sensitivity
+                    const sum = data.slice(0, 40).reduce((a, b) => a + b, 0);
+                    vol = (sum / (40 * 255)) * sensitivity;
                 }
             }
 
-            // Smooth volume
-            volumeRef.current = volumeRef.current * 0.85 + currentVolume * 0.15;
-            const vol = volumeRef.current;
+            // Smoothing volume transition
+            volumeRef.current = volumeRef.current * 0.8 + vol * 0.2;
+            const activeVol = volumeRef.current;
 
-            // Multipliers
-            const baseAmp = isActive ? Math.max(0.1, vol) : 0.05;
-            const speedMultiplier = (1 + (vol * 0.8)) * speed;
-            const amplitudeMultiplier = 1 + (vol * 3);
+            // Pick Palette
+            // Fallback to idle if mode is undefined or invalid
+            const currentTheme = THEMES[mode] || THEMES.idle;
 
-            // Layer configuration
-            const layers = [
-                { color: 'rgba(6, 182, 212, 0.4)', freq: 0.012, speed: 0.015, amp: 20 },
-                { color: 'rgba(139, 92, 246, 0.4)', freq: 0.015, speed: 0.02, amp: 15 },
-                { color: 'rgba(16, 185, 129, 0.4)', freq: 0.02, speed: 0.025, amp: 10 },
+            // Construct Layers
+            const layers: WaveLayer[] = [
+                ...currentTheme,
                 {
-                    color: isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(15, 15, 15, 0.9)',
-                    freq: 0.008, speed: 0.015, amp: 8, lineWidth: 2.5
+                    color: isDarkMode ? '#ffffff' : '#0f172a',
+                    opacity: 0.8, freq: 0.008, speed: 0.01, amp: 10, lineWidth: 2
                 }
             ];
+
+            ctx.globalCompositeOperation = isDarkMode ? 'screen' : 'multiply';
 
             layers.forEach((layer, i) => {
                 ctx.beginPath();
                 ctx.strokeStyle = layer.color;
-                ctx.lineWidth = (layer.lineWidth || 3) + (vol * 3);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
+                ctx.globalAlpha = layer.opacity;
+                ctx.lineWidth = layer.lineWidth || 3;
 
-                const layerAmp = layer.amp * amplitudeMultiplier;
-                // Add gentle breathing when idle
-                const breathing = Math.sin(phase * 0.5) * 5;
-                const finalAmp = layerAmp + breathing;
-
-                const layerFreq = layer.freq;
-                const layerPhase = phase * layer.speed * speedMultiplier + (i * 2);
-
-                const points = [];
-                for (let x = -20; x < width + 20; x += 5) {
-                    const normalizeX = x / width;
-                    // Taper ends to 0
-                    const taper = Math.sin(normalizeX * Math.PI);
-
-                    const y = centerY +
-                        Math.sin(x * layerFreq + layerPhase) * finalAmp * taper +
-                        Math.sin(x * layerFreq * 2 + layerPhase * 1.3) * (finalAmp * 0.3) * taper;
-                    points.push({ x, y });
+                if (isActive || isThinking) {
+                    ctx.shadowBlur = activeVol * 15;
+                    ctx.shadowColor = layer.color;
                 }
 
-                if (points.length > 0) {
-                    ctx.moveTo(points[0].x, points[0].y);
-                    for (let j = 1; j < points.length - 1; j++) {
-                        const cp = points[j];
-                        const next = points[j + 1];
-                        const midX = (cp.x + next.x) / 2;
-                        const midY = (cp.y + next.y) / 2;
-                        ctx.quadraticCurveTo(cp.x, cp.y, midX, midY);
+                for (let x = 0; x <= width; x += 2) {
+                    const normX = x / width;
+                    const taper = Math.pow(Math.sin(normX * Math.PI), 2);
+
+                    let y;
+                    if (isThinking) {
+                        // THINKING MODE
+                        const orbit = Math.sin(x * 0.02 + phase + i);
+                        y = centerY + (orbit * 20 * activeVol * taper);
+                    } else if (!isActive || mode === 'idle') {
+                        // IDLE MODE: Standing Wave Ripple (No horizontal travel)
+                        // It ripples up and down in place
+                        const standing = Math.sin((x * layer.freq) + i); // Static shape
+                        const ripple = Math.sin((phase * layer.speed * 4) + i); // Modulate amplitude
+
+                        // Result: The wave sits in place but breathes/ripples
+                        y = centerY + (standing * (layer.amp + (ripple * 5)) * taper);
+                    } else {
+                        // ACTIVE MODE: Pure Horizontal Flow
+                        // Remove complex modulations that cause visual stutter
+                        // Speed multiplier ensures it looks like it's traveling
+
+                        const flowPhase = phase * layer.speed * 25; // 25x speed
+                        const flowFn = Math.sin((x * layer.freq) + flowPhase + i);
+
+                        const currentAmp = layer.amp + (activeVol * 50);
+                        y = centerY + (flowFn * currentAmp * taper);
                     }
+
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
             });
 
-            phase += 0.02 * speed; // Slower phase scaling
+            ctx.globalAlpha = 1.0; // Reset alpha
+            ctx.globalCompositeOperation = 'source-over'; // Reset blend mode
+
+            phase += isThinking ? 0.05 : 0.2; // Faster global phase (was 0.1)
             animationId = requestAnimationFrame(draw);
         };
 
         draw();
-
         return () => {
             window.removeEventListener('resize', resize);
             cancelAnimationFrame(animationId);
         };
-    }, [isActive, getAudioData, isDarkMode, speed, sensitivity]);
+    }, [isActive, isThinking, getAudioData, isDarkMode, speed, sensitivity, mode]);
 
     return <canvas ref={canvasRef} className="w-full h-full" />;
 }

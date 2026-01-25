@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Play, Square, User, Bot, Sparkles, Activity, Globe, Zap, Droplets, Wind, Box } from 'lucide-react';
 import FluidVisualizer from '@/components/intelligence/FluidVisualizer';
 import AntiGravityVisualizer from '@/components/intelligence/AntiGravityVisualizer';
-import DataConstellationV2Visualizer from '@/components/intelligence/DataConstellationV2Visualizer';
-import DataConstellationVisualizer from '@/components/intelligence/DataConstellationVisualizer';
 import WaveformVisualizer from '@/components/intelligence/WaveformVisualizer';
 import ParticleVortexVisualizer from '@/components/intelligence/ParticleVortexVisualizer';
 import { useApp } from '@/lib/context/AppContext';
@@ -101,13 +99,9 @@ export default function VisualizerTestPage() {
             case 'fluid':
                 return <FluidVisualizer mode={manualMode} getAudioData={getAudioData} isToolActive={isToolActive} {...({ speed, sensitivity } as any)} />;
             case 'antigravity':
-                return <AntiGravityVisualizer {...commonProps} />;
-            case 'constellation_v2':
-                return <DataConstellationV2Visualizer {...(commonProps as any)} />;
-            case 'constellation':
-                return <DataConstellationVisualizer {...(commonProps as any)} />;
+                return <AntiGravityVisualizer {...commonProps} mode={manualMode} isToolActive={isToolActive} />;
             case 'wave':
-                return <WaveformVisualizer {...(commonProps as any)} />;
+                return <WaveformVisualizer {...(commonProps as any)} mode={manualMode} />;
             case 'particle_vortex':
                 return <ParticleVortexVisualizer {...commonProps} mode={manualMode} />;
             default:
@@ -173,8 +167,6 @@ export default function VisualizerTestPage() {
                             {[
                                 { id: 'fluid', label: 'Fluid Physics (Ink)', icon: Droplets },
                                 { id: 'antigravity', label: 'Anti-Gravity', icon: Sparkles },
-                                { id: 'constellation_v2', label: 'Constellation V2', icon: Globe },
-                                { id: 'constellation', label: 'Constellation V1', icon: Activity },
                                 { id: 'wave', label: 'Simple Waveform', icon: Zap },
                                 { id: 'particle_vortex', label: 'Particle Vortex', icon: Wind },
                             ].map((v) => (
