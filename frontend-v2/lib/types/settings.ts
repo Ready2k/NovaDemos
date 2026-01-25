@@ -24,7 +24,10 @@ export interface AppSettings {
     voicePreset: string;
     personaPreset: string;
     enableGuardrails: boolean;
-    visualizationStyle?: 'simple_wave' | 'anti_gravity' | 'fluid_physics' | 'particle_vortex';
+    visualizationStyle?: 'simple_wave' | 'anti_gravity' | 'fluid_physics' | 'particle_vortex' | 'pulse_waveform';
+    physicsSpeed?: number;
+    physicsSensitivity?: number;
+    contextGrowth?: number;
 
     // Persona Settings
     systemPrompt: string;

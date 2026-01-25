@@ -105,6 +105,9 @@ const defaultSettings: AppSettings = {
     linkedWorkflows: [],
     debugMode: false,
     visualizationStyle: 'simple_wave',
+    physicsSpeed: 0.5,
+    physicsSensitivity: 1.0,
+    contextGrowth: 0,
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {

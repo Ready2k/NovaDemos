@@ -10,6 +10,8 @@ interface AntiGravityProps {
     sensitivity?: number;
     mode?: 'idle' | 'user' | 'agent' | 'dormant';
     isToolActive?: boolean; // New Prop
+    isLiveView?: boolean;
+    growth?: number; // 0.0 to 1.0
 }
 
 interface Particle {
@@ -17,14 +19,14 @@ interface Particle {
     phi: number;
     r: number;
     size: number;
-    hueVariance: number; // Added to make colors rich, not flat
-    type: 0 | 1; // 0 = Main Brain, 1 = Tool Cluster
+    hueVariance: number;
+    type: 0 | 1;
 }
 
 interface ProjectedParticle {
     x: number;
     y: number;
-    z: number; // Scale is derived from z
+    z: number;
     p: Particle;
 }
 
@@ -34,7 +36,9 @@ export default function AntiGravityVisualizer({
     mode = 'idle',
     speed = 1.0,
     sensitivity = 1.0,
-    isToolActive = false
+    isToolActive = false,
+    isLiveView = false,
+    growth = 0
 }: AntiGravityProps) {
     const { isDarkMode } = useApp();
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,7 +47,7 @@ export default function AntiGravityVisualizer({
     // SMOOTHING VARS
     const currentVolume = useRef(0);
     const frameCount = useRef(0);
-    const evolutionLevel = useRef(0);
+    const evolutionLevel = useRef(0); // Will sync to growth
     const toolOpacity = useRef(0); // Smooth transition for tool cluster
     const visualizerAlpha = useRef(1.0); // For dormant mode fade out
 
@@ -130,17 +134,15 @@ export default function AntiGravityVisualizer({
                         rawVolume = (avg / 128.0) * sensitivity;
                     }
 
-                    // EVOLVE: Connect over time when active
-                    if (avg > 10 && evolutionLevel.current < 1.0) {
-                        evolutionLevel.current += 0.002 * speed; // Grow connections
-                    }
-                }
-            } else {
-                // DEVOLVE: Slowly disco                                                                                                                                                                        nnect when idle (optional)
-                if (evolutionLevel.current > 0) {
-                    evolutionLevel.current -= 0.005;
+                    // EVOLVE: Driven by Context Growth Prop
                 }
             }
+
+            // Sync evolution to growth prop smoothly
+            const targetGrowth = growth;
+            evolutionLevel.current += (targetGrowth - evolutionLevel.current) * 0.05;
+
+            /* (Replaced old audio-driven evolution) */
 
             currentVolume.current += (rawVolume - currentVolume.current) * 0.1;
             const vol = Math.max(0, currentVolume.current);
@@ -215,6 +217,9 @@ export default function AntiGravityVisualizer({
                 let x3d = r * Math.sin(p.phi) * Math.cos(p.theta);
                 let y3d = r * Math.sin(p.phi) * Math.sin(p.theta);
                 let z3d = r * Math.cos(p.phi);
+
+                // Live View Stretch (Only stretch position, not particle shape)
+                if (isLiveView) x3d *= 8.0;
 
                 // Apply Cluster Offset
                 if (p.type === 1) {

@@ -36,9 +36,10 @@ interface VortexSceneProps {
     sensitivity?: number;
     growth?: number;        // 0.0 to 1.0 (Conversation Progress)
     isToolActive?: boolean; // Is the tool cluster visible/active?
+    isLiveView?: boolean;
 }
 
-function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivity = 1.0, growth = 1.0, isToolActive = false }: VortexSceneProps) {
+function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivity = 1.0, growth = 1.0, isToolActive = false, isLiveView = false }: VortexSceneProps) {
     const mainMeshRef = useRef<InstancedMesh>(null);
     const toolMeshRef = useRef<InstancedMesh>(null);
     const linesRef = useRef<LineSegments>(null);
@@ -386,7 +387,7 @@ function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivi
     });
 
     return (
-        <group>
+        <group scale={[isLiveView ? 5 : 1, 1, 1]}>
             {/* MAIN CLUSTER (Deep Space Blue) */}
             <instancedMesh ref={mainMeshRef} args={[undefined, undefined, CONFIG.particleCount + CONFIG.starCount]}>
                 <sphereGeometry args={[1, 6, 6]} /> {/* Low poly spheres */}

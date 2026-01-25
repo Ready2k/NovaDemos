@@ -182,6 +182,24 @@ export default function GeneralSettings() {
                     </button>
 
                     <button
+                        onClick={() => updateSettings({ visualizationStyle: 'pulse_waveform' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.visualizationStyle === 'pulse_waveform'
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Pulse Waveform</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Reactive pulse with dynamic events
+                        </div>
+                    </button>
+
+                    <button
                         onClick={() => updateSettings({ visualizationStyle: 'anti_gravity' })}
                         className={cn(
                             "p-4 rounded-xl border text-left transition-all",
@@ -202,7 +220,7 @@ export default function GeneralSettings() {
                     <button
                         onClick={() => updateSettings({ visualizationStyle: 'fluid_physics' })}
                         className={cn(
-                            "p-4 rounded-xl border text-left transition-all md:col-span-2",
+                            "p-4 rounded-xl border text-left transition-all",
                             settings.visualizationStyle === 'fluid_physics'
                                 ? isDarkMode
                                     ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
@@ -234,6 +252,55 @@ export default function GeneralSettings() {
                             Hybrid 3D Constellation & Vortex
                         </div>
                     </button>
+                </div>
+            </section>
+
+            {/* Visualizer Tuning */}
+            <section className="flex flex-col gap-6 pt-4 border-t border-white/5">
+                <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    Visualizer Tuning
+                </h3>
+
+                {/* Speed */}
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className={isDarkMode ? "text-white" : "text-gray-900"}>Time Speed</span>
+                        <span className="text-gray-500">{settings.physicsSpeed?.toFixed(2) || '1.00'}</span>
+                    </div>
+                    <input
+                        type="range" min="0.1" max="5.0" step="0.05"
+                        value={settings.physicsSpeed ?? 1.0}
+                        onChange={(e) => updateSettings({ physicsSpeed: parseFloat(e.target.value) })}
+                        className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-violet-500"
+                    />
+                </div>
+
+                {/* Sensitivity */}
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className={isDarkMode ? "text-white" : "text-gray-900"}>Audio Sensitivity</span>
+                        <span className="text-gray-500">{settings.physicsSensitivity?.toFixed(2) || '1.00'}</span>
+                    </div>
+                    <input
+                        type="range" min="0.1" max="5.0" step="0.05"
+                        value={settings.physicsSensitivity ?? 1.0}
+                        onChange={(e) => updateSettings({ physicsSensitivity: parseFloat(e.target.value) })}
+                        className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-violet-500"
+                    />
+                </div>
+
+                {/* Context Growth */}
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className={isDarkMode ? "text-white" : "text-gray-900"}>Context Growth</span>
+                        <span className="text-gray-500">{Math.round((settings.contextGrowth || 0) * 100)}%</span>
+                    </div>
+                    <input
+                        type="range" min="0" max="1" step="0.01"
+                        value={settings.contextGrowth ?? 0}
+                        onChange={(e) => updateSettings({ contextGrowth: parseFloat(e.target.value) })}
+                        className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-emerald-500"
+                    />
                 </div>
             </section>
         </div>

@@ -6,6 +6,7 @@ import FluidVisualizer from '@/components/intelligence/FluidVisualizer';
 import AntiGravityVisualizer from '@/components/intelligence/AntiGravityVisualizer';
 import WaveformVisualizer from '@/components/intelligence/WaveformVisualizer';
 import ParticleVortexVisualizer from '@/components/intelligence/ParticleVortexVisualizer';
+import PulseWaveformVisualizer from '@/components/intelligence/PulseWaveformVisualizer';
 import { useApp } from '@/lib/context/AppContext';
 
 export default function VisualizerTestPage() {
@@ -14,7 +15,7 @@ export default function VisualizerTestPage() {
     // For now, they consume it safely.
 
     const [isListening, setIsListening] = useState(false);
-    const [visualizer, setVisualizer] = useState<'fluid' | 'antigravity' | 'constellation_v2' | 'constellation' | 'wave' | 'particle_vortex'>('fluid');
+    const [visualizer, setVisualizer] = useState<'fluid' | 'antigravity' | 'constellation_v2' | 'constellation' | 'wave' | 'particle_vortex' | 'pulse_waveform'>('fluid');
     const [manualMode, setManualMode] = useState<'idle' | 'user' | 'agent'>('idle');
     const [isLiveView, setIsLiveView] = useState(false); // NEW: Live View Toggle
     const [speed, setSpeed] = useState(0.5);
@@ -93,7 +94,8 @@ export default function VisualizerTestPage() {
             speed: speed,
             sensitivity: sensitivity,
             growth: growth,
-            isToolActive: isToolActive
+            isToolActive: isToolActive,
+            isLiveView: isLiveView
         };
 
         switch (visualizer) {
@@ -105,6 +107,9 @@ export default function VisualizerTestPage() {
                 return <WaveformVisualizer {...(commonProps as any)} mode={manualMode} />;
             case 'particle_vortex':
                 return <ParticleVortexVisualizer {...commonProps} mode={manualMode} />;
+            case 'pulse_waveform':
+                // Using manualMode='idle' as proxy for isThinking logic if needed, or pass explicitly
+                return <PulseWaveformVisualizer {...commonProps} mode={manualMode} isThinking={manualMode === 'idle'} />;
             default:
                 return null;
         }
@@ -202,6 +207,7 @@ export default function VisualizerTestPage() {
                             {[
                                 { id: 'fluid', label: 'Fluid Physics (Ink)', icon: Droplets },
                                 { id: 'antigravity', label: 'Anti-Gravity', icon: Sparkles },
+                                { id: 'pulse_waveform', label: 'Pulse Waveform', icon: Activity },
                                 { id: 'wave', label: 'Simple Waveform', icon: Zap },
                                 { id: 'particle_vortex', label: 'Particle Vortex', icon: Wind },
                             ].map((v) => (

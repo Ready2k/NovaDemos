@@ -1,9 +1,11 @@
+'use client';
 import { useApp } from '@/lib/context/AppContext';
 import SentimentHalo from './SentimentHalo';
 import AntiGravityVisualizer from './AntiGravityVisualizer';
 import FluidVisualizer from './FluidVisualizer';
 import WaveformVisualizer from './WaveformVisualizer';
 import ParticleVortexVisualizer from './ParticleVortexVisualizer';
+import PulseWaveformVisualizer from './PulseWaveformVisualizer';
 
 interface IntelligenceOrbProps {
     sentiment?: number;
@@ -15,7 +17,9 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
     const { messages, connectionStatus, settings, workflowState } = useApp();
 
     // Determine if a tool/workflow is currently processing
-    const isToolActive = workflowState?.status === 'active';
+    const isWorkflowActive = workflowState?.status === 'active';
+    // Steps are not Tools -> Only visualize Tool usage if explicitly identified
+    const isToolActive = false;
 
     // Calculate average sentiment from recent messages (last 5)
     const recentMessages = messages.slice(-5);
@@ -33,24 +37,64 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
         ? propIsActive
         : (connectionStatus === 'connected' || connectionStatus === 'recording');
 
-    // Determine Mode for Fluid Visualizer
-    // Determine Mode for Fluid Visualizer & Others
+    // Determine Mode for Visualizers
     const fluidMode = connectionStatus === 'disconnected' ? 'dormant' :
         connectionStatus === 'recording' ? 'user' :
             connectionStatus === 'connected' ? 'agent' : 'idle';
 
     // Visualizer Selection
     const renderVisualizer = () => {
+        const speed = settings.physicsSpeed ?? 1.0;
+        const sensitivity = settings.physicsSensitivity ?? 1.0;
+        const growth = settings.contextGrowth ?? 0;
+
         switch (settings.visualizationStyle) {
             case 'fluid_physics':
-                return <FluidVisualizer mode={fluidMode} getAudioData={getAudioData} isToolActive={isToolActive} />;
+                return <FluidVisualizer
+                    mode={fluidMode}
+                    getAudioData={getAudioData}
+                    isToolActive={isToolActive}
+                    isLiveView={true}
+                    {...({ speed, sensitivity } as any)}
+                />;
+            case 'pulse_waveform':
+                return <PulseWaveformVisualizer
+                    mode={fluidMode === 'dormant' ? 'idle' : fluidMode}
+                    isActive={isActive}
+                    getAudioData={getAudioData}
+                    isToolActive={isToolActive}
+                    isThinking={isWorkflowActive}
+                    speed={speed}
+                    sensitivity={sensitivity}
+                    growth={growth}
+                />;
             case 'anti_gravity':
-                return <AntiGravityVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} isToolActive={isToolActive} />;
+                return <AntiGravityVisualizer
+                    isActive={isActive}
+                    getAudioData={getAudioData}
+                    mode={fluidMode}
+                    isToolActive={isToolActive}
+                    speed={speed}
+                    sensitivity={sensitivity}
+                    growth={growth}
+                />;
             case 'particle_vortex':
-                return <ParticleVortexVisualizer mode={fluidMode} getAudioData={getAudioData} isToolActive={isToolActive} />;
+                return <ParticleVortexVisualizer
+                    mode={fluidMode}
+                    getAudioData={getAudioData}
+                    isToolActive={isToolActive}
+                    speed={speed}
+                    sensitivity={sensitivity}
+                    growth={growth}
+                />;
             case 'simple_wave':
             default:
-                return <WaveformVisualizer isActive={isActive} getAudioData={getAudioData} mode={fluidMode} isThinking={isToolActive} />;
+                return <WaveformVisualizer
+                    isActive={isActive}
+                    getAudioData={getAudioData}
+                    mode={fluidMode}
+                    isThinking={isWorkflowActive}
+                />; // Waveform doesn't support physics tuning yet
         }
     };
 

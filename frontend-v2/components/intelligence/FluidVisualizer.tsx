@@ -68,9 +68,10 @@ interface NeuralProps {
     mode?: 'idle' | 'user' | 'agent' | 'dormant';
     getAudioData?: () => Uint8Array | null;
     isToolActive?: boolean; // NEW: Tool Support
+    isLiveView?: boolean;
 }
 
-function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: NeuralProps) {
+function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false, isLiveView = false }: NeuralProps) {
     const nodesRef = useRef<Points>(null);
     const toolNodesRef = useRef<Points>(null); // NEW: Tool Cluster
     const hazeRef = useRef<Points>(null);
@@ -95,13 +96,28 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
         const idleC = new Color(CONFIG.colors.nodeIdle);
 
         for (let i = 0; i < CONFIG.nodeCount; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
-            const r = 10 + Math.random() * 15;
+            let x, y, z;
 
-            const x = r * Math.sin(phi) * Math.cos(theta);
-            const y = (r * Math.sin(phi) * Math.sin(theta)) * 0.6;
-            const z = r * Math.cos(phi);
+            if (isLiveView) {
+                // CYLINDRICAL / BAR DISTRIBUTION
+                // Spread wide across the bar
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 15; // Vertical/Depth radius
+                const width = (Math.random() - 0.5) * 500; // Wide X spread (-250 to 250)
+
+                x = width;
+                y = radius * Math.sin(angle) * 0.6; // Flatten height slightly
+                z = radius * Math.cos(angle);
+            } else {
+                // SPHERICAL DISTRIBUTION (Default)
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const r = 10 + Math.random() * 15;
+
+                x = r * Math.sin(phi) * Math.cos(theta);
+                y = (r * Math.sin(phi) * Math.sin(theta)) * 0.6;
+                z = r * Math.cos(phi);
+            }
 
             bPos[i * 3] = x; bPos[i * 3 + 1] = y; bPos[i * 3 + 2] = z;
             bBase[i * 3] = x; bBase[i * 3 + 1] = y; bBase[i * 3 + 2] = z;
@@ -114,14 +130,28 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
         const tBase = new Float32Array(CONFIG.toolNodeCount * 3);
 
         for (let i = 0; i < CONFIG.toolNodeCount; i++) {
-            // Smaller, tighter cluster
-            const r = Math.random() * 8;
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
+            let x, y, z;
 
-            const x = CONFIG.toolOffset.x + (r * Math.sin(phi) * Math.cos(theta));
-            const y = CONFIG.toolOffset.y + (r * Math.sin(phi) * Math.sin(theta));
-            const z = CONFIG.toolOffset.z + (r * Math.cos(phi));
+            if (isLiveView) {
+                // Spread tools wide too? Or keep them clustered?
+                // Let's spread them a bit but maybe effectively a second layer or clustered at ends?
+                // User wants "fill the area".
+                // Let's make tools a wider cloud too.
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 10;
+                const width = (Math.random() - 0.5) * 400; // Slightly less wide than brain
+                x = width;
+                y = radius * Math.sin(angle);
+                z = radius * Math.cos(angle);
+            } else {
+                const r = Math.random() * 8;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                x = CONFIG.toolOffset.x + (r * Math.sin(phi) * Math.cos(theta));
+                y = CONFIG.toolOffset.y + (r * Math.sin(phi) * Math.sin(theta));
+                z = CONFIG.toolOffset.z + (r * Math.cos(phi));
+            }
 
             tPos[i * 3] = x; tPos[i * 3 + 1] = y; tPos[i * 3 + 2] = z;
             tBase[i * 3] = x; tBase[i * 3 + 1] = y; tBase[i * 3 + 2] = z;
@@ -130,7 +160,8 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
         // 3. Haze
         const hPos = new Float32Array(CONFIG.hazeCount * 3);
         for (let i = 0; i < CONFIG.hazeCount; i++) {
-            const x = (Math.random() - 0.5) * 60;
+            // Haze always full volume
+            const x = (Math.random() - 0.5) * (isLiveView ? 600 : 60);
             const y = (Math.random() - 0.5) * 40;
             const z = (Math.random() - 0.5) * 40;
             hPos[i * 3] = x; hPos[i * 3 + 1] = y; hPos[i * 3 + 2] = z;
@@ -146,7 +177,7 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
             haze: { pos: hPos },
             lineGeo: { pos: linePos }
         };
-    }, []);
+    }, [isLiveView]); // Depend on isLiveView to regenerate geometry
 
     const tempColor = useMemo(() => new Color(), []);
     const toolColor = useMemo(() => new Color(CONFIG.colors.tool), []);
@@ -188,11 +219,13 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
 
             // Active Tool Pull: When tools are active, brain leans slightly towards them
             let pullX = 0;
-            if (isToolActive) pullX = 2.0;
+            if (isToolActive && !isLiveView) pullX = 2.0;
 
             nPos[i3] = (bx * expand) + (nX * 4.0) + pullX;
             nPos[i3 + 1] = (by * expand) + (nY * 4.0);
             nPos[i3 + 2] = (bz * expand) + (nZ * 4.0);
+
+
 
             // Color Logic
             if (mode === 'user') tempColor.set(CONFIG.colors.nodeActive);
@@ -245,7 +278,8 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
         const lPos = linesRef.current.geometry.attributes.position.array as Float32Array;
         let lineIdx = 0;
         const limit = lPos.length;
-        const connectThreshold = CONFIG.connectionDist + (activity * 3);
+        const spreadFactor = isLiveView ? 4.0 : 1.0;
+        const connectThreshold = (CONFIG.connectionDist * spreadFactor) + (activity * 3);
         const thresholdSq = connectThreshold * connectThreshold;
 
         for (let i = 0; i < CONFIG.nodeCount; i++) {
@@ -276,7 +310,7 @@ function NetworkScene({ getAudioData, mode = 'idle', isToolActive = false }: Neu
     return (
         <group>
             {/* LAYER 1: HAZE (FIXED ACCESSORS) */}
-            <points ref={hazeRef}>
+            <points ref={hazeRef} scale={[isLiveView ? 8 : 1, 1, 1]}>
                 <bufferGeometry>
                     <bufferAttribute
                         attach="attributes-position"
