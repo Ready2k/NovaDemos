@@ -30,13 +30,15 @@ export default function WorkflowDesigner() {
         disconnectAction: 'always' | 'never' | 'ask';
         saveReport: boolean;
         saveConfig: boolean;
+        maxTurns: number;
     }>({
         personaId: '',
         successCriteria: '',
         testInstructions: '',
         disconnectAction: 'always',
         saveReport: true,
-        saveConfig: true
+        saveConfig: true,
+        maxTurns: 10
     });
 
     // Custom Modal State
@@ -109,7 +111,8 @@ export default function WorkflowDesigner() {
                     testInstructions: data.testConfig.testInstructions || '',
                     disconnectAction: data.testConfig.disconnectAction || 'always',
                     saveReport: data.testConfig.saveReport ?? true,
-                    saveConfig: true
+                    saveConfig: true,
+                    maxTurns: data.testConfig.maxTurns || 10
                 });
             } else if (data.testPersona) {
                 // Legacy fallback: try to match string to a persona ID? 
@@ -169,7 +172,8 @@ export default function WorkflowDesigner() {
                 successCriteria: testConfig.successCriteria,
                 testInstructions: testConfig.testInstructions,
                 disconnectAction: testConfig.disconnectAction,
-                saveReport: testConfig.saveReport
+                saveReport: testConfig.saveReport,
+                maxTurns: testConfig.maxTurns
             };
 
             // 2. Save Config to Workflow if requested
@@ -494,6 +498,27 @@ export default function WorkflowDesigner() {
                                     />
                                 </div>
 
+
+                                {/* 2.5 Max Turns */}
+                                <div className="space-y-2">
+                                    <label className={cn("text-xs font-bold uppercase tracking-wider", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                                        Max Turns
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={50}
+                                        value={testConfig.maxTurns}
+                                        onChange={e => setTestConfig(prev => ({ ...prev, maxTurns: parseInt(e.target.value) || 10 }))}
+                                        className={cn(
+                                            "w-full p-3 rounded-lg border outline-none transition-all",
+                                            isDarkMode
+                                                ? "bg-black/20 border-white/10 text-white focus:border-violet-500 placeholder-white/20"
+                                                : "bg-gray-50 border-gray-200 text-gray-900 focus:border-violet-500"
+                                        )}
+                                    />
+                                </div>
+
                                 {/* 3. Success Criteria */}
                                 <div className="space-y-2">
                                     <label className={cn("text-xs font-bold uppercase tracking-wider", isDarkMode ? "text-gray-400" : "text-gray-600")}>
@@ -629,6 +654,6 @@ export default function WorkflowDesigner() {
                     isDarkMode={isDarkMode}
                 />
             </div>
-        </div>
+        </div >
     );
 }

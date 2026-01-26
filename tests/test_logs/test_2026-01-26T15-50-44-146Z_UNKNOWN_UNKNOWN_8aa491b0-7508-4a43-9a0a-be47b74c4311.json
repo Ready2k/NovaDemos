@@ -1,0 +1,76 @@
+{
+  "sessionId": "8aa491b0-7508-4a43-9a0a-be47b74c4311",
+  "startTime": 1769442632371,
+  "endTime": 1769442644147,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769442632371,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769442633019,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help today?",
+      "timestamp": 1769442635821
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?I’m here to help with your banking needs. What would you like to check or sort out today?",
+      "timestamp": 1769442636518,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?I’m here to help with your banking needs. What would you like to check or sort out today?",
+      "timestamp": 1769442637807,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me get started. First, could you please provide me with your account number and sort code?",
+      "timestamp": 1769442640260
+    },
+    {
+      "role": "assistant",
+      "text": "I’m here to help with your banking needs. What would you like to check or sort out today?I understand you’d like to access your account, but I’ll need you to share your account number and sort code first.",
+      "timestamp": 1769442641949,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 7049,
+    "outputTokens": 321,
+    "totalTokens": 7370,
+    "cost": 0.025962000000000002,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

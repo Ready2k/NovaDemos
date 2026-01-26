@@ -31,4 +31,5 @@ export interface TestConfiguration {
     testName?: string;
     saveReport?: boolean; // Whether to show the report at the end
     testInstructions?: string; // Specific instructions for the simulated user
+    maxTurns?: number; // Maximum number of turns before failure
 }

@@ -12,9 +12,10 @@ interface UseWorkflowSimulatorProps {
     stopSimulation: () => void;
     sendJson: (message: any) => void; // Add sendJson
     testName?: string;
+    maxTurns?: number;
 }
 
-export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation, sendJson, testName = 'Manual Test' }: UseWorkflowSimulatorProps) {
+export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation, sendJson, testName = 'Manual Test', maxTurns = 10 }: UseWorkflowSimulatorProps) {
     const [isThinking, setIsThinking] = useState(false);
     const waitingForEcho = useRef(false);
     const lastMessageCount = useRef(messages.length);
@@ -70,6 +71,34 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
             // Double check messages haven't updated in the interim
             const currentLast = messages[messages.length - 1];
             if (!currentLast || currentLast.role === 'user') return;
+
+            // Check Max Turns
+            // Count user messages in current session
+            const userTurns = messages.filter(m => m.role === 'user').length;
+            if (userTurns >= maxTurns) {
+                console.log(`[Simulator] Max turns reached (${maxTurns}). Failing test.`);
+
+                // Send Failure result to backend
+                sendJson({
+                    type: 'test_config',
+                    data: {
+                        testName: testName,
+                        result: 'FAIL', // System Result 
+                        userResult: 'FAIL',
+                        notes: `Max turns reached (${maxTurns})`
+                    }
+                });
+
+                // Display failure message
+                onSendMessage(`[FAIL] (Max turns reached: ${maxTurns})`);
+                waitingForEcho.current = true;
+
+                // Stop with delay
+                setTimeout(() => {
+                    stopSimulation();
+                }, 1500);
+                return;
+            }
 
             // Generate Response
             setIsThinking(true);

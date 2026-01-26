@@ -50,7 +50,8 @@ INSTRUCTIONS:
    - Append "[FAIL]" if you could not achieve your goal or the agent failed.
 6. CRITICAL: Do NOT say [PASS] or [FAIL] if the Agent is saying "Let me check" or "One moment" or asking for more details. Only say it when the interaction is finished.
 7. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add the result token.
-7. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
+8. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
+9. CRITICAL: You are the USER. NEVER, EVER generate text for the Assistant/Agent. Do not output "*Speaks:*", "Assistant:", or "*EXECUTE:*". If you find yourself predicting the Agent's response, STOP immediately.
 `;
 
             if (instructions) {
@@ -116,7 +117,8 @@ INSTRUCTIONS:
                 max_tokens: 300,
                 system: systemPrompt,
                 messages: collapsedMessages,
-                temperature: 0.7
+                temperature: 0.7,
+                stop_sequences: ["Assistant:", "Agent:", "*Speaks:*", "*EXECUTE:", "[SYSTEM]"]
             };
 
             console.log(`[Simulation] Sending ${collapsedMessages.length} messages to Bedrock...`);

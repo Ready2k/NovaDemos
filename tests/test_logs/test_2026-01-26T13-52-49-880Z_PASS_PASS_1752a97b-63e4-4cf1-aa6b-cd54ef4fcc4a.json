@@ -1,0 +1,54 @@
+{
+  "sessionId": "1752a97b-63e4-4cf1-aa6b-cd54ef4fcc4a",
+  "startTime": 1769435563556,
+  "endTime": 1769435569880,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769435563556,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769435564110,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I'm calling about my bank account number 12345678, sort code 112233. I'd like to check my current balance please.",
+      "timestamp": 1769435566317
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 7045,
+    "outputTokens": 93,
+    "totalTokens": 7138,
+    "cost": 0.02253,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

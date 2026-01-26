@@ -1,0 +1,141 @@
+{
+  "sessionId": "7441b2f9-e9b6-4d90-ae99-8ddc53e71797",
+  "startTime": 1769435644477,
+  "endTime": 1769435664162,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769435644477,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769435645157,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I'm calling about my bank account. I need to check the balance for account number 12345678, sort code 112233. Can you please look that up for me?",
+      "timestamp": 1769435648501
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769435649366,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Great, I can help with that. Let me pull up your account details for you now.",
+      "timestamp": 1769435649373,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769435651057,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769435651745,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you. I also have another request - I had a dispute with my landlord that has now been resolved. I'd like to close out that dispute, as we've agreed no further action is needed.",
+      "timestamp": 1769435652011
+    },
+    {
+      "role": "assistant",
+      "text": "Your balance is £1,200.00. Is there anything else you'd like to check or need help with today?",
+      "timestamp": 1769435652046,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":true,\"activeDisputes\":[{\"accountId\":\"12345678\",\"additionalDetails\":\"Correcting dispute amount from £1.00 to actual charge of £12.00\",\"amount\":\"1\",\"createdDate\":\"2026-01-26\",\"isPriorityRefund\":false,\"lastUpdatedTime\":\"2026-01-26T12:44:09.594227\",\"merchantContacted\":true,\"merchantName\":\"Netflix\",\"reason\":\"Recurring payment after cancellation\",\"requiredInfo\":null,\"status\":\"OPEN\",\"caseId\":\"DSP-7CBAAD\"},{\"createdDate\":\"2026-01-26\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"1200\",\"merchantName\":\"Monthly Rent\",\"reason\":\"Unresponsive landlord after payment\",\"isPriorityRefund\":false,\"caseId\":\"DSP-CCE3E6\"}]}",
+      "timestamp": 1769435652479,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":true,\"activeDisputes\":[{\"accountId\":\"12345678\",\"additionalDetails\":\"Correcting dispute amount from £1.00 to actual charge of £12.00\",\"amount\":\"1\",\"createdDate\":\"2026-01-26\",\"isPriorityRefund\":false,\"lastUpdatedTime\":\"2026-01-26T12:44:09.594227\",\"merchantContacted\":true,\"merchantName\":\"Netflix\",\"reason\":\"Recurring payment after cancellation\",\"requiredInfo\":null,\"status\":\"OPEN\",\"caseId\":\"DSP-7CBAAD\"},{\"createdDate\":\"2026-01-26\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"1200\",\"merchantName\":\"Monthly Rent\",\"reason\":\"Unresponsive landlord after payment\",\"isPriorityRefund\":false,\"caseId\":\"DSP-CCE3E6\"}]}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: update_dispute_case",
+      "timestamp": 1769435653985,
+      "toolName": "update_dispute_case",
+      "toolInput": "{\"caseId\":\"DSP-CCE3E6\",\"additionalDetails\":\"Customer and landlord have resolved the dispute. No further action required.\",\"status\":\"CLOSED\"}"
+    },
+    {
+      "role": "user",
+      "text": "Okay, great, thank you for checking my balance. As for the landlord dispute, could you please confirm that it has been closed out in your system? We agreed no further action was needed.",
+      "timestamp": 1769435654869
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: Case DSP-CCE3E6 updated. New status: CLOSED",
+      "timestamp": 1769435655305,
+      "toolName": "update_dispute_case",
+      "result": "Case DSP-CCE3E6 updated. New status: CLOSED"
+    },
+    {
+      "role": "assistant",
+      "text": "Okay, let's see. The user called about their bank account to check the balance and close a dispute with their landlord.",
+      "timestamp": 1769435657864,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Okay, let's see. The user called about their bank account to check the balance and close a dispute with their landlord.First, they provided their account number and sort code, so I used the agentcore_ balance tool to get the balance.",
+      "timestamp": 1769435659617,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "The balance for account 12345678, sort code 112233 is £1,200.00. Regarding the landlord dispute, I can confirm that I have closed that out in your system, as the two parties have agreed no further action is needed. Is there anything else I can assist you with today?",
+      "timestamp": 1769435660603
+    },
+    {
+      "role": "assistant",
+      "text": "Okay, let's see. The user called about their bank account to check the balance and close a dispute with their landlord.That's all sorted then. Your balance is £1,200.00 and the landlord dispute is now closed.",
+      "timestamp": 1769435661535,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 8066,
+    "outputTokens": 1413,
+    "totalTokens": 9479,
+    "cost": 0.045393,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}
