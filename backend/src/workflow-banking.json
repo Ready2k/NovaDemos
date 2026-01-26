@@ -171,6 +171,11 @@
       "id": "publish_gambling",
       "label": "Call 'manage_recent_interactions' with action='PUBLISH' to save the session. This is the FINAL step. After this, STOP. DO NOT LOOP BACK.",
       "type": "process"
+    },
+    {
+      "id": "check_additional_help",
+      "label": "Did the user ask for more help? If Yes/Transactions/Dispute -> 'Yes'. If No/Thanks/Bye -> 'No'.",
+      "type": "decision"
     }
   ],
   "edges": [
@@ -248,7 +253,17 @@
     },
     {
       "from": "show_balance",
-      "to": "publish_summary"
+      "to": "check_additional_help"
+    },
+    {
+      "from": "check_additional_help",
+      "to": "route_service",
+      "label": "Yes"
+    },
+    {
+      "from": "check_additional_help",
+      "to": "publish_summary",
+      "label": "No"
     },
     {
       "from": "manage_dispute",
