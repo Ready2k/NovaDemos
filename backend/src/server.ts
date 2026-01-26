@@ -665,6 +665,18 @@ function saveTranscript(session: ClientSession) {
 
         // Add Test Metadata if applicable
         if (session.isTest) {
+            // FALLBACK: If testResult is missing, check transcript for tokens
+            if (!session.testResult) {
+                const fullText = session.transcript.map((t: any) => t.text).join(' ').toUpperCase();
+                if (fullText.includes('[PASS]')) {
+                    session.testResult = 'PASS';
+                    session.userResult = 'PASS'; // Assume same as system unless overridden
+                } else if (fullText.includes('[FAIL]')) {
+                    session.testResult = 'FAIL';
+                    session.userResult = 'FAIL';
+                }
+            }
+
             (data as any).isAutoTest = true;
             (data as any).testResult = session.testResult;
             (data as any).userResult = session.userResult;
@@ -2003,8 +2015,22 @@ const server = http.createServer(async (req, res) => {
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
-                const { history, persona, instructions } = JSON.parse(body);
+                let { history, persona, instructions } = JSON.parse(body);
                 console.log('[Simulation] Received request. Persona length:', persona?.length, 'History items:', history?.length, 'Instructions:', instructions ? 'Yes' : 'No');
+
+                // PERSONA RESOLUTION: If persona matches a known prompt ID, resolve it to content
+                if (persona) {
+                    try {
+                        const allPrompts = await listPrompts(false);
+                        const match = allPrompts.find(p => p.id === persona || p.id === persona + '.txt');
+                        if (match) {
+                            console.log(`[Simulation] Resolved persona ID "${persona}" to content (${match.content.length} chars)`);
+                            persona = match.content;
+                        }
+                    } catch (err) {
+                        console.warn('[Simulation] Failed to resolve persona ID:', err);
+                    }
+                }
 
                 if (!history || !Array.isArray(history) || !persona) {
                     res.writeHead(400, CORS_HEADERS);
@@ -2020,6 +2046,86 @@ const server = http.createServer(async (req, res) => {
                 console.error('[Simulation] Error:', e);
                 res.writeHead(500, CORS_HEADERS);
                 res.end(JSON.stringify({ error: e.message || 'Simulation failed' }));
+            }
+        });
+        return;
+    }
+
+    // --- Test Result Persistence Endpoint ---
+    if (pathname === '/api/test-result' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { sessionId, result, notes } = JSON.parse(body);
+                console.log(`[Tests] Received result update for session ${sessionId}: ${result}`);
+
+                if (!sessionId || !result) {
+                    res.writeHead(400, CORS_HEADERS);
+                    res.end(JSON.stringify({ error: 'Missing sessionId or result' }));
+                    return;
+                }
+
+                const testLogsDir = path.join(__dirname, '../../tests/test_logs');
+                if (!fs.existsSync(testLogsDir)) {
+                    res.writeHead(404, CORS_HEADERS);
+                    res.end(JSON.stringify({ error: 'Test logs directory not found' }));
+                    return;
+                }
+
+                // Find the file
+                const files = fs.readdirSync(testLogsDir);
+                const match = files.find(f => f.includes(sessionId) && f.endsWith('.json'));
+
+                if (match) {
+                    const filePath = path.join(testLogsDir, match);
+                    const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+                    // Update fields
+                    content.userResult = result;
+                    if (notes) content.notes = notes;
+                    // Also update overall status?
+                    // If User fails it, the whole test is failed.
+                    if (result === 'FAIL') {
+                        content.status = 'FAIL';
+                    } else if (result === 'PASS' && content.systemResult === 'PASS') {
+                        content.status = 'PASS';
+                    }
+
+                    fs.writeFileSync(filePath, JSON.stringify(content, null, 2));
+                    console.log(`[Tests] Updated test log ${match} with User Result: ${result}`);
+
+                    // Rename file to reflect new status? 
+                    // File format: test_TIMESTAMP_SYS_USER_ID.json
+                    try {
+                        const parts = match.split('_');
+                        // parts[0] = test
+                        // parts[1] = TIMESTAMP
+                        // parts[2] = SYS
+                        // parts[3] = USER
+                        // parts[4] = ID.json
+                        if (parts.length >= 5) {
+                            parts[3] = result; // Update USER part
+                            const newFilename = parts.join('_');
+                            fs.renameSync(filePath, path.join(testLogsDir, newFilename));
+                            console.log(`[Tests] Renamed log file to: ${newFilename}`);
+                        }
+                    } catch (e) {
+                        console.warn('[Tests] Failed to rename log file, but content updated.', e);
+                    }
+
+                    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } else {
+                    console.warn(`[Tests] No log file found for session ${sessionId}`);
+                    res.writeHead(404, CORS_HEADERS);
+                    res.end(JSON.stringify({ error: 'Test log not found' }));
+                }
+
+            } catch (e: any) {
+                console.error('[Tests] Error saving result:', e);
+                res.writeHead(500, CORS_HEADERS);
+                res.end(JSON.stringify({ error: e.message }));
             }
         });
         return;
@@ -4222,6 +4328,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Nova sometimes emits multiple events for the same logical call if latency is high.
             if (session.toolsCalledThisTurn && session.toolsCalledThisTurn.includes(actualToolName)) {
                 console.log(`[Server] 🛡️ AGGRESSIVE DEBOUNCE: Tool ${actualToolName} already called this turn. Ignoring duplicate. (Turn History: ${session.toolsCalledThisTurn.join(', ')})`);
+
+                // CRITICAL FIX: Even if we debounce, we MUST send a result to Bedrock/Nova to unblock it.
+                // Otherwise it hangs waiting for the tool result until timeout.
+                if (session.sonicClient && session.sonicClient.getSessionId()) {
+                    await session.sonicClient.sendToolResult(
+                        toolUse.toolUseId,
+                        {
+                            text: `[SYSTEM] Duplicate tool invocation skipped. The action '${actualToolName}' was already performed in this turn.`
+                        },
+                        false
+                    );
+                    // Mark as processed so we don't try again if re-emitted
+                    if (session.processedToolIds) session.processedToolIds.add(toolUse.toolUseId);
+                }
                 return;
             }
 

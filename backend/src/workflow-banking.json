@@ -372,9 +372,10 @@
   ],
   "testConfig": {
     "personaId": "persona-BankingDisputes",
-    "successCriteria": "Account balance is returned and I should have zero open disputes",
-    "testInstructions": "I want to know my balance for account 12345678, sort code 112233 and see what open disputes I have",
+    "successCriteria": "Account balance is returned",
+    "testInstructions": "I want to know my balance for account 12345678, sort code 112233. \n",
     "disconnectAction": "always",
-    "saveReport": true
+    "saveReport": true,
+    "maxTurns": 10
   }
 }

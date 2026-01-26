@@ -1,0 +1,88 @@
+{
+  "sessionId": "6c2468e6-9b9e-4d20-8cc1-66429a610273",
+  "startTime": 1769439240251,
+  "endTime": 1769439252475,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769439240251,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769439241010,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help today?",
+      "timestamp": 1769439243527
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?I’m here to help. What would you like to check or sort out today?",
+      "timestamp": 1769439244243,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?I’m here to help. What would you like to check or sort out today?",
+      "timestamp": 1769439245250,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let's get started. I'll need to gather some information from you first.\n\nCould you please provide your account number? I'll need 8 digits.",
+      "timestamp": 1769439246892
+    },
+    {
+      "role": "assistant",
+      "text": "I’m here to help. What would you like to check or sort out today?I’ll need both your 8-digit account number and your 6-digit sort code to verify your identity.",
+      "timestamp": 1769439248667,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I’m here to help. What would you like to check or sort out today?I’ll need both your 8-digit account number and your 6-digit sort code to verify your identity.Could you share those with me, please?",
+      "timestamp": 1769439250763,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I’m here to help. What would you like to check or sort out today?I’ll need both your 8-digit account number and your 6-digit sort code to verify your identity.Could you share those with me, please?",
+      "timestamp": 1769439251292,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 7063,
+    "outputTokens": 471,
+    "totalTokens": 7534,
+    "cost": 0.028253999999999998,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

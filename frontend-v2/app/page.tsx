@@ -411,6 +411,11 @@ export default function Home() {
     // Stop simulation setting
     updateSettings({ simulationMode: false });
 
+    // Capture Session ID before potential disconnect
+    const finalId = sessionIdRef.current || currentSession?.sessionId || null;
+    console.log('[App] stopSimulation: Capturing Final Session ID:', finalId);
+    setFinishedSessionId(finalId);
+
     // Check Disconnect Action Preference
     const action = settings.activeTestConfig?.disconnectAction || 'always';
     if (action === 'always' || (action === 'ask' && confirm('Test complete. Disconnect?'))) {
@@ -425,7 +430,7 @@ export default function Home() {
     if (settings.activeTestConfig?.saveReport) {
       setShowTestReport(true);
     }
-  }, [updateSettings, disconnect, settings.activeTestConfig]);
+  }, [updateSettings, disconnect, settings.activeTestConfig, currentSession]);
 
   const { isThinking: isSimulatingThinking } = useWorkflowSimulator({
     isActive: settings.simulationMode || false,
@@ -437,7 +442,8 @@ export default function Home() {
     testInstructions: settings.activeTestConfig?.testInstructions,
     stopSimulation,
     sendJson: send,
-    testName: settings.activeTestConfig?.testName
+    testName: settings.activeTestConfig?.testName,
+    maxTurns: settings.activeTestConfig?.maxTurns
   });
 
   // Handle toggle recording
@@ -696,6 +702,7 @@ export default function Home() {
         messages={messages}
         testConfig={settings.activeTestConfig}
         isDarkMode={isDarkMode}
+        sessionId={finishedSessionId || currentSession?.sessionId || sessionIdRef.current}
       />
 
       {/* Application Info Modal */}

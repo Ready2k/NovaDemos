@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Message, TestConfiguration } from '@/lib/types';
-import { RefreshCw, Settings, X, CheckCircle2, XCircle, AlertCircle, Copy, Download } from 'lucide-react';
+import { RefreshCw, Settings, X, CheckCircle2, XCircle, AlertCircle, Copy, Download, Loader2 } from 'lucide-react';
 import { useApp } from '@/lib/context/AppContext';
 
 interface TestReportModalProps {
@@ -12,6 +12,7 @@ interface TestReportModalProps {
     messages: Message[];
     testConfig?: TestConfiguration;
     isDarkMode?: boolean;
+    sessionId?: string | null; // Added sessionId
 }
 
 export default function TestReportModal({
@@ -21,10 +22,12 @@ export default function TestReportModal({
     onReconfigure,
     messages,
     testConfig,
-    isDarkMode = true
+    isDarkMode = true,
+    sessionId // Added sessionId
 }: TestReportModalProps) {
     const [status, setStatus] = useState<'pending' | 'success' | 'failure'>('pending');
     const [notes, setNotes] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Reset state on open
@@ -32,6 +35,7 @@ export default function TestReportModal({
         if (isOpen) {
             setStatus('pending');
             setNotes('');
+            setIsSaving(false);
         }
     }, [isOpen]);
 
@@ -48,7 +52,8 @@ export default function TestReportModal({
             config: testConfig,
             status,
             notes,
-            transcript: messages
+            transcript: messages,
+            sessionId
         };
         const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -56,6 +61,39 @@ export default function TestReportModal({
         a.href = url;
         a.download = `test-report-${new Date().toISOString()}.json`;
         a.click();
+    };
+
+    const handleSaveResult = async (newStatus: 'success' | 'failure') => {
+        setStatus(newStatus);
+
+        if (!sessionId) {
+            console.warn('Cannot save test result: No sessionId provided');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const mappedResult = newStatus === 'success' ? 'PASS' : 'FAIL';
+            const res = await fetch('/api/test-result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: sessionId,
+                    result: mappedResult,
+                    notes: notes
+                })
+            });
+
+            if (!res.ok) {
+                console.error('Failed to save test result');
+            } else {
+                console.log('Test result saved successfully');
+            }
+        } catch (error) {
+            console.error('Error saving test result:', error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -119,10 +157,13 @@ export default function TestReportModal({
 
                         {/* Outcome Selection */}
                         <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase tracking-wider opacity-70">Test Outcome</label>
+                            <div className="flex justify-between items-center">
+                                <label className="text-xs font-bold uppercase tracking-wider opacity-70">Test Outcome</label>
+                                {isSaving && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <button
-                                    onClick={() => setStatus('success')}
+                                    onClick={() => handleSaveResult('success')}
                                     className={cn(
                                         "p-3 rounded-lg border flex flex-col items-center gap-2 transition-all",
                                         status === 'success'
@@ -134,7 +175,7 @@ export default function TestReportModal({
                                     <span className="text-xs font-medium">Success</span>
                                 </button>
                                 <button
-                                    onClick={() => setStatus('failure')}
+                                    onClick={() => handleSaveResult('failure')}
                                     className={cn(
                                         "p-3 rounded-lg border flex flex-col items-center gap-2 transition-all",
                                         status === 'failure'
