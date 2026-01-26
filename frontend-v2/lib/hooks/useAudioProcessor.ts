@@ -105,7 +105,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         const pcm16 = new Int16Array(float32Array.length);
 
         for (let i = 0; i < float32Array.length; i++) {
-            let sample = Math.max(-1, Math.min(1, float32Array[i]));
+            const sample = Math.max(-1, Math.min(1, float32Array[i]));
             pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
         }
 

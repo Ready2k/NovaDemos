@@ -1,0 +1,178 @@
+{
+  "sessionId": "6f789a2f-2781-4443-b251-a650769c0977",
+  "startTime": 1769430602884,
+  "endTime": 1769430628498,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769430602884,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769430603814,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769430604156,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I'd like to check my account balance for account number 12345678, sort code 112233. I also want to see if there are any open disputes on my account.",
+      "timestamp": 1769430606979
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769430608032,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Thanks for sharing those details. Let me verify your account first and then check for any open disputes.",
+      "timestamp": 1769430608038,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "Okay, that sounds good. I'll wait while you look into that.",
+      "timestamp": 1769430610323
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769430610697,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769430611164,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769430614324,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769430615064,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769430616349,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769430616911,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769430616985,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769430617598,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769430620295,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769430621377,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769430621972,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00 and there are no open disputes on your account.",
+      "timestamp": 1769430622783,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00 and there are no open disputes on your account.Is there anything else I can help you with today?",
+      "timestamp": 1769430624109,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00 and there are no open disputes on your account.Is there anything else I can help you with today?",
+      "timestamp": 1769430624833,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Great, thank you. That's exactly the information I needed.",
+      "timestamp": 1769430624934
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00 and there are no open disputes on your account.No problem! I'm glad I could help. If you need anything else, just let me know.",
+      "timestamp": 1769430625987,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case"
+  ],
+  "usage": {
+    "inputTokens": 7196,
+    "outputTokens": 1118,
+    "totalTokens": 8314,
+    "cost": 0.038358,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

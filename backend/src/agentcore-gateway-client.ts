@@ -7,10 +7,7 @@ interface AgentCoreGatewayConfig {
     awsSecretKey: string;
 }
 
-interface ToolCallParams {
-    name: string;
-    arguments: any;
-}
+
 
 interface ToolCallResponse {
     isError: boolean;

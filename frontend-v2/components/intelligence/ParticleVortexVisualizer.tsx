@@ -205,7 +205,7 @@ function HybridVortexScene({ getAudioData, mode = 'idle', speed = 1.0, sensitivi
 
             // 3. Gravity (Containment + Orbit)
             let cy = 0, cr = CONFIG.radius;
-            let pullStrength = 0.01;
+            const pullStrength = 0.01;
 
             if (isTool) {
                 cy = CONFIG.toolOffset.y;

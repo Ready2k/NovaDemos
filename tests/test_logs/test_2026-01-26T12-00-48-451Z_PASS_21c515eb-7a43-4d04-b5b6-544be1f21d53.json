@@ -1,0 +1,66 @@
+{
+  "sessionId": "21c515eb-7a43-4d04-b5b6-544be1f21d53",
+  "startTime": 1769428841911,
+  "endTime": 1769428848451,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769428841911,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I'd like to check the balance for account 12345678, sort code 112233.",
+      "timestamp": 1769428844885
+    },
+    {
+      "role": "assistant",
+      "text": "How can I help today?",
+      "timestamp": 1769428845498,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "How can I help today?",
+      "timestamp": 1769428846498,
+      "type": "final"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769428846500,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for providing those details. Let me check those for you now.",
+      "timestamp": 1769428846504,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case"
+  ],
+  "usage": {
+    "inputTokens": 6636,
+    "outputTokens": 282,
+    "totalTokens": 6918,
+    "cost": 0.024138,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

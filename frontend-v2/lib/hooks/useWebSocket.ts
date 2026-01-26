@@ -45,6 +45,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     const reconnectAttemptsRef = useRef(0);
     const intentionalCloseRef = useRef(false);
     const hasConnectedRef = useRef(false); // Prevent double-connect in Strict Mode
+    const connectRef = useRef<() => void>(() => { }); // Ref to handle recursive calls
 
     // Send JSON message
     const send = useCallback((message: any) => {
@@ -135,7 +136,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
                     console.log(`[WebSocket] Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
 
                     reconnectTimeoutRef.current = setTimeout(() => {
-                        connect();
+                        if (connectRef.current) connectRef.current();
                     }, reconnectInterval);
                 } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
                     console.error('[WebSocket] Max reconnection attempts reached');
@@ -173,6 +174,11 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
             setStatus('disconnected');
         }
     }, [url, reconnectInterval, maxReconnectAttempts]);
+
+    // Update ref whenever connect changes
+    useEffect(() => {
+        connectRef.current = connect;
+    }, [connect]);
 
     // Disconnect from WebSocket
     const disconnect = useCallback(() => {

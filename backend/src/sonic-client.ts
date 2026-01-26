@@ -85,7 +85,7 @@ export class SonicClient {
     private inputQueue: Buffer[] = [];
     private textQueue: string[] = [];
     private toolResultQueue: any[] = [];
-    private streamController: any = null;
+    // private streamController: any = null;
     private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] } = {};
 
     // Lifecycle Synchronization
@@ -1200,7 +1200,7 @@ export class SonicClient {
                     }
 
                     if (eventData.textOutput) {
-                        const content = eventData.textOutput.content;
+                        // const content = eventData.textOutput.content;
                         const contentId = eventData.textOutput.contentId;
                         const stage = this.contentStages.get(contentId) || 'UNKNOWN';
 

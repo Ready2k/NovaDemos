@@ -1,0 +1,72 @@
+{
+  "sessionId": "56da2b61-6eaf-4f54-a7a0-ae7ee01d29ea",
+  "startTime": 1769429100419,
+  "endTime": 1769429106865,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769429100419,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769429101975,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769429102660,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I need to check the balance for account 12345678, sort code 112233.",
+      "timestamp": 1769429103305
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769429104253,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for providing those details. Let me check those for you now.",
+      "timestamp": 1769429104259,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for providing those details. Let me check those for you now.",
+      "timestamp": 1769429105527,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case"
+  ],
+  "usage": {
+    "inputTokens": 6634,
+    "outputTokens": 301,
+    "totalTokens": 6935,
+    "cost": 0.024417,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

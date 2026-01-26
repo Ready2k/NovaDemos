@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 
 interface UseWorkflowSimulatorProps {
@@ -8,11 +8,13 @@ interface UseWorkflowSimulatorProps {
     messages: Message[];
     onSendMessage: (text: string) => void;
     testPersona?: string;
-    testInstructions?: string; // Add this
+    testInstructions?: string;
     stopSimulation: () => void;
+    sendJson: (message: any) => void; // Add sendJson
+    testName?: string;
 }
 
-export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation }: UseWorkflowSimulatorProps) {
+export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation, sendJson, testName = 'Manual Test' }: UseWorkflowSimulatorProps) {
     const [isThinking, setIsThinking] = useState(false);
     const waitingForEcho = useRef(false);
     const lastMessageCount = useRef(messages.length);
@@ -33,6 +35,18 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
 
     useEffect(() => {
         if (!isActive || !isConnected || isThinking || waitingForEcho.current) return;
+
+        // On activation, notify backend this is a test
+        if (isActive && messages.length === 0 && !waitingForEcho.current && !isThinking) {
+            console.log('[Simulator] Starting test session:', testName);
+            sendJson({
+                type: 'test_config',
+                data: {
+                    testName: testName,
+                    result: 'UNKNOWN'
+                }
+            });
+        }
 
         // CRITICAL: Wait for the Agent to greet first (don't speak if messages is empty)
         if (messages.length === 0) {
@@ -83,10 +97,25 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
                 if (data.response) {
                     let text = data.response;
                     let isDone = false;
+                    let userResult = 'UNKNOWN';
 
-                    if (text.includes('[DONE]')) {
+                    if (text.includes('[PASS]')) {
+                        text = text.replace('[PASS]', '').trim();
+                        isDone = true;
+                        userResult = 'PASS';
+                    } else if (text.includes('[FAIL]')) {
+                        text = text.replace('[FAIL]', '').trim();
+                        isDone = true;
+                        userResult = 'FAIL';
+                    } else if (text.includes('[DONE]')) {
+                        // Legacy fallback
                         text = text.replace('[DONE]', '').trim();
                         isDone = true;
+                        userResult = 'PASS';
+                    }
+
+                    if (isDone && !text) {
+                        text = "(Test Complete)";
                     }
 
                     onSendMessage(text);
@@ -94,6 +123,15 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
 
                     if (isDone) {
                         console.log('[Simulator] Objective achieved. Terminating simulation...');
+                        // Notify backend of success
+                        sendJson({
+                            type: 'test_config',
+                            data: {
+                                testName: testName,
+                                result: 'PASS', // System Result (Test Completed)
+                                userResult: userResult // User Result (PASS/FAIL)
+                            }
+                        });
                         setTimeout(() => {
                             stopSimulation();
                         }, 1500); // Small delay to let the final message be sent/seen
@@ -110,7 +148,7 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
 
         return () => clearTimeout(timeoutId);
 
-    }, [isActive, isConnected, messages, effectivePersona, isThinking, onSendMessage, stopSimulation]);
+    }, [isActive, isConnected, messages, effectivePersona, isThinking, onSendMessage, stopSimulation, sendJson, testName, testInstructions]);
 
     return { isThinking };
 }

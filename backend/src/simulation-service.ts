@@ -45,7 +45,11 @@ INSTRUCTIONS:
 3. Do not be overly helpful, but answer questions if the agent asks them.
 4. If the agent makes a mistake, point it out naturally.
 5. If the conversation has reached its natural conclusion (you have the info you need and goodbyes have been exchanged), append the token "[DONE]" to the end of your final response.
-6. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add [DONE].
+5. If the conversation has reached its natural conclusion (you have the info you need and goodbyes have been exchanged), you must append a result token:
+   - Append "[PASS]" if you successfully achieved your goal (e.g. got the balance).
+   - Append "[FAIL]" if you could not achieve your goal or the agent failed.
+6. CRITICAL: Do NOT say [PASS] or [FAIL] if the Agent is saying "Let me check" or "One moment" or asking for more details. Only say it when the interaction is finished.
+7. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add the result token.
 7. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
 `;
 

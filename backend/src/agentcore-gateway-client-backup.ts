@@ -7,10 +7,7 @@ interface AgentCoreGatewayConfig {
     awsSecretKey: string;
 }
 
-interface ToolCallParams {
-    name: string;
-    arguments: any;
-}
+
 
 interface ToolCallResponse {
     isError: boolean;
@@ -64,7 +61,7 @@ export class AgentCoreGatewayClient {
         try {
             const url = new URL(this.config.gatewayUrl);
             const body = JSON.stringify(payload);
-            
+
             // Create AWS request object for signing
             const request = {
                 host: url.hostname,
@@ -85,7 +82,7 @@ export class AgentCoreGatewayClient {
             });
 
             console.log(`[AgentCoreGateway] Making signed request to gateway...`);
-            
+
             // Make the signed request using fetch
             const response = await fetch(this.config.gatewayUrl, {
                 method: 'POST',
@@ -94,7 +91,7 @@ export class AgentCoreGatewayClient {
             });
 
             console.log(`[AgentCoreGateway] Response status: ${response.status}`);
-            
+
             if (!response.ok) {
                 const text = await response.text();
                 console.error(`[AgentCoreGateway] Request failed: ${text}`);
@@ -113,12 +110,12 @@ export class AgentCoreGatewayClient {
             // Handle new AgentCore response format with body.responseBody
             if (data.body && data.body.responseBody) {
                 console.log(`[AgentCoreGateway] Found responseBody:`, data.body.responseBody);
-                
+
                 // The responseBody contains a string with Java object notation
                 // Extract the JSON part from the text field
                 const responseBodyStr = data.body.responseBody;
                 console.log(`[AgentCoreGateway] Raw responseBody string:`, responseBodyStr);
-                
+
                 // Look for the JSON content in the text field using regex
                 const textMatch = responseBodyStr.match(/text=\{([^}]+)\}/);
                 if (textMatch) {
@@ -126,10 +123,10 @@ export class AgentCoreGatewayClient {
                         // Extract and parse the JSON content
                         const jsonStr = '{' + textMatch[1] + '}';
                         console.log(`[AgentCoreGateway] Extracted JSON:`, jsonStr);
-                        
+
                         const innerResponse = JSON.parse(jsonStr);
                         console.log(`[AgentCoreGateway] Parsed inner response:`, innerResponse);
-                        
+
                         // Handle new format: direct data object
                         if (innerResponse.accountId || innerResponse.message || innerResponse.transactions) {
                             console.log(`[AgentCoreGateway] Tool result (new format):`, innerResponse);
@@ -141,13 +138,13 @@ export class AgentCoreGatewayClient {
                                 return JSON.stringify(innerResponse);
                             }
                         }
-                        
+
                         return JSON.stringify(innerResponse);
                     } catch (parseError) {
                         console.error(`[AgentCoreGateway] Failed to parse extracted JSON:`, parseError);
                     }
                 }
-                
+
                 // Fallback: return the raw responseBody
                 console.log(`[AgentCoreGateway] Using raw responseBody as fallback:`, responseBodyStr);
                 return responseBodyStr;
@@ -155,14 +152,14 @@ export class AgentCoreGatewayClient {
 
             // Extract the result from the MCP response (fallback for old format)
             const result = data.result as ToolCallResponse;
-            
+
             if (result && result.content && result.content.length > 0) {
                 // Try to parse the inner response
                 const innerText = result.content[0].text;
-                
+
                 try {
                     const innerResponse = JSON.parse(innerText);
-                    
+
                     // Handle new format: direct data object
                     if (innerResponse.accountId || innerResponse.message || innerResponse.transactions) {
                         console.log(`[AgentCoreGateway] Tool result (new format):`, innerResponse);
@@ -175,17 +172,17 @@ export class AgentCoreGatewayClient {
                             return JSON.stringify(innerResponse);
                         }
                     }
-                    
+
                     // Handle old format: with body field
                     if (innerResponse.body) {
                         console.log(`[AgentCoreGateway] Tool result (old format): ${innerResponse.body}`);
                         return innerResponse.body;
                     }
-                    
+
                     // If it's a valid JSON but doesn't match expected formats, return as string
                     console.log(`[AgentCoreGateway] Tool result (unknown JSON format):`, innerResponse);
                     return JSON.stringify(innerResponse);
-                    
+
                 } catch (e) {
                     // If not JSON, return as-is
                     console.log(`[AgentCoreGateway] Tool result (raw): ${innerText}`);
@@ -212,7 +209,7 @@ export class AgentCoreGatewayClient {
         try {
             const url = new URL(this.config.gatewayUrl);
             const body = JSON.stringify(payload);
-            
+
             const request = {
                 host: url.hostname,
                 method: 'POST',

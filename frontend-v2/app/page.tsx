@@ -139,7 +139,15 @@ export default function Home() {
         break;
 
       case 'transcript':
-        const cleanText = message.text ? message.text.replace(/\[SENTIMENT:.*?\]/g, '').trim() : '';
+        let cleanText = message.text ? message.text.replace(/\[SENTIMENT:.*?\]/g, '').trim() : '';
+
+        // Filter out internal thoughts if they leak
+        cleanText = cleanText
+          .replace(/^Okay, let me process this.*?(\n|$)/g, '')
+          .replace(/^The user provided.*?(\n|$)/g, '')
+          .replace(/^I verified.*?(\n|$)/g, '')
+          .trim();
+
         if (!cleanText) break;
 
         // Dedup Strategies:
@@ -427,7 +435,9 @@ export default function Home() {
     onSendMessage: handleSendMessage,
     testPersona: settings.simulationPersona,
     testInstructions: settings.activeTestConfig?.testInstructions,
-    stopSimulation
+    stopSimulation,
+    sendJson: send,
+    testName: settings.activeTestConfig?.testName
   });
 
   // Handle toggle recording

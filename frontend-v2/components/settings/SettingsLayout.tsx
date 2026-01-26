@@ -7,9 +7,10 @@ import WorkflowSettings from './WorkflowSettings';
 import PresetsSettings from './PresetsSettings';
 import SystemSettings from '@/components/settings/SystemSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
+import TestSettings from '@/components/settings/TestSettings';
 
 // Assuming AppSettingsTab is defined elsewhere, e.g., in AppContext or a types file
-type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system' | 'tools';
+type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system' | 'tools' | 'test';
 
 export default function SettingsLayout() {
     const { activeSettingsTab, setActiveSettingsTab, isDarkMode } = useApp();
@@ -21,7 +22,8 @@ export default function SettingsLayout() {
         { id: 'tools', label: 'Tools' },
         { id: 'workflow', label: 'Workflow' },
         { id: 'presets', label: 'Presets' },
-        { id: 'system', label: 'System' }
+        { id: 'system', label: 'System' },
+        { id: 'test', label: 'Test Logs' }
     ];
 
     return (
@@ -70,6 +72,7 @@ export default function SettingsLayout() {
                 {activeSettingsTab === 'workflow' && <WorkflowSettings />}
                 {activeSettingsTab === 'presets' && <PresetsSettings />}
                 {activeSettingsTab === 'system' && <SystemSettings />}
+                {activeSettingsTab === 'test' && <TestSettings />}
             </div>
         </div>
     );

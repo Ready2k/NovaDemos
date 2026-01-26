@@ -1,0 +1,146 @@
+{
+  "sessionId": "68e3c16a-1f09-4f6b-97a2-a790c5dd4f90",
+  "startTime": 1769431100646,
+  "endTime": 1769431120499,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769431100646,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769431101618,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769431101876,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hi, I'd like to check the balance for my account 12345678, sort code 112233. I also need to see what open disputes I have on that account.",
+      "timestamp": 1769431104256
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769431105112,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Thanks for sharing those details. Let me check those for you now.",
+      "timestamp": 1769431105121,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769431106798,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "user",
+      "text": "Okay, great. Please let me know the account balance and any open disputes on that account.",
+      "timestamp": 1769431108270
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769431108944,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769431110412,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769431111089,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769431111404,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769431112117,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769431113659,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I’ve checked your account. Your current balance is £1,200.00 and there are no open disputes on this account.",
+      "timestamp": 1769431114521,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769431115470,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769431116523,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you. That's helpful to know my balance is £1,200.00 and there are no open disputes on the account.",
+      "timestamp": 1769431116939
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case"
+  ],
+  "usage": {
+    "inputTokens": 7200,
+    "outputTokens": 861,
+    "totalTokens": 8061,
+    "cost": 0.034515000000000004,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}
