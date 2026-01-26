@@ -3436,7 +3436,8 @@ function convertWorkflowToText(workflow: any): string {
     text += "This tag tells the UI where you are. Without it, the interface BREAKS.\n";
     text += "Format: [STEP: node_id] Your response text...\n";
     text += "Example: [STEP: check_auth] I removed the example text to save tokens.\n";
-    text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n\n";
+    text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n";
+    text += "SILENCE INSTRUCTION: The [STEP: ...] tag is for system control only. DO NOT SPEAK IT ALOUD. Keep it silent.\n\n";
 
     // 1. Map Nodes
     const startNode = workflow.nodes.find((n: any) => n.type === 'start');
