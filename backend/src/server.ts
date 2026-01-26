@@ -4569,13 +4569,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         if (session.sonicClient && session.sonicClient.getSessionId()) {
                             // Send RAW STRING to avoid JSON nesting confusion
 
-                            // RACE CONDITION FIX: "Smart Delay"
-                            // We wait a short 4000ms to allow any "Latched Audio" (e.g. "Let me check...") 
-                            // to start playing on the client. If we send the tool result too fast, 
-                            // it might cut off that audio or arrive before the client is ready.
-                            // 4000ms is short enough to feel "snappy" but long enough to cover network jitter.
-                            console.log('[Server] ⏱️ Smart Delay: Waiting 4000ms before sending tool result...');
-                            await new Promise(resolve => setTimeout(resolve, 4000));
+                            // RACE CONDITION FIX: Removed Smart Delay
+                            // We now rely on the "Latched Audio Protocol" in the prompt to fill this time naturally.
+                            // Removing the artificial wait to make the system responsive.
+                            // console.log('[Server] ⏱️ Smart Delay Removed');
+                            // await new Promise(resolve => setTimeout(resolve, 100)); // Minimal buffer optional
 
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,
