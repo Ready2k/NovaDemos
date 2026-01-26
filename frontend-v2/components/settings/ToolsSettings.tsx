@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { cn } from '@/lib/utils';
 import { Wrench, Plus, Trash2, Save, X } from 'lucide-react';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 
 interface ToolDefinition {
     name: string;
@@ -23,6 +24,14 @@ export default function ToolsSettings() {
     const [editingTool, setEditingTool] = useState<ToolDefinition | null>(null);
     const [isNew, setIsNew] = useState(false);
     const [jsonError, setJsonError] = useState<string | null>(null);
+
+    // Modal state
+    const [modalConfig, setModalConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    } | null>(null);
 
     useEffect(() => {
         fetchTools();
@@ -77,28 +86,34 @@ export default function ToolsSettings() {
                 setEditingTool(null);
                 setIsNew(false);
             } else {
-                alert('Failed to save tool');
+                console.error('Failed to save tool');
             }
         } catch (e) {
             console.error(e);
-            alert('Error saving tool');
         }
     };
 
     const handleDelete = async (name: string) => {
-        if (!confirm(`Are you sure you want to delete tool "${name}"?`)) return;
-
-        try {
-            const res = await fetch(`/api/tools/${name}`, { method: 'DELETE' });
-            if (res.ok) {
-                fetchTools();
-                if (editingTool?.name === name) {
-                    setEditingTool(null);
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Tool',
+            message: `Are you sure you want to delete tool "${name}"? This will prevent it from being used by the model.`,
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`/api/tools/${name}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        fetchTools();
+                        if (editingTool?.name === name) {
+                            setEditingTool(null);
+                        }
+                    }
+                    setModalConfig(null);
+                } catch (e) {
+                    console.error(e);
+                    setModalConfig(null);
                 }
             }
-        } catch (e) {
-            console.error(e);
-        }
+        });
     };
 
     return (
@@ -271,6 +286,16 @@ export default function ToolsSettings() {
                     )}
                 </div>
             </div>
+
+            <ConfirmModal
+                isOpen={modalConfig?.isOpen || false}
+                title={modalConfig?.title || ''}
+                message={modalConfig?.message || ''}
+                onConfirm={modalConfig?.onConfirm || (() => { })}
+                onCancel={() => setModalConfig(null)}
+                type="danger"
+                isDarkMode={isDarkMode}
+            />
         </div>
     );
 }

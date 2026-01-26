@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { cn } from '@/lib/utils';
 import { KnowledgeBase } from '@/lib/types';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 
 export default function KnowledgeSettings() {
     const {
@@ -17,6 +18,14 @@ export default function KnowledgeSettings() {
     const [newKbId, setNewKbId] = useState('');
     const [newKbModel, setNewKbModel] = useState('');
     const [isAdding, setIsAdding] = useState(false);
+
+    // Modal state
+    const [modalConfig, setModalConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    } | null>(null);
 
     // Fetch KBs on mount
     useEffect(() => {
@@ -68,19 +77,26 @@ export default function KnowledgeSettings() {
     };
 
     const handleDeleteKb = async (id: string) => {
-        if (!confirm('Are you sure you want to remove this Knowledge Base?')) return;
+        setModalConfig({
+            isOpen: true,
+            title: 'Remove Knowledge Base',
+            message: 'Are you sure you want to remove this Knowledge Base? This action can be undone by adding it back later.',
+            onConfirm: async () => {
+                try {
+                    const response = await fetch(`/api/knowledge-bases/${id}`, {
+                        method: 'DELETE'
+                    });
 
-        try {
-            const response = await fetch(`/api/knowledge-bases/${id}`, {
-                method: 'DELETE'
-            });
-
-            if (response.ok) {
-                removeKnowledgeBase(id);
+                    if (response.ok) {
+                        removeKnowledgeBase(id);
+                    }
+                    setModalConfig(null);
+                } catch (err) {
+                    console.error('Failed to delete KB', err);
+                    setModalConfig(null);
+                }
             }
-        } catch (err) {
-            console.error('Failed to delete KB', err);
-        }
+        });
     };
 
     return (
@@ -167,6 +183,16 @@ export default function KnowledgeSettings() {
                     </p>
                 </div>
             </section>
+
+            <ConfirmModal
+                isOpen={modalConfig?.isOpen || false}
+                title={modalConfig?.title || ''}
+                message={modalConfig?.message || ''}
+                onConfirm={modalConfig?.onConfirm || (() => { })}
+                onCancel={() => setModalConfig(null)}
+                type="danger"
+                isDarkMode={isDarkMode}
+            />
         </div>
     );
 }

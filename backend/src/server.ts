@@ -1918,8 +1918,8 @@ const server = http.createServer(async (req, res) => {
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
-                const { history, persona } = JSON.parse(body);
-                console.log('[Simulation] Received request. Persona length:', persona?.length, 'History items:', history?.length);
+                const { history, persona, instructions } = JSON.parse(body);
+                console.log('[Simulation] Received request. Persona length:', persona?.length, 'History items:', history?.length, 'Instructions:', instructions ? 'Yes' : 'No');
 
                 if (!history || !Array.isArray(history) || !persona) {
                     res.writeHead(400, CORS_HEADERS);
@@ -1927,7 +1927,7 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
-                const response = await simulationService.generateResponse(history, persona);
+                const response = await simulationService.generateResponse(history, persona, instructions);
 
                 res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ response }));
@@ -2606,7 +2606,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
                             }
                         }
-                        return;
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
                         return;
@@ -2701,6 +2700,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         // Not a valid JSON message, treat as binary data
                         // Fall through to audio processing
                     }
+                } else {
+                    // Not likely JSON, treat as binary
                 }
             }
 

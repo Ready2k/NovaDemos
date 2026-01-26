@@ -20,12 +20,15 @@ export class SimulationService {
 
     constructor() { }
 
-    async generateResponse(history: { role: string, content: string }[], persona: string): Promise<string> {
+    async generateResponse(history: { role: string, content: string }[], persona: string, instructions?: string): Promise<string> {
         try {
             console.log(`[Simulation] Generating response for persona: "${persona.substring(0, 50)}..."`);
+            if (instructions) {
+                console.log(`[Simulation] Custom Instructions: "${instructions.substring(0, 100)}..."`);
+            }
 
             // Construct Prompt
-            const systemPrompt = `You are playing the role of a CUSTOMER (User) testing a voice assistant system (the Agent).
+            let systemPrompt = `You are playing the role of a CUSTOMER (User) testing a voice assistant system (the Agent).
 Your goal is to interact with the AI agent naturally to verify if it handles your request correctly.
 
 IMPORTANT: 
@@ -45,6 +48,10 @@ INSTRUCTIONS:
 6. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add [DONE].
 7. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
 `;
+
+            if (instructions) {
+                systemPrompt += `\nSPECIFIC TEST INSTRUCTIONS (PRIORITY):\n${instructions}\n`;
+            }
 
             // Format history for Claude 3 (user/assistant turns)
             // Note: Claude 3 requires alternating user/assistant starting with user.

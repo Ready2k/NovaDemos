@@ -1,3 +1,5 @@
+import { TestConfiguration } from './workflow';
+
 // Configuration and settings types
 
 export type InteractionMode = 'chat_voice' | 'voice_only' | 'chat_only';
@@ -54,6 +56,8 @@ export interface AppSettings {
     // Simulation
     simulationMode?: boolean;
     simulationPersona?: string;
+    testMode?: 'manual' | 'auto';
+    activeTestConfig?: TestConfiguration;
 
     // Debug
     debugMode: boolean;

@@ -21,6 +21,8 @@ import { AppSettings, Message, WebSocketMessage, SessionStats, SessionStartMessa
 import { useWorkflowSimulator } from '@/lib/hooks/useWorkflowSimulator';
 
 import SettingsLayout from '@/components/settings/SettingsLayout';
+import TestReportModal from '@/components/workflow/TestReportModal';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const {
@@ -38,13 +40,18 @@ export default function Home() {
     activeView,
     isHydrated,
     setWorkflowState,
-    updateSettings
+    updateSettings,
+    navigateTo
   } = useApp();
 
   // Local state for survey
   const [showSurvey, setShowSurvey] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [finishedSessionId, setFinishedSessionId] = useState<string | null>(null);
+
+  // Test Report State
+  const [showTestReport, setShowTestReport] = useState(false);
+  const router = useRouter(); // For Reconfigure navigation
 
   // Ref to store send function (to avoid dependency issues)
   const sendRef = useRef<((message: any) => void) | null>(null);
@@ -393,10 +400,24 @@ export default function Home() {
   }, [settings.simulationMode, connectionStatus, connect]);
 
   const stopSimulation = useCallback(() => {
+    // Stop simulation setting
     updateSettings({ simulationMode: false });
-    disconnect();
-    console.log('[App] Simulation stopped and disconnected.');
-  }, [updateSettings, disconnect]);
+
+    // Check Disconnect Action Preference
+    const action = settings.activeTestConfig?.disconnectAction || 'always';
+    if (action === 'always' || (action === 'ask' && confirm('Test complete. Disconnect?'))) {
+      disconnect();
+    } else {
+      console.log('[App] keeping connection open per test configuration');
+    }
+
+    console.log('[App] Simulation stopped.');
+
+    // Trigger Report if configured
+    if (settings.activeTestConfig?.saveReport) {
+      setShowTestReport(true);
+    }
+  }, [updateSettings, disconnect, settings.activeTestConfig]);
 
   const { isThinking: isSimulatingThinking } = useWorkflowSimulator({
     isActive: settings.simulationMode || false,
@@ -405,6 +426,7 @@ export default function Home() {
     // @ts-ignore - The hook generally passes a string response, handleSendMessage accepts string.
     onSendMessage: handleSendMessage,
     testPersona: settings.simulationPersona,
+    testInstructions: settings.activeTestConfig?.testInstructions,
     stopSimulation
   });
 
@@ -444,6 +466,13 @@ export default function Home() {
         setFinishedSessionId(finalId);
         setShowSurvey(true);
       }
+
+      // Determine if we should show Test Report
+      if (settings.activeTestConfig?.saveReport && connectionStatus !== 'connecting') {
+        setShowTestReport(true);
+        setShowSurvey(false); // Prefer report over survey for tests
+      }
+
       // Ensure simulation stops if we manual disconnect
       updateSettings({ simulationMode: false });
       disconnect();
@@ -616,6 +645,46 @@ export default function Home() {
             console.error('[App] Failed to send feedback', e);
           }
         }}
+        isDarkMode={isDarkMode}
+      />
+
+      {/* Test Report Modal */}
+      <TestReportModal
+        isOpen={showTestReport}
+        onClose={() => {
+          setShowTestReport(false);
+          // "Close will just close the report and go to the main page"
+          // Usually we are already on the chat page. If they mean "Main Page" as in "Dashboard",
+          // we might need to route there. But typically sticking to Chat is fine.
+          // If they are in a test context, clearing activeTestConfig ends the test visual mode.
+          updateSettings({ activeTestConfig: undefined, testMode: undefined });
+        }}
+        onRetry={() => {
+          setShowTestReport(false);
+          // Reset messages and start testing again
+          // We need to clear transcript. 
+          // setCurrentSession with empty transcript triggers UI clear.
+          setCurrentSession({
+            ...currentSession!,
+            transcript: [],
+            inputTokens: 0,
+            outputTokens: 0
+          });
+          // Re-connect
+          if (settings.simulationMode) {
+            // Auto-connects via effect
+            updateSettings({ simulationMode: true });
+          } else {
+            connect();
+          }
+        }}
+        onReconfigure={() => {
+          setShowTestReport(false);
+          updateSettings({ activeTestConfig: undefined, testMode: undefined });
+          navigateTo('workflow');
+        }}
+        messages={messages}
+        testConfig={settings.activeTestConfig}
         isDarkMode={isDarkMode}
       />
 

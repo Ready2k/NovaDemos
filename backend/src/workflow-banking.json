@@ -355,5 +355,11 @@
       "label": ""
     }
   ],
-  "testPersona": "I am a customer with account 12345678 and sort code 112233. My goal is to check my balance - I'm expect a balance of £1200. Once I have this information, DISCONNECT"
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "Account balance is returned",
+    "testInstructions": "I want to know my balance for account 12345678, sort code 112233",
+    "disconnectAction": "always",
+    "saveReport": true
+  }
 }

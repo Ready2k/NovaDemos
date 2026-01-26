@@ -8,10 +8,11 @@ interface UseWorkflowSimulatorProps {
     messages: Message[];
     onSendMessage: (text: string) => void;
     testPersona?: string;
+    testInstructions?: string; // Add this
     stopSimulation: () => void;
 }
 
-export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, stopSimulation }: UseWorkflowSimulatorProps) {
+export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation }: UseWorkflowSimulatorProps) {
     const [isThinking, setIsThinking] = useState(false);
     const waitingForEcho = useRef(false);
     const lastMessageCount = useRef(messages.length);
@@ -71,7 +72,8 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         history,
-                        persona: effectivePersona
+                        persona: effectivePersona,
+                        instructions: testInstructions // Pass additional instructions
                     })
                 });
 

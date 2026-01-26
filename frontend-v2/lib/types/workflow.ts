@@ -18,5 +18,16 @@ export interface WorkflowDefinition {
     name?: string;
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
-    testPersona?: string;
+    testPersona?: string; // Legacy field, prefer testConfig.personaId
+    testConfig?: TestConfiguration;
+}
+
+export interface TestConfiguration {
+    id?: string; // For potentially saving multiple test configs in the future
+    name?: string; // "My IDV Test"
+    personaId?: string; // ID of the persona to use
+    successCriteria?: string; // "User successfully verifies ID"
+    disconnectAction?: 'always' | 'never' | 'ask'; // What to do after outcome
+    saveReport?: boolean; // Whether to show the report at the end
+    testInstructions?: string; // Specific instructions for the simulated user
 }

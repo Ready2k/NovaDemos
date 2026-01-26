@@ -946,7 +946,8 @@ export class SonicClient {
      */
     async sendToolResult(toolUseId: string, result: any, isError: boolean = false): Promise<void> {
         if (!this.sessionId || !this.isProcessing) {
-            throw new Error('Session not active.');
+            console.warn(`[SonicClient] ⚠️ Cannot send tool result: Session not active or processing stopped. (ID: ${this.sessionId})`);
+            return;
         }
         this.toolResultQueue.push({ toolUseId, result, isError });
     }
@@ -956,7 +957,8 @@ export class SonicClient {
      */
     async sendText(text: string): Promise<void> {
         if (!this.sessionId || !this.isProcessing) {
-            throw new Error('Session not active.');
+            console.warn(`[SonicClient] ⚠️ Cannot send text input: Session not active or processing stopped. (ID: ${this.sessionId})`);
+            return;
         }
 
         // --- DEBOUNCE: Prevent duplicate text sending (except for filler messages) --
@@ -1297,8 +1299,12 @@ export class SonicClient {
                             console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
                             this.hasCommittedToTool = false; // Prevent double trigger
 
-                            // Programmatic Prompt Injection
-                            this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
+                            // Programmatic Prompt Injection (Only if session is still active)
+                            if (this.sessionId && this.isProcessing) {
+                                this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
+                            } else {
+                                console.warn('[SonicClient] Skipping Auto-Nudge injection - Session is inactive');
+                            }
                         }
 
                         // Send final transcript when turn ends
