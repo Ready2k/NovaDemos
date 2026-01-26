@@ -1,5 +1,4 @@
 {
-  "title": "Secure Transaction Assistance Agent Workflow",
   "nodes": [
     {
       "id": "start",
@@ -18,12 +17,12 @@
     },
     {
       "id": "check_auth",
-      "label": "Is 'auth_status' VERIFIED?",
+      "label": "Is 'auth_status' VERIFIED? If NO, GoTo [request_details] IMMEDIATELY. Do not speak in this state.",
       "type": "decision"
     },
     {
       "id": "request_details",
-      "label": "Request Details & Call\n'perform_idv_check'",
+      "label": "Identity Verification. IF you have Account & Sort Code -> CALL 'perform_idv_check' NOW. IF NOT -> Ask for them.",
       "type": "tool",
       "toolName": "perform_idv_check"
     },
@@ -59,6 +58,17 @@
       "id": "manage_dispute",
       "label": "Manage Existing Dispute\n(Check Cooling-Off & Status)",
       "type": "process"
+    },
+    {
+      "id": "route_service",
+      "label": "Determine Intent: If asking for Balance/Funds -> 'Balance'. If asking for Transactions/Statement -> 'Transactions'.",
+      "type": "decision"
+    },
+    {
+      "id": "show_balance",
+      "label": "Call 'agentcore_balance'. Then ask if they need anything else.",
+      "type": "tool",
+      "toolName": "agentcore_balance"
     },
     {
       "id": "check_cooling",
@@ -102,7 +112,7 @@
     },
     {
       "id": "classify",
-      "label": "Classify Issue Type: If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
+      "label": "Classify Issue Type: CRITICAL: If user says 'I did not do this', 'It wasn't me', 'I don't recognise this', or implies unauthorized use, CATEGORIZE AS FRAUD/UNAUTHORIZED IMMEDIATELY. If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
       "type": "decision"
     },
     {
@@ -114,7 +124,7 @@
     {
       "id": "handoff_fraud",
       "label": "Inform & Prepare Handoff\n(Fraud Route)",
-      "type": "end",
+      "type": "process",
       "outcome": "FRAUD_HANDOFF"
     },
     {
@@ -223,8 +233,22 @@
     },
     {
       "from": "check_dispute",
-      "to": "query_txn",
+      "to": "route_service",
       "label": "No"
+    },
+    {
+      "from": "route_service",
+      "to": "show_balance",
+      "label": "Balance"
+    },
+    {
+      "from": "route_service",
+      "to": "query_txn",
+      "label": "Transactions"
+    },
+    {
+      "from": "show_balance",
+      "to": "publish_summary"
     },
     {
       "from": "manage_dispute",
@@ -330,5 +354,12 @@
       "to": "Gambling_end",
       "label": ""
     }
-  ]
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "Account balance is returned",
+    "testInstructions": "I want to know my balance for account 12345678, sort code 112233",
+    "disconnectAction": "always",
+    "saveReport": true
+  }
 }

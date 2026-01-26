@@ -98,7 +98,5 @@
       "label": ""
     }
   ],
-  "tools": [
-    "get_server_time"
-  ]
+  "testPersona": "just a test "
 }

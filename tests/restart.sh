@@ -20,28 +20,41 @@ else
   echo "No process found on port 8080."
 fi
 
-# 2. Build Backend
-echo "[2/3] Building backend..."
+# 2. Build Frontend
+echo "[2/4] Building frontend..."
+cd "$PROJECT_ROOT/frontend-v2"
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+fi
+# Always build to ensure latest changes are served
+echo "Generating static build..."
+npm run build
+
+# 3. Build Backend
+echo "[3/4] Building backend..."
 cd "$BACKEND_DIR"
 # Check if node_modules exists, if not install
 if [ ! -d "node_modules" ]; then
-    echo "Installing dependencies..."
+    echo "Installing backend dependencies..."
     npm install
 fi
 npm run build
 
-# 3. Start Server
-echo "[3/3] Starting server..."
+# 4. Start Server
+echo "[4/4] Starting servers..."
 # Ensure logs directory exists
 mkdir -p "$TESTS_DIR/logs"
-# Create server.log if it doesn't exist
-touch "$TESTS_DIR/logs/server.log"
-# Check if running in background mode
+
+# Start Backend
+echo "Starting Backend on port 8080..."
+cd "$BACKEND_DIR"
 if [ "$BG_MODE" = "true" ]; then
     echo "Starting server in background..."
     nohup npm start > "$TESTS_DIR/logs/server.log" 2>&1 &
     echo $! > "$TESTS_DIR/server.pid"
     echo "Server started in background with PID $(cat "$TESTS_DIR/server.pid")"
 else
-    npm start > "$TESTS_DIR/logs/server.log" 2>&1
+    # In foreground mode, we run backend in foreground
+    npm start 2>&1 | tee "$TESTS_DIR/logs/server.log"
 fi

@@ -9,7 +9,11 @@ import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
-import { formatVoicesForFrontend, fetchAvailableVoices } from './voice-service';
+import { SimulationService } from './simulation-service';
+import { formatVoicesForFrontend, fetchAvailableVoices, DEFAULT_VOICE_MAP, VoiceMap } from './voice-service';
+import { parseTranscribeLocale, getVoiceForLocale } from './dialect-detector';
+import { shouldSwitchVoice, generateTransitionMessage } from './transition-handler';
+import { PromptService } from './services/prompt-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
@@ -42,10 +46,27 @@ function logWithTimestamp(level: string, message: string) {
     console.log(`[${timestamp}] ${level} ${message}`);
 }
 
+// Global Debug Mode State - defaulted to false for production cleanliness
+let DEBUG_MODE = false;
+
+function logDebug(message: string) {
+    if (DEBUG_MODE) {
+        logWithTimestamp('DEBUG', message);
+    }
+}
+
 // --- AWS Bedrock AgentCore Client ---
+const REGION = process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
+
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 // Build credentials config for AgentCore client
 let agentCoreConfig: any = {
-    region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
+    region: REGION
 };
 
 // Add explicit credentials if NOVA_ prefixed env vars are set
@@ -92,10 +113,16 @@ langfuse.on("error", (error) => {
     console.error("Langfuse error:", error);
 });
 
+// Initialize Prompt Service
+const promptService = new PromptService(langfuse);
+
 
 
 // Knowledge Base Storage - Hoisted
 const KB_FILE = path.join(__dirname, '../../knowledge_bases.json');
+
+// Pending feedback storage to handle race conditions during session closure
+const pendingFeedback = new Map<string, any>();
 
 function loadKnowledgeBases() {
     try {
@@ -170,27 +197,38 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     let bestMatchLength = 0;
 
     for (const prevResponse of previousResponses) {
-        // First try exact match
-        if (fullResponse.startsWith(prevResponse) && prevResponse.length > longestMatch.length) {
-            longestMatch = prevResponse;
-            bestMatchLength = prevResponse.length;
-            continue;
-        }
+        if (!prevResponse || prevResponse.length < 10) continue; // Skip very short previous messages
 
-        // Try fuzzy matching - find the longest common prefix
-        let commonLength = 0;
-        const minLength = Math.min(fullResponse.length, prevResponse.length);
-
-        for (let i = 0; i < minLength; i++) {
-            if (fullResponse[i] === prevResponse[i]) {
-                commonLength = i + 1;
-            } else {
-                break;
+        // Strategy 1: strict inclusion at the start
+        const idx = fullResponse.indexOf(prevResponse);
+        if (idx !== -1 && idx < 10) {
+            const matchEnd = idx + prevResponse.length;
+            if (prevResponse.length > longestMatch.length) {
+                longestMatch = fullResponse.substring(idx, matchEnd);
+                bestMatchLength = matchEnd;
             }
         }
 
-        // If we found a substantial common prefix (at least 50 characters)
-        if (commonLength > 50 && commonLength > bestMatchLength) {
+        // Strategy 2: Fuzzy prefix matching
+        let commonLength = 0;
+        const minLength = Math.min(fullResponse.length, prevResponse.length);
+
+        for (let offset = 0; offset < 3; offset++) {
+            let currentCommon = 0;
+            for (let i = 0; i < minLength - offset; i++) {
+                if (fullResponse[i] === prevResponse[i + offset]) {
+                    currentCommon++;
+                } else {
+                    break;
+                }
+            }
+
+            if (currentCommon > 25 && currentCommon > commonLength) {
+                commonLength = currentCommon;
+            }
+        }
+
+        if (commonLength > 30 && commonLength > bestMatchLength) {
             longestMatch = fullResponse.substring(0, commonLength);
             bestMatchLength = commonLength;
         }
@@ -199,15 +237,26 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
     // If we found a match, extract only the new content
     if (bestMatchLength > 0) {
         const newContent = fullResponse.substring(bestMatchLength).trim();
-        console.log(`[ResponseParser] Extracted new content from accumulated response:`);
-        console.log(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
-        console.log(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
-        console.log(`[ResponseParser] New: "${newContent.substring(0, 50)}..."`);
+
+        // SAFETY CHECK: If newContent is a fragment (less than 15% of original OR very short)
+        // and doesn't look like a real sentence start, return full response.
+        // This prevents "to proceed" type bugs.
+        if (newContent.length < 10 || (newContent.length < fullResponse.length * 0.15)) {
+            if (newContent.match(/^[a-z]/)) { // Starts with lowercase fragment
+                return fullResponse;
+            }
+        }
+
+        logDebug(`[ResponseParser] Extracted new content from accumulated response:`);
+        logDebug(`[ResponseParser] Full: "${fullResponse.substring(0, 100)}..."`);
+        logDebug(`[ResponseParser] Matched: "${longestMatch.substring(0, 50)}..."`);
+        logDebug(`[ResponseParser] New: "${newContent.substring(0, 50)}..."`);
         return newContent;
     }
 
     return fullResponse;
 }
+
 
 /**
  * Remove internal duplication within a single response
@@ -238,9 +287,9 @@ function removeInternalDuplication(text: string): string {
         const similarity = calculateStringSimilarity(firstSentence.toLowerCase(), secondSentence.toLowerCase());
 
         if (similarity > 0.8) {
-            console.log(`[InternalDedup] Detected internal duplication (similarity: ${similarity.toFixed(2)})`);
-            console.log(`[InternalDedup] First: "${firstSentence.substring(0, 50)}..."`);
-            console.log(`[InternalDedup] Second: "${secondSentence.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Detected internal duplication (similarity: ${similarity.toFixed(2)})`);
+            logDebug(`[InternalDedup] First: "${firstSentence.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Second: "${secondSentence.substring(0, 50)}..."`);
 
             // Remove the first sentence and return the rest
             const remainingSentences = sentences.slice(1);
@@ -251,7 +300,7 @@ function removeInternalDuplication(text: string): string {
                 return cleanedText + '.';
             }
 
-            console.log(`[InternalDedup] Cleaned: "${cleanedText.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Cleaned: "${cleanedText.substring(0, 50)}..."`);
             return cleanedText;
         }
     }
@@ -264,12 +313,12 @@ function removeInternalDuplication(text: string): string {
         const secondHalf = words.slice(halfLength, halfLength * 2).join(' ');
 
         if (firstHalf.length > 10 && firstHalf === secondHalf) {
-            console.log(`[InternalDedup] Detected exact duplication in first half`);
-            console.log(`[InternalDedup] Duplicated part: "${firstHalf.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Detected exact duplication in first half`);
+            logDebug(`[InternalDedup] Duplicated part: "${firstHalf.substring(0, 50)}..."`);
 
             // Return only the second half plus any remaining content
             const remaining = words.slice(halfLength).join(' ');
-            console.log(`[InternalDedup] Cleaned: "${remaining.substring(0, 50)}..."`);
+            logDebug(`[InternalDedup] Cleaned: "${remaining.substring(0, 50)}..."`);
             return remaining;
         }
     }
@@ -536,9 +585,10 @@ async function callAgentCore(session: ClientSession, qualifier: string, initialP
 const PORT = 8080;
 
 const SONIC_PATH = '/sonic';
-const FRONTEND_DIR = path.join(__dirname, '../../frontend');
+const FRONTEND_DIR = path.join(__dirname, '../../frontend-v2/out');
 const TOOLS_DIR = path.join(__dirname, '../../tools');
 const PROMPTS_DIR = path.join(__dirname, '../prompts');
+const PRESETS_FILE = path.join(__dirname, '../data/presets.json');
 const HISTORY_DIR = path.join(__dirname, '../../chat_history');
 
 // Ensure history directory exists
@@ -558,8 +608,39 @@ function saveTranscript(session: ClientSession) {
 
     try {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `session_${timestamp}_${session.sessionId.substring(0, 8)}.json`;
+        // Use full sessionId for robustness and unique lookup
+        const filename = `session_${timestamp}_${session.sessionId}.json`;
         const filePath = path.join(HISTORY_DIR, filename);
+
+        // Calculate Overall Sentiment
+        let totalSentiment = 0;
+        let sentimentCount = 0;
+        session.transcript.forEach((msg: any) => {
+            if (msg.sentiment !== undefined) {
+                let score = 0;
+                if (typeof msg.sentiment === 'number') {
+                    score = msg.sentiment;
+                } else if (typeof msg.sentiment === 'object' && msg.sentiment !== null && typeof msg.sentiment.score === 'number') {
+                    score = msg.sentiment.score;
+                } else if (typeof msg.sentiment === 'object' && msg.sentiment !== null && typeof msg.sentiment.comparative === 'number') {
+                    score = msg.sentiment.comparative;
+                }
+
+                totalSentiment += score;
+                sentimentCount++;
+            }
+        });
+        const averageSentiment = sentimentCount > 0 ? totalSentiment / sentimentCount : 0;
+
+        // Calculate Usage Stats
+        const inputTokens = session.sonicClient?.getSessionInputTokens() || 0;
+        const outputTokens = session.sonicClient?.getSessionOutputTokens() || 0;
+        const totalTokens = session.sonicClient?.getSessionTotalTokens() || 0;
+
+        // Use realistic rates for history calculation
+        const inputCostRaw = (inputTokens / 1000) * 0.003;
+        const outputCostRaw = (outputTokens / 1000) * 0.015;
+        const finalCost = inputCostRaw + outputCostRaw;
 
         const data = {
             sessionId: session.sessionId,
@@ -567,19 +648,21 @@ function saveTranscript(session: ClientSession) {
             endTime: Date.now(),
             brainMode: session.brainMode,
             transcript: session.transcript,
-            tools: session.allowedTools || [], // Save allowed tools list
-            // Save Usage Stats
+            tools: session.allowedTools || [],
             usage: {
-                inputTokens: session.sonicClient?.getSessionInputTokens() || 0,
-                outputTokens: session.sonicClient?.getSessionOutputTokens() || 0,
-                totalTokens: session.sonicClient?.getSessionTotalTokens() || 0,
-                cost: 0 // Will need to calculate if not available directly, or add getter
-            }
+                inputTokens,
+                outputTokens,
+                totalTokens,
+                cost: finalCost,
+                sentiment: averageSentiment
+            },
+            feedback: session.feedback || pendingFeedback.get(session.sessionId) // Merge pending feedback
         };
 
-        if (data.usage) {
-            // Cost is calculated dynamically on the frontend based on User Settings
-            data.usage.cost = 0;
+        // Clear from pending if used
+        if (pendingFeedback.has(session.sessionId)) {
+            console.log(`[Server] Picking up pending feedback for session ${session.sessionId.substring(0, 8)}...`);
+            pendingFeedback.delete(session.sessionId);
         }
 
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -591,6 +674,9 @@ function saveTranscript(session: ClientSession) {
 
 // Initialize Tool Manager
 const toolManager = new ToolManager(TOOLS_DIR);
+
+// Initialize Simulation Service
+const simulationService = new SimulationService();
 
 async function loadPrompt(filename: string): Promise<string> {
     const promptName = filename.replace('.txt', '');
@@ -615,154 +701,161 @@ async function loadPrompt(filename: string): Promise<string> {
     }
 }
 
-async function listPrompts(): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local' }[]> {
-    try {
-        // 1. Get Prompts from Langfuse
-        const cloudPrompts = new Set<string>();
+// Cache for prompts to avoid expensive Langfuse sync on every request
+let promptsCache: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] | null = null;
+let lastPromptsSyncTime = 0;
+let promptsSyncPromise: Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[]> | null = null;
+const PROMPTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function listPrompts(forceRefresh = false): Promise<{ id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[]> {
+    const now = Date.now();
+
+    // 1. Return cached data if valid
+    if (!forceRefresh && promptsCache && (now - lastPromptsSyncTime < PROMPTS_CACHE_TTL)) {
+        // console.log('[Server] Returning cached prompts');
+        return promptsCache;
+    }
+
+    // 2. Return active promise if already syncing (Deduplication)
+    if (promptsSyncPromise) {
+        console.log('[Server] Sync already in progress, attaching to existing promise...');
+        return promptsSyncPromise;
+    }
+
+    console.log('[Server] Syncing prompts (Source: Langfuse + Local)...');
+
+    // 3. Start new sync and store promise
+    promptsSyncPromise = (async () => {
         try {
-            // @ts-ignore - accessing internal API if needed or public API
-            const response = await langfuse.api.promptsList({ limit: 100 });
-            // response.data is array of prompts with .name
-            if (response && response.data) {
-                response.data.forEach((p: any) => cloudPrompts.add(p.name));
-            }
-        } catch (e) {
-            console.warn('[Server] Failed to list prompts from Langfuse API, source "cloud" unavailable:', e);
-        }
-
-        // 2. Get Local Files
-        const localFiles = new Set<string>();
-        try {
-            if (!fs.existsSync(PROMPTS_DIR)) {
-                fs.mkdirSync(PROMPTS_DIR, { recursive: true });
-            }
-            const files = fs.readdirSync(PROMPTS_DIR);
-            files.filter(f => f.endsWith('.txt')).forEach(f => localFiles.add(f.replace('.txt', '')));
-        } catch (e) {
-            console.error('[Server] Failed to read local prompts directory:', e);
-        }
-
-        // 3. Union of all prompt names
-        const allNames = new Set([...cloudPrompts, ...localFiles]);
-
-        const promptsWithSource = await Promise.all(
-            Array.from(allNames).map(async promptName => {
-                let displayName = promptName;
-                const filename = promptName + '.txt';
-
-                // Handle prefixed naming convention
-                if (displayName.startsWith('core-')) {
-                    displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
-                } else if (displayName.startsWith('persona-')) {
-                    displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
-                } else {
-                    displayName = displayName.replace(/_/g, ' ');
+            // 1. Get Prompts from Langfuse
+            const cloudPrompts = new Set<string>();
+            try {
+                // @ts-ignore - accessing internal API if needed or public API
+                const response = await langfuse.api.promptsList({ limit: 100 });
+                // response.data is array of prompts with .name
+                if (response && response.data) {
+                    response.data.forEach((p: any) => cloudPrompts.add(p.name));
                 }
+            } catch (e) {
+                console.warn('[Server] Failed to list prompts from Langfuse API, source "cloud" unavailable:', e);
+            }
 
-                // Capitalize words
-                displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+            // 2. Get Local Files
+            const localFiles = new Set<string>();
+            try {
+                if (!fs.existsSync(PROMPTS_DIR)) {
+                    fs.mkdirSync(PROMPTS_DIR, { recursive: true });
+                }
+                const files = fs.readdirSync(PROMPTS_DIR);
+                files.filter(f => f.endsWith('.txt')).forEach(f => localFiles.add(f.replace('.txt', '')));
+            } catch (e) {
+                console.error('[Server] Failed to read local prompts directory:', e);
+            }
 
-                let source: 'langfuse' | 'local' = 'local';
-                let content = '';
-                let config: any = {};
+            // 3. Union of all prompt names
+            const allNames = Array.from(new Set([...cloudPrompts, ...localFiles]));
+            const promptsWithSource: { id: string, name: string, content: string, source: 'langfuse' | 'local', config?: any }[] = [];
 
-                // Try to fetch from Langfuse first
-                try {
-                    // Check cloud set first to avoid 404s/Errors for local-only files
-                    if (!cloudPrompts.has(promptName)) {
-                        throw new Error("Skipping Langfuse fetch (not in list)");
-                    }
-                    const prompt = await langfuse.getPrompt(promptName);
-                    config = (prompt as any).config || {};
+            // Fetch in batches to avoid overwhelming the Langfuse API/Network
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < allNames.length; i += BATCH_SIZE) {
+                const batch = allNames.slice(i, i + BATCH_SIZE);
+                console.log(`[Server] Syncing prompts batch ${i / BATCH_SIZE + 1} (${batch.length} items)...`);
 
-                    // Extract content based on prompt type to avoid undesired formatting tags
-                    if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
-                        // For chat prompts, extract the text from the system message (or first message)
-                        const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
-                        content = systemMsg?.content || '';
-                    } else {
-                        // For text prompts, compile() is safe
+                const batchResults = await Promise.all(
+                    batch.map(async promptName => {
+                        let displayName = promptName;
+                        const filename = promptName + '.txt';
+
+                        // Formatting names
+                        if (displayName.startsWith('core-')) {
+                            displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
+                        } else if (displayName.startsWith('persona-')) {
+                            displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
+                        } else {
+                            displayName = displayName.replace(/_/g, ' ');
+                        }
+                        displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
+
+                        let source: 'langfuse' | 'local' = 'local';
+                        let content = '';
+                        let config: any = {};
+
+                        // Try to fetch from Langfuse first
                         try {
-                            content = prompt.compile();
-                        } catch (compileErr) {
-                            console.warn(`[Server] Failed to compile Langfuse prompt ${promptName}, using local fallback:`, compileErr);
-                            throw compileErr; // Fallback to local
-                        }
-                    }
+                            if (cloudPrompts.has(promptName)) {
+                                const prompt = await langfuse.getPrompt(promptName);
+                                config = (prompt as any).config || {};
 
-                    source = 'langfuse';
+                                // Extract content based on prompt type
+                                if (prompt.type === 'chat' && Array.isArray(prompt.prompt)) {
+                                    const systemMsg = prompt.prompt.find((m: any) => m.role === 'system') || prompt.prompt[0];
+                                    content = systemMsg?.content || '';
+                                } else {
+                                    content = prompt.compile();
+                                }
+                                source = 'langfuse';
 
-                    // RESTORE/SYNC TO LOCAL DISK
-                    // If we successfully got content from Langfuse, ensure it exists/matches locally
-                    try {
-                        const localPath = path.join(PROMPTS_DIR, filename);
-                        let needsWrite = true;
-                        if (fs.existsSync(localPath)) {
-                            const localContent = fs.readFileSync(localPath, 'utf-8').trim();
-                            if (localContent === content.trim()) {
-                                needsWrite = false;
-                            }
-                        }
-
-                        if (needsWrite && content) {
-                            fs.writeFileSync(localPath, content.trim());
-                            console.log(`[Server] Synced (Restored) prompt to disk: ${filename}`);
-                        }
-                    } catch (writeErr) {
-                        console.error(`[Server] Failed to sync prompt ${filename} to disk:`, writeErr);
-                    }
-
-                } catch (err) {
-                    // Prompt not in Langfuse or failed, use local
-                    source = 'local';
-                    try {
-                        const localPath = path.join(PROMPTS_DIR, filename);
-                        if (fs.existsSync(localPath)) {
-                            let rawContent = fs.readFileSync(localPath, 'utf-8');
-                            // Parse Config if present (Format: Content \n---\n JSON)
-                            // Robust split for Unix/Windows endings
-                            const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
-                            if (parts.length > 1) {
-                                content = parts[0].trim();
+                                // Update local cache
                                 try {
-                                    const configStr = parts[1].trim();
-                                    config = JSON.parse(configStr);
-                                    console.log(`[Server] Successfully parsed config for ${filename}:`, Object.keys(config));
-                                    if (config.linkedWorkflows) {
-                                        console.log(`[Server] Found linkedWorkflows for ${filename}:`, config.linkedWorkflows);
-                                    }
-                                } catch (e) {
-                                    console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
+                                    const localPath = path.join(PROMPTS_DIR, filename);
+                                    fs.writeFileSync(localPath, content.trim());
+                                } catch (writeErr) {
+                                    console.error(`[Server] Failed to cache prompt ${promptName}:`, writeErr);
                                 }
                             } else {
-                                content = rawContent.trim();
+                                throw new Error("Local only");
                             }
-                        } else {
-                            // Listed in cloud loop but failed fetch? Or listed in union but phantom?
-                            content = '';
+                        } catch (err) {
+                            // Fallback to local file if Langfuse fails or is skipped
+                            source = 'local';
+                            try {
+                                const localPath = path.join(PROMPTS_DIR, filename);
+                                if (fs.existsSync(localPath)) {
+                                    let rawContent = fs.readFileSync(localPath, 'utf-8');
+                                    // Parse Config if present
+                                    const parts = rawContent.split(/[\r\n]+-{3,}[\r\n]+/);
+                                    if (parts.length > 1) {
+                                        content = parts[0].trim();
+                                        try {
+                                            config = JSON.parse(parts[1].trim());
+                                        } catch (e) {
+                                            console.warn(`[Server] Failed to parse config from local file ${filename}:`, e);
+                                        }
+                                    } else {
+                                        content = rawContent.trim();
+                                    }
+                                }
+                            } catch (localErr) {
+                                console.error(`[Server] Failed to load local backup for ${promptName}:`, localErr);
+                            }
                         }
-                    } catch (readErr) {
-                        content = '';
-                    }
-                }
 
-                if (!content) return null; // Skip invalid/empty prompts
+                        if (!content) return null;
+                        return { id: promptName, name: displayName, content, source, config };
+                    })
+                );
 
-                return {
-                    id: filename,
-                    name: displayName,
-                    content: content,
-                    source,
-                    config: config
-                };
-            })
-        );
+                // @ts-ignore - filter out nulls
+                promptsWithSource.push(...batchResults.filter(p => p !== null));
+            }
 
-        return promptsWithSource.filter(p => p !== null) as { id: string, name: string, content: string, source: 'langfuse' | 'local' }[];
-    } catch (err) {
-        console.error('[Server] Failed to list prompts:', err);
-        return [];
-    }
+            // Update Cache
+            promptsCache = promptsWithSource;
+            lastPromptsSyncTime = Date.now();
+            console.log(`[Server] Prompt sync complete. Cached ${promptsWithSource.length} prompts.`);
+
+            return promptsWithSource;
+        } catch (e) {
+            console.error('[Server] listPrompts failed:', e);
+            return [];
+        } finally {
+            // Clear the promise so next request can start a new sync if needed
+            promptsSyncPromise = null;
+        }
+    })();
+
+    return promptsSyncPromise;
 }
 
 function loadTools(): any[] {
@@ -814,7 +907,15 @@ function loadTools(): any[] {
 }
 
 // Progressive filler system for tool execution feedback
-// Progressive filler system completely disabled per user request
+const FILLER_PHRASES = [
+    "Hmm...",
+    "Erm...",
+    "Ok...",
+    "Let me see...",
+    "Just waiting for the system...",
+    "One moment...",
+    "Bear with me..."
+];
 
 
 function calculateStringSimilarity(str1: string, str2: string): number {
@@ -867,6 +968,7 @@ interface ClientSession {
     isIntercepting?: boolean; // New: Flag to suppress audio if we catch a hallucination
     initialGreetingTimer?: NodeJS.Timeout | null; // Track initial greeting to prevent duplicates
     lastUserTranscript?: string;
+    langfuseTrace?: any; // Langfuse Trace Object
     // Deduplication
     lastAgentReply?: string;
     lastAgentReplyTime?: number;
@@ -881,6 +983,12 @@ interface ClientSession {
     hasFlowedAudio?: boolean;
     // Voice Config
     voiceId?: string;
+    activeDialect?: string; // Currently detected dialect
+    dialectConfidence?: number; // Confidence level of dialect detection
+    voiceLockEnabled?: boolean; // Voice lock toggle - prevents automatic voice switching
+    voiceMapping?: Record<string, string>; // Custom locale -> voiceId mapping
+    activeLocale?: string; // Currently detected locale from Transcribe
+    localeConfidence?: number; // Confidence of locale detection
 
     // Context Variables
     userLocation?: string;
@@ -917,14 +1025,16 @@ interface ClientSession {
     awsSessionToken?: string;
     awsRegion?: string;
     agentCoreRuntimeArn?: string;
+    feedback?: any; // New: Store feedback from user
 
     // Workflow State
     activeWorkflowStepId?: string;
     currentWorkflowId?: string; // Track active workflow name
     workflowChecks?: { [key: string]: any }; // Track collected variables for UI
 
-    // Phantom Action Watcher
+    // Tool Deduplication
     toolsCalledThisTurn?: string[]; // Track tools called in current turn
+    processedToolIds?: Set<string>; // Track processed tool IDs to prevent duplicates
     phantomCorrectionCount?: number; // Track number of corrections attempted
 }
 
@@ -946,26 +1056,56 @@ const activeSessions = new Map<WebSocket, ClientSession>();
 
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
-    console.log(`[HTTP] Request: ${req.url}`);
+    // Strip query parameters for routing
+    const [pathname, queryPart] = (req.url || '/').split('?');
+    logDebug(`[HTTP] Request: ${req.method} ${pathname}`);
 
-    if (req.url === '/health') {
+    // --- GLOBAL CORS HANDLING ---
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+
+    if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
         return;
     }
 
-    if (req.url === '/api/prompts') {
+    if (pathname === '/api/prompts') {
         const prompts = await listPrompts();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(prompts));
         return;
     }
 
+    // Sync Prompts from Langfuse
+    if (pathname === '/api/prompts/sync' && req.method === 'POST') {
+        try {
+            console.log('[Server] Syncing prompts from Langfuse...');
+            const prompts = await listPrompts();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                message: `Synced ${prompts.length} prompts`,
+                count: prompts.length
+            }));
+        } catch (error: any) {
+            console.error('[Server] Error syncing prompts:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to sync prompts', details: error.message }));
+        }
+        return;
+    }
+
     // Save Prompt API
-    if (req.method === 'POST' && req.url?.startsWith('/api/prompts/')) {
-        // Parse URL and Query Params
-        const [pathPart, queryPart] = req.url.split('?');
-        const id = pathPart.substring(13); // Remove /api/prompts/
+    if (req.method === 'POST' && pathname.startsWith('/api/prompts/')) {
+        const id = pathname.substring(13); // Remove /api/prompts/
 
         const urlParams = new URLSearchParams(queryPart);
         const syncParam = urlParams.get('sync');
@@ -989,26 +1129,33 @@ const server = http.createServer(async (req, res) => {
                     fs.mkdirSync(PROMPTS_DIR, { recursive: true });
                 }
 
-                fs.writeFileSync(savePath, content);
+                // Save prompt content with config metadata
+                // Format: content\n---\n{config JSON}
+                let fileContent = content.trim();
+                if (config && Object.keys(config).length > 0) {
+                    fileContent += '\n---\n' + JSON.stringify(config, null, 2);
+                }
+
+                fs.writeFileSync(savePath, fileContent);
                 console.log(`[Server] Saved prompt to ${savePath}`);
 
                 let syncMessage = '';
+                let versionNumber = null;
+
                 if (shouldSync) {
                     try {
                         const promptName = filename.replace('.txt', '');
                         console.log(`[Server] Syncing prompt ${promptName} to Langfuse...`);
 
-                        await langfuse.createPrompt({
-                            name: promptName,
-                            type: "text",
-                            prompt: content,
-                            config: config || {},
-                            labels: ["production"],
-                            tags: ["voice-assistant-sync"]
-                        });
+                        // Use PromptService to save and promote to production
+                        versionNumber = await promptService.saveAndPromote(
+                            promptName,
+                            content,
+                            config || {}
+                        );
 
-                        console.log(`[Server] Successfully synced prompt ${promptName} to Langfuse`);
-                        syncMessage = ' and synced to Langfuse';
+                        console.log(`[Server] Successfully synced prompt ${promptName} to Langfuse (version ${versionNumber})`);
+                        syncMessage = ` and synced to Langfuse as version ${versionNumber}`;
                     } catch (syncErr: any) {
                         console.error('[Server] Failed to sync to Langfuse:', syncErr);
                         syncMessage = '. Warning: Failed to sync to Langfuse (' + syncErr.message + ')';
@@ -1020,7 +1167,11 @@ const server = http.createServer(async (req, res) => {
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 'success', message: 'Prompt saved' + syncMessage }));
+                res.end(JSON.stringify({
+                    status: 'success',
+                    message: 'Prompt saved' + syncMessage,
+                    version: versionNumber
+                }));
             } catch (error: any) {
                 console.error('[Server] Failed to save prompt:', error);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -1031,57 +1182,60 @@ const server = http.createServer(async (req, res) => {
     }
 
 
-    // Feedback API
-    if (req.method === 'POST' && req.url === '/api/feedback') {
+    // Presets API
+    // Presets API
+    // GET /api/presets - List all presets
+    if (req.method === 'GET' && pathname.startsWith('/api/presets') && !pathname.startsWith('/api/presets/')) {
+        try {
+            if (!fs.existsSync(PRESETS_FILE)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify([]));
+                return;
+            }
+            const presets = fs.readFileSync(PRESETS_FILE, 'utf-8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(presets);
+        } catch (error: any) {
+            console.error('[Server] Failed to list presets:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
+        return;
+    }
+
+    // POST /api/presets - Create a new preset
+    if (req.method === 'POST' && pathname.startsWith('/api/presets') && !pathname.startsWith('/api/presets/')) {
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
-        req.on('end', async () => {
+        req.on('end', () => {
             try {
-                const { traceId, score, comment, name } = JSON.parse(body);
-
-                if (traceId && (score !== undefined || comment)) {
-                    // 1. Send to Langfuse
-                    await langfuse.score({
-                        traceId,
-                        name: name || "user-feedback",
-                        value: score,
-                        comment: comment
-                    });
-                    console.log(`[Server] Recorded feedback for trace ${traceId}: score=${score}, comment=${comment}`);
-
-                    // 2. Persist to Local History File
-                    try {
-                        const shortId = traceId.substring(0, 8);
-                        const files = fs.readdirSync(HISTORY_DIR);
-                        const match = files.find(f => f.includes(shortId) && f.endsWith('.json'));
-
-                        if (match) {
-                            const filePath = path.join(HISTORY_DIR, match);
-                            const fileContent = fs.readFileSync(filePath, 'utf-8');
-                            const historyData = JSON.parse(fileContent);
-
-                            // Update feedback
-                            historyData.feedback = {
-                                score: score,
-                                comment: comment,
-                                timestamp: new Date().toISOString()
-                            };
-
-                            fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
-                            console.log(`[Server] Updated local history file ${match} with feedback.`);
-                        } else {
-                            console.warn(`[Server] Could not find local history file for session ${shortId} to save feedback.`);
-                        }
-                    } catch (fsErr) {
-                        console.error('[Server] Failed to save feedback to local file:', fsErr);
-                        // Don't fail the request just because local save failed, Langfuse is primary
-                    }
+                const { name, config } = JSON.parse(body);
+                if (!name || !config) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Name and config are required' }));
+                    return;
                 }
 
+                let presets = [];
+                if (fs.existsSync(PRESETS_FILE)) {
+                    presets = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
+                }
+
+                const newPreset = {
+                    id: crypto.randomUUID(),
+                    name,
+                    createdAt: new Date().toISOString(),
+                    config
+                };
+
+                presets.push(newPreset);
+                fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
+
+                console.log(`[Server] Created new preset: ${name} (${newPreset.id})`);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ status: 'success' }));
+                res.end(JSON.stringify(newPreset));
             } catch (error: any) {
-                console.error('[Server] Failed to record feedback:', error);
+                console.error('[Server] Failed to create preset:', error);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: error.message }));
             }
@@ -1089,7 +1243,213 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/tools') {
+    // DELETE /api/presets/:id - Delete a preset
+    if (req.method === 'DELETE' && pathname.startsWith('/api/presets/')) {
+        const id = pathname.substring(13); // Remove /api/presets/ from the path part only
+        try {
+            if (fs.existsSync(PRESETS_FILE)) {
+                let presets = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf-8'));
+                const originalLength = presets.length;
+                presets = presets.filter((p: any) => p.id !== id);
+
+                if (presets.length < originalLength) {
+                    fs.writeFileSync(PRESETS_FILE, JSON.stringify(presets, null, 2));
+                    console.log(`[Server] Deleted preset: ${id}`);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true }));
+                } else {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Preset not found' }));
+                }
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'No presets found' }));
+            }
+        } catch (error: any) {
+            console.error('[Server] Failed to delete preset:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
+        return;
+    }
+
+    // SYSTEM - GET /api/system/status - Check AWS Connectivity
+    if (req.method === 'GET' && pathname === '/api/system/status') {
+        try {
+            // Simple check: Try to list 1 model to verify credentials work
+            const command = new ListFoundationModelsCommand({});
+            await bedrockClient.send(command);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                aws: 'connected',
+                region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'unknown'
+            }));
+        } catch (error: any) {
+            console.error('[System] AWS Connectivity Check Failed:', error);
+            res.writeHead(200, { 'Content-Type': 'application/json' }); // Return 200 but with error status
+            res.end(JSON.stringify({
+                aws: 'error',
+                error: error.message
+            }));
+        }
+        return;
+    }
+
+    // SYSTEM - POST /api/system/reset - Factory Reset
+    if (req.method === 'POST' && pathname === '/api/system/reset') {
+        try {
+            // 1. Delete presets.json
+            if (fs.existsSync(PRESETS_FILE)) {
+                fs.unlinkSync(PRESETS_FILE);
+            }
+
+            // 2. Delete history files (optional, but requested in plan)
+            if (fs.existsSync(HISTORY_DIR)) {
+                const files = fs.readdirSync(HISTORY_DIR);
+                for (const file of files) {
+                    if (file.endsWith('.json')) {
+                        fs.unlinkSync(path.join(HISTORY_DIR, file));
+                    }
+                }
+            }
+
+            console.log('[System] Factory reset completed');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: 'System reset complete' }));
+        } catch (error: any) {
+            console.error('[System] Factory reset failed:', error);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: error.message }));
+        }
+        return;
+    }
+
+    // SYSTEM - POST /api/system/debug - Toggle Debug Mode
+    if (req.method === 'POST' && pathname === '/api/system/debug') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const { enabled } = JSON.parse(body);
+                DEBUG_MODE = !!enabled; // Update global state
+                console.log(`[System] Debug Mode set to: ${DEBUG_MODE}`);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, enabled: DEBUG_MODE }));
+            } catch (error: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
+
+    // Feedback API
+    if (req.method === 'POST' && pathname === '/api/feedback') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                console.log(`[Server] Received feedback request body: ${body}`);
+                const { traceId, sessionId, score, comment, name } = JSON.parse(body);
+
+                // Look up the actual Langfuse traceId from active session
+                let actualTraceId = traceId;
+
+                if (sessionId) {
+                    // Find the session in activeSessions
+                    const session = Array.from(activeSessions.values())
+                        .find(s => s.sessionId === sessionId);
+
+                    if (session) {
+                        actualTraceId = session.langfuseTrace?.id || traceId || sessionId;
+                        console.log(`[Server] Found active session, storing feedback in memory: ${sessionId}`);
+                        // Store in session memory for saveTranscript
+                        session.feedback = {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        };
+                    } else {
+                        console.warn(`[Server] Session ${sessionId} not found in active sessions, storing as pending.`);
+                        // Store as pending for saveTranscript to find later
+                        pendingFeedback.set(sessionId, {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
+
+                // Fallback: use sessionId as traceId if nothing else available
+                const targetId = actualTraceId || sessionId;
+
+                console.log(`[Server] Feedback Debug: sessionId=${sessionId}, traceId=${traceId}, targetId=${targetId}, score=${score}`);
+
+                if (!targetId) {
+                    throw new Error('No valid trace ID or session ID provided');
+                }
+
+                if (score === undefined && !comment) {
+                    throw new Error('Either score or comment must be provided');
+                }
+
+                // 1. Send to Langfuse
+                try {
+                    await langfuse.score({
+                        traceId: targetId,
+                        name: name || "user-feedback",
+                        value: score,
+                        comment: comment
+                    });
+                    console.log(`[Server] Recorded feedback for trace ${targetId} in Langfuse.`);
+                } catch (lfErr) {
+                    console.error('[Server] Failed to send score to Langfuse:', lfErr);
+                    // Continue anyway to save locally
+                }
+
+                // 2. Persist to Local History File (Final redundancy if file already exists)
+                try {
+                    const files = fs.readdirSync(HISTORY_DIR);
+                    // Match full sessionId in filename for total precision
+                    // Filename format: session_TIMESTAMP_UUID.json
+                    const match = files.find(f => f.includes(sessionId) && f.endsWith('.json')) ||
+                        files.find(f => f.includes(sessionId.substring(0, 8)) && f.endsWith('.json'));
+
+                    if (match) {
+                        const filePath = path.join(HISTORY_DIR, match);
+                        const fileContent = fs.readFileSync(filePath, 'utf-8');
+                        const historyData = JSON.parse(fileContent);
+
+                        // Update feedback
+                        historyData.feedback = {
+                            score: score,
+                            comment: comment,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        fs.writeFileSync(filePath, JSON.stringify(historyData, null, 2));
+                        console.log(`[Server] Updated local history file ${match} with late feedback.`);
+                    }
+                } catch (fsErr) {
+                    console.error('[Server] Failed to update local history file (expected if session not saved yet):', fsErr);
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'success' }));
+            } catch (error: any) {
+                console.error('[Server] Failed to record feedback:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                    ;
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
+    if (pathname === '/api/tools') {
         if (req.method === 'GET') {
             const tools = toolManager.listTools();
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1122,8 +1482,8 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    if (req.url?.startsWith('/api/tools/')) {
-        const toolName = req.url.substring(11); // Remove /api/tools/
+    if (pathname.startsWith('/api/tools/')) {
+        const toolName = pathname.substring(11); // Remove /api/tools/
 
         if (req.method === 'DELETE') {
             const success = toolManager.deleteTool(toolName);
@@ -1138,7 +1498,7 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
-    if (req.url === '/api/gateway/tools') {
+    if (pathname === '/api/gateway/tools') {
         if (agentCoreGatewayClient) {
             try {
                 const tools = await agentCoreGatewayClient.listTools();
@@ -1156,7 +1516,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // List available personas (files in prompts directory)
-    if (req.url === '/api/personas') {
+    if (pathname === '/api/personas') {
         const prompts = await listPrompts();
         // Filter mainly for persona-* but allow generic files if they map to flows
         // For visualizer, we want simple IDs
@@ -1170,8 +1530,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Dynamic Workflow Graph API
-    if (req.method === 'GET' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'GET' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
 
         // Generic Load: simply look for workflow-{id}.json
         let filename = `workflow-${id}.json`;
@@ -1213,8 +1573,8 @@ const server = http.createServer(async (req, res) => {
 
 
     // Save Workflow Graph API
-    if (req.method === 'POST' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'POST' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
 
         let body = '';
         req.on('data', chunk => {
@@ -1279,11 +1639,12 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ error: error.message }));
             }
         });
+        return;
     }
 
     // Delete Workflow API
-    if (req.method === 'DELETE' && req.url?.startsWith('/api/workflow/')) {
-        const id = req.url.substring(14); // Remove /api/workflow/
+    if (req.method === 'DELETE' && pathname.startsWith('/api/workflow/')) {
+        const id = pathname.substring(14); // Remove /api/workflow/
         console.log(`[Server] Request to DELETE workflow: ${id}`);
 
         // Security / Validation
@@ -1318,7 +1679,7 @@ const server = http.createServer(async (req, res) => {
 
 
     // Knowledge Base APIs
-    if (req.url === '/api/knowledge-bases') {
+    if (pathname === '/api/knowledge-bases') {
         if (req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(loadKnowledgeBases()));
@@ -1343,12 +1704,13 @@ const server = http.createServer(async (req, res) => {
             });
             return;
         }
+        return;
     }
 
 
 
-    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'PUT') {
-        const idToUpdate = req.url.split('/').pop();
+    if (pathname.startsWith('/api/knowledge-bases/') && req.method === 'PUT') {
+        const idToUpdate = pathname.split('/').pop();
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', () => {
@@ -1376,8 +1738,8 @@ const server = http.createServer(async (req, res) => {
 
 
 
-    if (req.url && req.url.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
-        const idToDelete = req.url.split('/').pop();
+    if (pathname.startsWith('/api/knowledge-bases/') && req.method === 'DELETE') {
+        const idToDelete = pathname.split('/').pop();
         const kbs = loadKnowledgeBases();
         const newKbs = kbs.filter((kb: any) => kb.id !== idToDelete);
         saveKnowledgeBases(newKbs);
@@ -1387,7 +1749,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // List Bedrock Models Endpoint
-    if (req.url === '/api/bedrock-models') {
+    if (pathname === '/api/bedrock-models') {
         console.log('[Server] Received request for /api/bedrock-models');
         try {
             console.log('[Server] Listing Foundation Models...');
@@ -1445,7 +1807,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/voices') {
+    if (pathname === '/api/voices') {
         const voices = formatVoicesForFrontend();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(voices));
@@ -1453,14 +1815,14 @@ const server = http.createServer(async (req, res) => {
     }
 
 
-    if (req.url === '/api/version') {
+    if (pathname === '/api/version') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(VERSION_INFO));
         return;
     }
 
     // Chat History API
-    if (req.url === '/api/history') {
+    if (pathname === '/api/history') {
         try {
             ensureHistoryDir();
             const files = fs.readdirSync(HISTORY_DIR)
@@ -1478,6 +1840,7 @@ const server = http.createServer(async (req, res) => {
                         totalMessages,
                         finalMessages,
                         transcript: data.transcript, // Optional: don't send full transcript in list if heavy
+                        usage: data.usage,
                         feedback: data.feedback // Include feedback for the list view
                     };
                 })
@@ -1493,8 +1856,8 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url?.startsWith('/api/history/')) {
-        const filename = req.url.substring(13); // Remove /api/history/
+    if (pathname.startsWith('/api/history/')) {
+        const filename = pathname.substring(13); // Remove /api/history/
         const safePath = path.join(HISTORY_DIR, path.basename(filename));
 
         if (fs.existsSync(safePath)) {
@@ -1508,10 +1871,17 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    if (req.url === '/api/workflows') {
+    if (pathname.startsWith('/api/workflows')) {
+        console.log('[Server] Request for /api/workflows');
         try {
             // List all workflow files in src directory
-            const srcDir = path.join(__dirname, '../src/');
+            let srcDir = path.join(__dirname, '../src/');
+            if (!fs.existsSync(srcDir)) {
+                console.log('[Server] ../src does not exist, checking fallback');
+                // Fallback to current directory or dist
+                srcDir = __dirname;
+            }
+
             if (fs.existsSync(srcDir)) {
                 const files = fs.readdirSync(srcDir)
                     .filter(f => f.startsWith('workflow-') && f.endsWith('.json'));
@@ -1529,22 +1899,50 @@ const server = http.createServer(async (req, res) => {
                     return { id, name, filename: f };
                 });
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(workflows));
             } else {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
                 res.end(JSON.stringify([]));
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('[Server] Error fetching workflows:', error);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Failed to fetch workflows' }));
+            res.writeHead(500, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to fetch workflows: ' + error.message }));
         }
         return;
     }
 
+    // --- Simulation Endpoint ---
+    if (pathname === '/api/simulation/generate' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const { history, persona, instructions } = JSON.parse(body);
+                console.log('[Simulation] Received request. Persona length:', persona?.length, 'History items:', history?.length, 'Instructions:', instructions ? 'Yes' : 'No');
+
+                if (!history || !Array.isArray(history) || !persona) {
+                    res.writeHead(400, CORS_HEADERS);
+                    res.end(JSON.stringify({ error: 'Missing history (array) or persona (string)' }));
+                    return;
+                }
+
+                const response = await simulationService.generateResponse(history, persona, instructions);
+
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ response }));
+            } catch (e: any) {
+                console.error('[Simulation] Error:', e);
+                res.writeHead(500, CORS_HEADERS);
+                res.end(JSON.stringify({ error: e.message || 'Simulation failed' }));
+            }
+        });
+        return;
+    }
+
     // Serve static files
-    let filePath = req.url === '/' ? '/index.html' : req.url || '/index.html';
+    let filePath = pathname === '/' ? '/index.html' : pathname || '/index.html';
     // Remove query parameters
     filePath = filePath.split('?')[0];
 
@@ -2118,7 +2516,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
                             const basePrompt = parsed.config.systemPrompt || "";
                             // Stronger header
-                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
+                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n\n*** IMMEDIATE TOOL EXECUTION PROTOCOL ***\n- When a step requires a tool (e.g. 'perform_idv_check'), you must call it IN THE SAME TURN as your text response.\n- DO NOT say \"I will check\" and then stop. That is a CRITICAL FAILURE.\n- Correct Pattern: \"Let me check that for you.\" -> [TOOL_CALL]\n- Ensure you COMPLETE your sentence verbally before emitting the tool call block. Do not cut off your own audio.\n\n";
                             parsed.config.systemPrompt = basePrompt + strictHeader + workflowSystemPrompt;
                             console.log(`[WorkflowDebug] FINAL SYSTEM PROMPT LENGTH: ${parsed.config.systemPrompt.length}`); // DEBUG
                         } else {
@@ -2209,7 +2607,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
                             }
                         }
-                        return;
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
                         return;
@@ -2218,6 +2615,22 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (parsed.text) {
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
+
+
+                            // NOTE: Voice switching via Transcribe language identification only works for audio input
+                            // Text input does not go through Transcribe, so voice remains unchanged
+
+
+                            // DEMO: Send detected language metadata (will be replaced with actual Transcribe data)
+                            // This demonstrates the frontend language display feature
+                            ws.send(JSON.stringify({
+                                type: 'metadata',
+                                data: {
+                                    detectedLanguage: 'en-US',
+                                    languageConfidence: 0.95
+                                }
+                            }));
+
 
                             // Add user message to transcript for chat history
                             session.transcript.push({
@@ -2278,10 +2691,18 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             ws.send(JSON.stringify({ type: 'error', message: 'Invalid AWS Configuration' }));
                         }
                         return;
+                    } else if (parsed.type === 'session_feedback') {
+                        console.log(`[Server] Received Session Feedback: Score=${parsed.score}, Comment="${parsed.comment || ''}"`);
+                        if (session.langfuseTrace) {
+                            session.langfuseTrace.score({ value: parsed.score, comment: parsed.comment });
+                        }
+                        return;
                     } else {
                         // Not a valid JSON message, treat as binary data
                         // Fall through to audio processing
                     }
+                } else {
+                    // Not likely JSON, treat as binary
                 }
             }
 
@@ -2299,6 +2720,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 if (session.brainMode === 'bedrock_agent') {
                     // --- AGENT MODE ---
                     // 1. Buffer Audio
+                    console.log(`[Server] Received audio chunk: ${audioBuffer.length} bytes`);
                     session.agentBuffer.push(audioBuffer);
 
                     // 2. VAD (Energy-based Silence Detection)
@@ -2332,6 +2754,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                             console.log(`[Server] Processing ${fullAudio.length} bytes for Agent...`);
 
+                            // Send updated token usage to client
+                            if (session.sonicClient) {
+                                const inputTokens = session.sonicClient.getSessionInputTokens();
+                                const outputTokens = session.sonicClient.getSessionOutputTokens();
+
+                                ws.send(JSON.stringify({
+                                    type: 'token_usage',
+                                    inputTokens,
+                                    outputTokens
+                                }));
+
+                                logDebug(`[Session] Sent token update: In=${inputTokens}, Out=${outputTokens}`);
+                            }
                             // 3. Transcribe
                             console.log(`[Server] Starting transcription of ${fullAudio.length} bytes...`);
 
@@ -2363,9 +2798,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     console.warn('[Server] Error formatting transcript:', e);
                                 }
 
-                                console.log(`[Server] User said (Formatted): "${finalText}"`);
-                                ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: finalText, isFinal: true }));
-                                session.transcript.push({ role: 'user', text: finalText, timestamp: Date.now() });
 
                                 // 4. Invoke Agent
                                 try {
@@ -2473,6 +2905,13 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                 } else {
                     // --- RAW NOVA MODE (Existing) ---
+                    // Defensively check for even byte length (Nova Sonic Requirement)
+                    if (audioBuffer.length % 2 !== 0) {
+                        console.warn(`[Server] Dropping odd-sized audio chunk: ${audioBuffer.length} bytes (Invalid PCM)`);
+                        return;
+                    }
+
+                    console.log(`[Server] Received audio chunk (Raw Nova): ${audioBuffer.length} bytes`);
                     // Ensure session is started
                     if (!sonicClient.getSessionId()) {
                         await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
@@ -2527,10 +2966,19 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     console.log(`[Server] Auto-save parameters: accountNumber=${accountNumber}, sortCode=${sortCode}`);
 
+                    // Generate a simple summary from the transcript
+                    const interactionSummary = session.transcript
+                        .filter(t => t.role === 'user' || t.role === 'assistant')
+                        .map(t => `${t.role.toUpperCase()}: ${t.text}`)
+                        .join('\n')
+                        .substring(0, 500) + (session.transcript.length > 10 ? '...' : '');
+
                     await agentCoreGatewayClient.callTool('manage_recent_interactions', {
                         action: 'PUBLISH',
                         accountNumber: accountNumber,
-                        sortCode: sortCode
+                        sortCode: sortCode,
+                        summary: interactionSummary || "No transcript available.",
+                        outcome: "Completed"
                     });
                     console.log('[Server] ✅ History Auto-Saved Successfully.');
                 } catch (err) {
@@ -2565,7 +3013,7 @@ process.on('uncaughtException', (error: Error) => {
 });
 
 // Start HTTP server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] HTTP server listening on port ${PORT}`);
     console.log(`[Server] WebSocket endpoint: ws://localhost:${PORT}${SONIC_PATH}`);
     console.log(`[Server] Health check: http://localhost:${PORT}/health`);
@@ -2578,7 +3026,7 @@ server.listen(PORT, () => {
 /**
  * Handle events from Nova Sonic and forward to WebSocket client
  */
-// --- Text Cleaning Helper for Nova Sonic ---
+// --- Text Cleaning Helper for Nova Sonic (Input to TTS/Model) ---
 function cleanTextForSonic(text: string): string {
     if (!text || typeof text !== 'string') return text;
 
@@ -2591,7 +3039,7 @@ function cleanTextForSonic(text: string): string {
     // First, handle bold and italic (preserve the text, remove markers)
     clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');  // **text** -> text
     clean = clean.replace(/\*([^*]+)\*/g, '$1');      // *text* -> text
-    clean = clean.replace(/_([^_]+)_/g, '$1');        // _text_ -> text
+    // clean = clean.replace(/_([^_]+)_/g, '$1');        // _text_ -> text (Disabled to protect JSON keys)
     // Remove remaining markdown (headers, code blocks)
     clean = clean.replace(/[#`]/g, '');
     // Collapse newlines
@@ -2605,6 +3053,62 @@ function cleanTextForSonic(text: string): string {
 
     return clean;
 }
+
+/**
+ * Clean assistant transcripts for display in the UI.
+ * Handles stripping hidden tags, fixing punctuation spacing, and cleaning up brackets.
+ */
+function cleanAssistantDisplay(text: string): string {
+    if (!text) return text;
+
+    let clean = text;
+
+    // 1. Remove all specific bracketed tags but keep contents of [Read Digits]
+    clean = clean.replace(/\[STEP:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[DIALECT:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/(?:\[|\b)S?E?N?TIMENT:?\s*[^\]]*\]?/gi, ''); // Robust TIMENT stripping
+    clean = clean.replace(/\[TRANSLATION:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/\[SYSTEM_INJECTION:[^\]]*\]\s*/gi, '');
+
+    // 2. Extract contents of [Read Digits: ...] or just [1 2 3]
+    clean = clean.replace(/\[Read\s+Digits:\s*([^\]]+)\]/gi, '$1');
+
+    // 3. Remove any other [TAG: ...] or [TAG] but be careful not to strip legitimate markdown/UI elements
+    // We only strip tags that are all caps and likely internal.
+    clean = clean.replace(/\[[A-Z0-9_\s]+\s*(?::\s*[^\]]*)?\]/g, '');
+
+    // 3.5 Fix Money Formatting (e.g. £4. 50 -> £4.50)
+    clean = clean.replace(/£\s*([\d,]+)\s*[.,]\s+(\d{2})/g, '£$1.$2');
+
+    // 4. Fix missing spaces after punctuation (common after tag stripping)
+    // Add space after . ! ? if followed by a letter or number, but NOT for decimals
+    clean = clean.replace(/([.!?])([a-zA-Z0-9])/g, '$1 $2');
+
+    // 5. Ensure space between words and numbers (common after stripping [Read Digits])
+    clean = clean.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+    clean = clean.replace(/(\d)([a-zA-Z])/g, '$1 $2');
+
+    // 6. Clean up stray brackets and punctuation
+    clean = clean.replace(/(\d)\]/g, '$1'); // Fix "12345678]"
+    clean = clean.replace(/\[(?=\s*\d)/g, ''); // Fix "[ 123"
+    clean = clean.replace(/\]\./g, '.'); // Fix "]."
+    clean = clean.replace(/\]\s*([a-zA-Z0-9])/g, ' $1'); // Fix "]word" or "]123"
+
+    // 7. Formatting: Newlines and collapsing spaces
+    clean = clean.replace(/[ \t]+/g, ' '); // Collapse horizontal whitespace
+    clean = clean.replace(/\n\s*\n/g, '\n\n'); // Normalize double newlines
+
+    // 8. Final trim
+    clean = clean.trim();
+
+    // Ensure first letter is capitalized if it's a sentence
+    if (clean.length > 2 && /^[a-z]/.test(clean)) {
+        clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+    }
+
+    return clean;
+}
+
 
 // --- User Transcript Formatting Helper ---
 function formatUserTranscript(text: string): string {
@@ -2757,14 +3261,17 @@ function convertWorkflowToText(workflow: any): string {
     if (!workflow || !workflow.nodes || !Array.isArray(workflow.nodes)) return "";
 
     let text = "### WORKFLOW INSTRUCTIONS\n";
-    text += "You must follow this strictly defined process flow. \n";
-    text += "CRITICAL: You MUST begin your response internal thought or output with the tag [STEP: node_id] indicating which step you are executing. Example: [STEP: check_auth] ...\n";
-    text += "CRITICAL: The descriptions below are INSTRUCTIONS for your behavior/persona. DO NOT read them aloud to the user.\n\n";
+    text += "You are executing a STRICT workflow. You represent a state machine.\n";
+    text += "CRITICAL RULE: You MUST begin EVERY single response with the tag [STEP: node_id].\n";
+    text += "This tag tells the UI where you are. Without it, the interface BREAKS.\n";
+    text += "Format: [STEP: node_id] Your response text...\n";
+    text += "Example: [STEP: check_auth] I removed the example text to save tokens.\n";
+    text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n\n";
 
     // 1. Map Nodes
     const startNode = workflow.nodes.find((n: any) => n.type === 'start');
     if (startNode) {
-        text += `ENTRY POINT: Begin execution at step [${startNode.id}].\n`;
+        text += `ENTRY POINT: Begin execution at step [${startNode.id}]. Start your first response with [STEP: ${startNode.id}].\n`;
     }
 
     workflow.nodes.forEach((node: any) => {
@@ -2772,7 +3279,7 @@ function convertWorkflowToText(workflow: any): string {
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {
-            text += `   -> ACTION REQUIRED: You MUST call the tool "${node.toolName}" NOW. Do not just say you will call it - actually invoke it.\n`;
+            text += `   -> ACTION REQUIRED: You MUST call the tool "${node.toolName}" after completing your verbal response. Do not cut yourself off.\n`;
         }
 
         // Sub-Workflow Config - MODIFIED FOR DRIP FEED
@@ -2835,6 +3342,28 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
             break;
 
+        case 'session_start':
+            console.log('[Server] Forwarding session_start event to client:', JSON.stringify(event.data));
+            if (ws.readyState === WebSocket.OPEN) {
+                // Forward session_start to client in the format it expects
+                ws.send(JSON.stringify({
+                    type: 'session_start',
+                    sessionId: event.data.sessionId,
+                    timestamp: new Date().toISOString()
+                }));
+            }
+            break;
+
+        case 'workflow_update':
+            console.log(`[Server] Forwarding workflow update: ${event.data.currentStep}`);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'workflow_update',
+                    currentStep: event.data.currentStep
+                }));
+            }
+            break;
+
         case 'contentStart':
             if (event.data.role === 'assistant') {
                 console.log('[Server] Assistant Turn Started');
@@ -2872,6 +3401,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         text: event.data.transcript,
                         isFinal: event.data.isFinal
                     }));
+
+                    if (event.data.isFinal && session.sonicClient) {
+                        const inputTokens = session.sonicClient.getSessionInputTokens();
+                        const outputTokens = session.sonicClient.getSessionOutputTokens();
+                        ws.send(JSON.stringify({
+                            type: 'token_usage',
+                            inputTokens,
+                            outputTokens
+                        }));
+                    }
                 }
                 return;
             }
@@ -2887,23 +3426,76 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
 
             if (role === 'user') {
+                // NEW TURN START: Reset per-turn state
+                session.toolsCalledThisTurn = [];
+                (session as any).fillerTriggered = false;
+
+                // FILLER SYSTEM: Ignore hidden instructions from transcript
+                if (event.data.transcript && event.data.transcript.startsWith('[HIDDEN]')) {
+                    console.log(`[Server] 🙈 Hiding system instruction from transcript: ${event.data.transcript}`);
+                    return;
+                }
+
                 session.lastUserTranscript = event.data.transcript;
                 session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
             } else if (role === 'assistant' || role === 'model') {
                 const stage = event.data.stage;
                 const isSpeculative = stage === 'SPECULATIVE';
 
+                // FILLER SYSTEM: Filter out assistant responses that match our filler phrases
+                // This prevents "Hmm..." from cluttering the UI if it was system-induced
+                // We use a loose check because the model might add punctuation
+                const text = event.data.transcript || "";
+
+                // Only filter if it looks like a short filler phrase
+                if (text.length < 50) {
+                    const cleanText = text.replace(/[.,!?:;]/g, '').trim().toLowerCase();
+                    const isFiller = FILLER_PHRASES.some(phrase => {
+                        const cleanFiller = phrase.replace(/[.,!?:;]/g, '').trim().toLowerCase();
+                        return cleanText === cleanFiller || cleanText.includes(cleanFiller);
+                    });
+
+                    if (isFiller) {
+                        console.log(`[Server] 🙈 Hiding assistant filler from transcript: "${text}"`);
+                        // We still allow audio to pass through (handleSonicEvent check is for 'audio' type)
+                        // But we stop it from appearing in the UI transcript
+                        return;
+                    }
+                }
+
                 if (event.data.isFinal || isSpeculative) {
+                    const rawText = event.data.transcript || "";
+
+                    // Extract Sentiment from [SENTIMENT: X.X] tag
+                    let sentiment: number | undefined;
+                    const sentimentMatch = rawText.match(/\[SENTIMENT:\s*(-?\d*\.?\d+)\]/i);
+                    if (sentimentMatch) {
+                        sentiment = parseFloat(sentimentMatch[1]);
+                        console.log(`[Server] Extracted sentiment from transcript: ${sentiment}`);
+                    }
+
                     const entry: any = {
                         role: 'assistant',
-                        text: event.data.transcript,
-                        timestamp: Date.now()
+                        text: rawText,
+                        timestamp: Date.now(),
+                        sentiment: sentiment // Store the sentiment score
                     };
 
                     if (isSpeculative) {
                         entry.type = 'speculative';
                     } else if (event.data.isFinal) {
                         entry.type = 'final';
+
+                        // Send token usage update on final response
+                        if (session.sonicClient) {
+                            const inputTokens = session.sonicClient.getSessionInputTokens();
+                            const outputTokens = session.sonicClient.getSessionOutputTokens();
+                            ws.send(JSON.stringify({
+                                type: 'token_usage',
+                                inputTokens,
+                                outputTokens
+                            }));
+                        }
                     }
 
                     session.transcript.push(entry);
@@ -3006,6 +3598,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             console.log(`[ResponseParser] Cross-response parsing applied: "${processedText.substring(0, 50)}..."`);
                         }
                     }
+                }
+
+                // Parse and extract dialect detection tag (first turn only)
+                const dialectMatch = processedText.match(/\[DIALECT:\s*([a-z]{2}-[A-Z]{2})\|(\d*\.?\d+)\]/i);
+                if (dialectMatch) {
+                    const detectedLocale = dialectMatch[1];
+                    const confidence = parseFloat(dialectMatch[2]);
+                    console.log(`[DialectDetection] Nova 2 Sonic detected: ${detectedLocale} (confidence: ${confidence.toFixed(2)})`);
+                    const metadataPayload = {
+                        type: 'metadata',
+                        data: { detectedLanguage: detectedLocale, languageConfidence: confidence }
+                    };
+                    ws.send(JSON.stringify(metadataPayload));
+                    console.log(`[DialectDetection] Sent metadata to frontend:`, JSON.stringify(metadataPayload));
+                    processedText = processedText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]/gi, '').trim();
                 }
 
                 console.log(`[DEBUG] hasJson: ${hasJson}, Enabled Tools: ${JSON.stringify(session.tools?.map(t => t.toolSpec.name))}`);
@@ -3293,8 +3900,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }
 
                 if (displayText) {
-                    // Remove workflow step tags from user-visible text
-                    displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
+                    // CRITICAL: Apply assistant display cleaning early
+                    if (role === 'assistant') {
+                        displayText = cleanAssistantDisplay(displayText);
+                    } else {
+                        // For user, still remove some technical tags if present
+                        displayText = displayText.replace(/\[STEP:\s*[^\]]+\]\s*/gi, '');
+                        displayText = displayText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]\s*/gi, '').trim();
+                    }
 
                     // --- HEURISTIC INTERCEPTOR (Updated for AgentCore Gateway) ---
                     // Matches: XML hallucinations <tool_ call...> ONLY.
@@ -3358,15 +3971,19 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }
 
                         if (!isDuplicateStreaming) {
-                            // Send streaming updates to show text appearing in real-time
-                            ws.send(JSON.stringify({
-                                type: 'transcript',
-                                role: role,
-                                text: displayText,
-                                isFinal: false,
-                                isStreaming: true
-                            }));
-                            console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
+                            // Suppress streaming user transcripts to prevent frontend duplicates
+                            // (Frontend append-only logic handles updates poorly with interleaved messages)
+                            if (role !== 'user') {
+                                // Send streaming updates to show text appearing in real-time
+                                ws.send(JSON.stringify({
+                                    type: 'transcript',
+                                    role: role,
+                                    text: displayText,
+                                    isFinal: false,
+                                    isStreaming: true
+                                }));
+                                console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
+                            }
                         } else {
                             console.log(`[Dedup] SKIPPED streaming transcript (duplicate): "${displayText.substring(0, 50)}..."`);
                         }
@@ -3455,12 +4072,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 }
                             }
 
+                            // Extract sentiment for transmission to UI
+                            let messageSentiment: number | undefined;
+                            const sentimentMatch = displayText.match(/\[SENTIMENT:\s*(-?\d*\.?\d+)\]/i);
+                            if (sentimentMatch) {
+                                messageSentiment = parseFloat(sentimentMatch[1]);
+                            }
+
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
                                 text: finalText,
                                 isFinal: true,
-                                isStreaming: false
+                                isStreaming: false,
+                                sentiment: messageSentiment
                             }));
 
                             // Track message for deduplication (store original full response)
@@ -3535,6 +4160,44 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+
+            // DEDUPLICATION: Check if this tool ID has already been processed
+            if (!session.processedToolIds) {
+                session.processedToolIds = new Set();
+            }
+
+            if (toolUse.toolUseId && session.processedToolIds.has(toolUse.toolUseId)) {
+                console.log(`[Server] ♻️ SKIPPING DUPLICATE TOOL EXECUTION: ${actualToolName} (ID: ${toolUse.toolUseId})`);
+                return;
+            }
+
+            // Mark this ID as processed
+            if (toolUse.toolUseId) {
+                session.processedToolIds.add(toolUse.toolUseId);
+            }
+
+            // FILLER WORD SYSTEM: DISABLED (Too slow/laggy)
+            // We rely on the model's "Latched Audio" (instructions to say "Let me check..." BEFORE tool call)
+            // This is zero-latency compared to server-side injection.
+
+            /* 
+            if (!session.toolsCalledThisTurn || session.toolsCalledThisTurn.length === 0) {
+                const fillerPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
+                const fillerInstruction = `[HIDDEN] (System Instruction) Please say exactly this phrase naturally to fill time: "${fillerPhrase}"`;
+                console.log(`[Server] 💉 Injecting filler instruction: "${fillerInstruction}"`);
+
+                session.isIntercepting = false;
+                session.isInterrupted = false;
+                (session as any).fillerTriggered = true;
+
+                if (session.sonicClient && session.sonicClient.getSessionId()) {
+                    session.sonicClient.sendText(fillerInstruction).catch(e => console.error("Failed to send filler:", e));
+                }
+            } else {
+                (session as any).fillerTriggered = false;
+            }
+            */
+            (session as any).fillerTriggered = false; // Always false now
 
             // PHANTOM WATCHER: Track tool calls for this turn
             if (!session.toolsCalledThisTurn) {
@@ -3659,6 +4322,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // We send a tool result instructing the model to apologize.
                 if (!isToolEnabled(actualToolName)) {
                     console.log(`[Server] 🛑 Blocked execution of DISABLED tool: ${actualToolName}`);
+                    console.log(`[Server] Allowed tools for this session:`, session.allowedTools || 'NONE (undefined)');
 
                     if (session.sonicClient && session.sonicClient.getSessionId()) {
                         // Send a "successful" tool result but with content that tells the model it failed/was denied.
@@ -3869,6 +4533,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         // Send the tool result back to Nova Sonic using the native tool result mechanism
                         if (session.sonicClient && session.sonicClient.getSessionId()) {
                             // Send RAW STRING to avoid JSON nesting confusion
+
+                            // RACE CONDITION FIX: "Smart Delay"
+                            // We wait a short 4000ms to allow any "Latched Audio" (e.g. "Let me check...") 
+                            // to start playing on the client. If we send the tool result too fast, 
+                            // it might cut off that audio or arrive before the client is ready.
+                            // 4000ms is short enough to feel "snappy" but long enough to cover network jitter.
+                            console.log('[Server] ⏱️ Smart Delay: Waiting 4000ms before sending tool result...');
+                            await new Promise(resolve => setTimeout(resolve, 4000));
+
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,
                                 cleanResult,
@@ -3877,6 +4550,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolEndTime = Date.now();
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
+
+                            // Add Tool Result to Transcript History
+                            session.transcript.push({
+                                role: 'tool_result',
+                                text: `Tool Result: ${typeof cleanResult === 'string' ? cleanResult : JSON.stringify(cleanResult)}`,
+                                timestamp: Date.now(),
+                                // @ts-ignore
+                                toolName: actualToolName,
+                                result: cleanResult
+                            });
 
                         } else {
                             console.log('[Server] Nova Sonic session not active - attempting to restart...');
@@ -3958,7 +4641,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'error',
-                    message: 'Nova Sonic streaming error'
+                    message: 'Nova Sonic streaming error',
+                    details: event.data // Send full error details to frontend
                 }));
             }
             break;
