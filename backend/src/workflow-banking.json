@@ -95,7 +95,7 @@
     },
     {
       "id": "lookup_alias",
-      "label": "Call 'lookup_merchant_alias'\n(Identify Alias)",
+      "label": "Call 'lookup_merchant_alias'. THEN explicitly tell the user the merchant details found. ASK the user if they recognise the transaction now that they know the real merchant name. WAIT for their response.",
       "type": "tool",
       "toolName": "lookup_merchant_alias"
     },
