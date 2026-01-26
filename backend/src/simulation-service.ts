@@ -52,6 +52,9 @@ INSTRUCTIONS:
 7. Once the objective is achieved, DO NOT continue the conversation. Say goodbye and add the result token.
 8. Do NOT include any prefixes like "User:", "Customer:", or "Response:". Just output the spoken text.
 9. CRITICAL: You are the USER. NEVER, EVER generate text for the Assistant/Agent. Do not output "*Speaks:*", "Assistant:", or "*EXECUTE:*". If you find yourself predicting the Agent's response, STOP immediately.
+10. CRITICAL: If the Agent says "Let me check", "Bear with me", "One moment", "Let me verify", or implies it is working/processing, output "[WAIT]" and NOTHING ELSE. Do NOT say "Okay, let me check" or "Sure".
+11. CRITICAL: You are the Customer. You DO NOT "check details", "verify info", or "pull up records". The Agent does that. You simply WAIT.
+12. The conversation history may contain system logs (like [EXECUTE...]). IGNORE THEM. They are not part of the conversation you need to respond to.
 `;
 
             if (instructions) {
@@ -117,8 +120,8 @@ INSTRUCTIONS:
                 max_tokens: 300,
                 system: systemPrompt,
                 messages: collapsedMessages,
-                temperature: 0.7,
-                stop_sequences: ["Assistant:", "Agent:", "*Speaks:*", "*EXECUTE:", "[SYSTEM]"]
+                temperature: 0.5,
+                stop_sequences: ["Assistant:", "Agent:", "*Speaks:*", "*EXECUTE", "[EXECUTE", "[SYSTEM]", "[TOOL"]
             };
 
             console.log(`[Simulation] Sending ${collapsedMessages.length} messages to Bedrock...`);

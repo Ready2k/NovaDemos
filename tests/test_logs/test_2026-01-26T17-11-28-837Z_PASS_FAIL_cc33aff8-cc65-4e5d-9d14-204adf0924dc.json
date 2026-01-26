@@ -1,0 +1,197 @@
+{
+  "sessionId": "cc33aff8-cc65-4e5d-9d14-204adf0924dc",
+  "startTime": 1769447454605,
+  "endTime": 1769447488837,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769447454605,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769447455626,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769447455927,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I believe someone has cloned my card and made an unauthorized purchase at Pret. I don't recall making this transaction, as I don't frequent those types of places. I'd like to get my money back. My account number is 12345678 and the sort code is 112233.",
+      "timestamp": 1769447459018
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769447459985,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Oh no, that sounds really concerning. Let me help you with that.",
+      "timestamp": 1769447459993,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Oh no, that sounds really concerning. Let me help you with that.I have your account number and sort code. Let me verify those details first.",
+      "timestamp": 1769447461149,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769447461568,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1769447462332,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1769447462925,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: lookup_merchant_alias",
+      "timestamp": 1769447463626,
+      "toolName": "lookup_merchant_alias",
+      "toolInput": "{\"statementName\":\"Pret A Manger\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: No alias found for 'Pret A Manger'",
+      "timestamp": 1769447464977,
+      "toolName": "lookup_merchant_alias",
+      "result": "No alias found for 'Pret A Manger'"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me check those details.",
+      "timestamp": 1769447465568
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.",
+      "timestamp": 1769447466488,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.Since this seems to be an unauthorised transaction, I'll help you raise a dispute.",
+      "timestamp": 1769447468367,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.Since this seems to be an unauthorised transaction, I'll help you raise a dispute.Before I proceed, can you confirm if you've already contacted Pret A Manger about this issue?",
+      "timestamp": 1769447469472,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.Since this seems to be an unauthorised transaction, I'll help you raise a dispute.Before I proceed, can you confirm if you've already contacted Pret A Manger about this issue?",
+      "timestamp": 1769447470787,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "No, I haven't contacted Pret about this yet. This is the first time I'm reporting it.",
+      "timestamp": 1769447473725
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.I recommend contacting Pret A Manger directly first to try to resolve this issue.",
+      "timestamp": 1769447474512,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.I recommend contacting Pret A Manger directly first to try to resolve this issue.If they don't help or resolve it, please call us back and we can raise a formal dispute for you.",
+      "timestamp": 1769447475794,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I can see the transaction for £4.50 at Pret A Manger on January 14th that you didn't recognise.I recommend contacting Pret A Manger directly first to try to resolve this issue.If they don't help or resolve it, please call us back and we can raise a formal dispute for you.",
+      "timestamp": 1769447477104,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, I'll reach out to Pret A Manger directly first to see if they can resolve this. If they can't help, I'll come back and we can raise a dispute. Thank you for the advice.",
+      "timestamp": 1769447479700
+    },
+    {
+      "role": "assistant",
+      "text": "I recommend contacting Pret A Manger directly first to try to resolve this issue.No problem, contacting them first is the right step.",
+      "timestamp": 1769447480392,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I recommend contacting Pret A Manger directly first to try to resolve this issue.No problem, contacting them first is the right step.If you need help raising a dispute later, just let me know.",
+      "timestamp": 1769447481366,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I recommend contacting Pret A Manger directly first to try to resolve this issue.No problem, contacting them first is the right step.If you need help raising a dispute later, just let me know.",
+      "timestamp": 1769447482272,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Thank you, I appreciate your help. I'll reach out to Pret and get back to you if I need to raise a dispute.",
+      "timestamp": 1769447485277
+    },
+    {
+      "role": "assistant",
+      "text": "No problem, contacting them first is the right step.You're welcome. Please do reach out if you need any further assistance after contacting Pret.",
+      "timestamp": 1769447486048,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7974,
+    "outputTokens": 1850,
+    "totalTokens": 9824,
+    "cost": 0.051672,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "FAIL",
+  "tags": [
+    "auto-test"
+  ],
+  "notes": "a bit of bleed",
+  "status": "FAIL"
+}

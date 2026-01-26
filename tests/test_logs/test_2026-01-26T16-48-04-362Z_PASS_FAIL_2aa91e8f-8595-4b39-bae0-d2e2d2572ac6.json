@@ -1,0 +1,261 @@
+{
+  "sessionId": "2aa91e8f-8595-4b39-bae0-d2e2d2572ac6",
+  "startTime": 1769446029716,
+  "endTime": 1769446084363,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769446029716,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769446030750,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769446031168,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "One moment, let me check that.\n\n[EXECUTE: perform_idv_check]\n\nOkay, I have your account number as 12345678 and sort code as 112233. Is that correct?",
+      "timestamp": 1769446034008
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.",
+      "timestamp": 1769446034840,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.Is that correct?",
+      "timestamp": 1769446036853,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.Is that correct?",
+      "timestamp": 1769446037165,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me confirm those details. I have your account number as 12345678 and sort code as 112233. Is that correct?",
+      "timestamp": 1769446039845
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769446040663,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.",
+      "timestamp": 1769446040671,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Great, you're verified. How can I help you today?",
+      "timestamp": 1769446042607,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769446042631,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "assistant",
+      "text": "Great, you're verified. How can I help you today?You're all set. How can I help you today?",
+      "timestamp": 1769446043736,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Great, you're verified. How can I help you today?You're all set. How can I help you today?",
+      "timestamp": 1769446044480,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Wonderful, thank you for confirming those details. Let me look up your account information.\n\n[EXECUTE: get_dispute_count 12345678 112233]\n\nOkay, I can see you currently have 3 open disputes on your account. Is there anything else I can assist you with today?",
+      "timestamp": 1769446047518
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769446048325,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769446050080,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "assistant",
+      "text": "No open disputes found. How else can I help you today?",
+      "timestamp": 1769446050903,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No open disputes found. How else can I help you today?",
+      "timestamp": 1769446051827,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "I apologize, it seems there are no open disputes found on your account 12345678. Let me know if there is anything else I can assist you with today.",
+      "timestamp": 1769446054166
+    },
+    {
+      "role": "assistant",
+      "text": "No open disputes found. How else can I help you today?Is there anything else I can help with, like checking your balance or recent transactions?",
+      "timestamp": 1769446054858,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No open disputes found. How else can I help you today?Is there anything else I can help with, like checking your balance or recent transactions?",
+      "timestamp": 1769446056099,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Absolutely, let me look into that for you.\n\n[EXECUTE: get_account_balance 12345678 112233]\n\nYour current account balance is £2,987.54. Would you also like me to review your recent transactions?",
+      "timestamp": 1769446059095
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769446059808,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769446061418,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "assistant",
+      "text": "Your current balance is £1,200.00.",
+      "timestamp": 1769446062165,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your current balance is £1,200.00.Would you like me to show your recent transactions too?",
+      "timestamp": 1769446063016,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your current balance is £1,200.00.Would you like me to show your recent transactions too?",
+      "timestamp": 1769446063753,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you for the correction. Let me double check your account balance.\n\n[EXECUTE: get_account_balance 12345678 112233]\n\nYou're right, your current account balance is £1,200.00. Yes, please go ahead and show me your recent transactions.\n\n[EXECUTE: get_account_transactions 12345678 112233]",
+      "timestamp": 1769446066778
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1769446068170,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1769446070048,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your recent transactions. Which one would you like to discuss or dispute?",
+      "timestamp": 1769446070788,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your recent transactions. Which one would you like to discuss or dispute?",
+      "timestamp": 1769446072109,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Thank you, let me review the recent transactions. [PAUSE] I appreciate you providing those details. At this time, I don't see any transactions that require further discussion or a dispute. Is there anything else I can assist you with today?",
+      "timestamp": 1769446075017
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your recent transactions. Which one would you like to discuss or dispute?Would you like me to help with anything else, like locating a branch or checking another account detail?",
+      "timestamp": 1769446075849,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your recent transactions. Which one would you like to discuss or dispute?Would you like me to help with anything else, like locating a branch or checking another account detail?",
+      "timestamp": 1769446077272,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "That's very kind of you to offer. I don't have any other immediate needs at this time. If there's anything else I can assist with, such as locating a nearby branch or checking another account detail, please let me know. Otherwise, I believe we've addressed the main items I needed help with today.",
+      "timestamp": 1769446080803
+    },
+    {
+      "role": "assistant",
+      "text": "Would you like me to help with anything else, like locating a branch or checking another account detail?Thanks for stopping by. If you need anything else, just give us a call.",
+      "timestamp": 1769446081637,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 8715,
+    "outputTokens": 2083,
+    "totalTokens": 10798,
+    "cost": 0.057390000000000004,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "FAIL",
+  "tags": [
+    "auto-test"
+  ],
+  "status": "FAIL"
+}

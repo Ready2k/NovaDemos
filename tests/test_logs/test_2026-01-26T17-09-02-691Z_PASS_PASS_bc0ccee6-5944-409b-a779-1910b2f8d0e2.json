@@ -1,0 +1,188 @@
+{
+  "sessionId": "bc0ccee6-5944-409b-a779-1910b2f8d0e2",
+  "startTime": 1769447308045,
+  "endTime": 1769447342692,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769447308045,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769447309493,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769447310176,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Why is this needed? I'll provide my account number and sort code, but I want to understand why you're asking for that information.",
+      "timestamp": 1769447312444
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I understand your concern about security. For your safety, we need to verify your identity to protect your account and ensure we’re only sharing your personal information with you.",
+      "timestamp": 1769447313401,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I understand your concern about security. For your safety, we need to verify your identity to protect your account and ensure we’re only sharing your personal information with you.This helps prevent fraud and keeps your details safe. If you’d like to proceed, please share your 8-digit account number and 6-digit sort code.",
+      "timestamp": 1769447315862,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I understand your concern about security. For your safety, we need to verify your identity to protect your account and ensure we’re only sharing your personal information with you.This helps prevent fraud and keeps your details safe. If you’d like to proceed, please share your 8-digit account number and 6-digit sort code.",
+      "timestamp": 1769447317941,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, my account number is 12345678 and my sort code is 112233. Why do you need this information?",
+      "timestamp": 1769447319947
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769447320821,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing those details. To keep your account safe, we need to verify your identity using both your account number and sort code.",
+      "timestamp": 1769447320876,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769447322445,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing those details. To keep your account safe, we need to verify your identity using both your account number and sort code.This helps prevent unauthorized access and ensures we can give you accurate information about your account.",
+      "timestamp": 1769447322936,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing those details. To keep your account safe, we need to verify your identity using both your account number and sort code.Great, your account is verified and open with no vulnerability markers.",
+      "timestamp": 1769447324267,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing those details. To keep your account safe, we need to verify your identity using both your account number and sort code.Great, your account is verified and open with no vulnerability markers.How can I help you today?",
+      "timestamp": 1769447325530,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for sharing those details. To keep your account safe, we need to verify your identity using both your account number and sort code.Great, your account is verified and open with no vulnerability markers.How can I help you today?",
+      "timestamp": 1769447325840,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "I want to see my last 2 transactions on my account. Why do you need that information?",
+      "timestamp": 1769447328094
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1769447328905,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me pull up your recent transactions for you.",
+      "timestamp": 1769447328911,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me pull up your recent transactions for you.Just bear with me a second.",
+      "timestamp": 1769447329670,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1769447330481,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your last two transactions: On January 14th, you spent £4.50 at Pret A Manger, and on January 13th, you spent",
+      "timestamp": 1769447332523,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your last two transactions: On January 14th, you spent £4.50 at Pret A Manger, and on January 13th, you spent£32.15 at Tesco Express.",
+      "timestamp": 1769447335040,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your last two transactions: On January 14th, you spent £4.50 at Pret A Manger, and on January 13th, you spent£32.15 at Tesco Express.",
+      "timestamp": 1769447336338,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you for providing that information. I appreciate you verifying my identity and account details before sharing the transaction details. That's helpful to know.",
+      "timestamp": 1769447339124
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your last two transactions: On January 14th, you spent £4.50 at Pret A Manger, and on January 13th, you spentIs there anything else I can help you with today?",
+      "timestamp": 1769447339820,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your last two transactions: On January 14th, you spent £4.50 at Pret A Manger, and on January 13th, you spentIs there anything else I can help you with today?",
+      "timestamp": 1769447340484,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7950,
+    "outputTokens": 2157,
+    "totalTokens": 10107,
+    "cost": 0.056205000000000005,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

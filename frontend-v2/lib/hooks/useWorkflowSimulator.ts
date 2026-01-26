@@ -72,9 +72,18 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
             const currentLast = messages[messages.length - 1];
             if (!currentLast || currentLast.role === 'user') return;
 
+            // CRITICAL: Ignore tool_use and tool_result messages. 
+            // The simulator should ONLY output when the Agent (Assistant) has spoken to the user.
+            if (currentLast.type === 'tool_use' || currentLast.type === 'tool_result') {
+                console.log('[Simulator] Skipping tool message:', currentLast.type);
+                return;
+            }
+
             // Check Max Turns
             // Count user messages in current session
             const userTurns = messages.filter(m => m.role === 'user').length;
+            console.log(`[Simulator DEBUG] Turn Check: ${userTurns}/${maxTurns} (Max). Messages: ${messages.length}`);
+
             if (userTurns >= maxTurns) {
                 console.log(`[Simulator] Max turns reached (${maxTurns}). Failing test.`);
 
@@ -141,6 +150,9 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
                         text = text.replace('[DONE]', '').trim();
                         isDone = true;
                         userResult = 'PASS';
+                    } else if (text.includes('[WAIT]')) {
+                        console.log('[Simulator] Received [WAIT] instruction. Waiting for agent...');
+                        return;
                     }
 
                     if (isDone && !text) {

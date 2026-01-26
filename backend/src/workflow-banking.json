@@ -112,7 +112,7 @@
     },
     {
       "id": "classify",
-      "label": "Classify Issue Type: CRITICAL: If user says 'I did not do this', 'It wasn't me', 'I don't recognise this', or implies unauthorized use, CATEGORIZE AS FRAUD/UNAUTHORIZED IMMEDIATELY. If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
+      "label": "Classify Issue Type. STRICT RULES:\n1. FRAUD (Unauthorised): User says 'I didn't do it', 'unauthorized', 'cloned', 'don't recognize', or 'hacked'. -> Route to 'Fraud (Unauthorised)'.\n2. DISPUTE (Authorised): User MADE the purchase but has an issue (e.g. 'subscription', 'goods not received', 'not refunded'). -> Route to 'Dispute (Authorised)'.\n3. GAMBLING: Gambling related. -> 'Gambling'.",
       "type": "decision"
     },
     {
@@ -372,8 +372,8 @@
   ],
   "testConfig": {
     "personaId": "persona-BankingDisputes",
-    "successCriteria": "Account balance is returned",
-    "testInstructions": "I want to know my balance for account 12345678, sort code 112233. \n",
+    "successCriteria": "The system is empathetic and it passes me to a Fraud specialist",
+    "testInstructions": "I think some one has cloned my card, as I did not spend any money at Pret. I can't remember the date but I don't go those places. I want my money back.\nAccount 12345678, sort code 112233. \n",
     "disconnectAction": "always",
     "saveReport": true,
     "maxTurns": 10

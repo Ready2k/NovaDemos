@@ -1,0 +1,124 @@
+{
+  "sessionId": "8250e795-9acc-4a97-88cf-5d8011b009c9",
+  "startTime": 1769446629780,
+  "endTime": 1769446646439,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769446629780,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769446630736,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769446631136,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'd like to check the number of disputes on my account 12345678, sort code 112233.",
+      "timestamp": 1769446633361
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769446634114,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Thanks for sharing your details. Let me check your account for any disputes.",
+      "timestamp": 1769446634122,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769446635921,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769446635928,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769446637035,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, I've checked your account. Let me now look up any disputes you might have.",
+      "timestamp": 1769446637163,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at the moment.",
+      "timestamp": 1769446638901,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at the moment.Is there anything else I can help you with today?",
+      "timestamp": 1769446639983,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at the moment.Is there anything else I can help you with today?",
+      "timestamp": 1769446640492,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you for checking that. No, that's all I needed to know.",
+      "timestamp": 1769446642870
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at the moment.Got it. Thanks for letting me know. If you have any other questions in the future, feel free to reach out.",
+      "timestamp": 1769446643599,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7195,
+    "outputTokens": 1000,
+    "totalTokens": 8195,
+    "cost": 0.036585,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}
