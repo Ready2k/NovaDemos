@@ -1032,8 +1032,9 @@ interface ClientSession {
     currentWorkflowId?: string; // Track active workflow name
     workflowChecks?: { [key: string]: any }; // Track collected variables for UI
 
-    // Phantom Action Watcher
+    // Tool Deduplication
     toolsCalledThisTurn?: string[]; // Track tools called in current turn
+    processedToolIds?: Set<string>; // Track processed tool IDs to prevent duplicates
     phantomCorrectionCount?: number; // Track number of corrections attempted
 }
 
@@ -3077,7 +3078,7 @@ function cleanAssistantDisplay(text: string): string {
     clean = clean.replace(/\[[A-Z0-9_\s]+\s*(?::\s*[^\]]*)?\]/g, '');
 
     // 3.5 Fix Money Formatting (e.g. £4. 50 -> £4.50)
-    clean = clean.replace(/£\s*(\d+)\s*[.,]\s+(\d{2})/g, '£$1.$2');
+    clean = clean.replace(/£\s*([\d,]+)\s*[.,]\s+(\d{2})/g, '£$1.$2');
 
     // 4. Fix missing spaces after punctuation (common after tag stripping)
     // Add space after . ! ? if followed by a letter or number, but NOT for decimals
@@ -4159,6 +4160,21 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Validate tool use structure
             const actualToolName = toolUse.toolName || toolUse.name;
             console.log(`[Server] Processing native tool call: ${actualToolName}`);
+
+            // DEDUPLICATION: Check if this tool ID has already been processed
+            if (!session.processedToolIds) {
+                session.processedToolIds = new Set();
+            }
+
+            if (toolUse.toolUseId && session.processedToolIds.has(toolUse.toolUseId)) {
+                console.log(`[Server] ♻️ SKIPPING DUPLICATE TOOL EXECUTION: ${actualToolName} (ID: ${toolUse.toolUseId})`);
+                return;
+            }
+
+            // Mark this ID as processed
+            if (toolUse.toolUseId) {
+                session.processedToolIds.add(toolUse.toolUseId);
+            }
 
             // FILLER WORD SYSTEM: DISABLED (Too slow/laggy)
             // We rely on the model's "Latched Audio" (instructions to say "Let me check..." BEFORE tool call)

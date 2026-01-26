@@ -432,7 +432,7 @@ export default function WorkflowDesigner() {
                 {showTestConfig && (
                     <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
                         <div className={cn(
-                            "w-full max-w-2xl rounded-2xl shadow-2xl p-0 border flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95",
+                            "w-full max-w-2xl rounded-2xl shadow-2xl p-0 border flex flex-col max-h-[85vh] overflow-hidden animate-in zoom-in-95",
                             isDarkMode ? "bg-[#0F0F12] border-white/10" : "bg-white border-gray-200"
                         )}>
                             {/* Header */}
@@ -446,7 +446,7 @@ export default function WorkflowDesigner() {
                             </div>
 
                             {/* Body */}
-                            <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                            <div className="flex-1 min-h-0 p-6 pb-20 space-y-6 overflow-y-auto custom-scrollbar">
                                 {/* 1. Persona Selection */}
                                 <div className="space-y-2">
                                     <label className={cn("text-xs font-bold uppercase tracking-wider", isDarkMode ? "text-gray-400" : "text-gray-600")}>

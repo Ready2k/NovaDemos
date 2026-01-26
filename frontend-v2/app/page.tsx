@@ -496,7 +496,7 @@ export default function Home() {
 
   return (
     <div className={cn(
-      "flex h-screen overflow-hidden transition-colors duration-300",
+      "flex h-[100dvh] overflow-hidden transition-colors duration-300",
       isDarkMode ? "bg-ink-bg text-ink-text-primary" : "bg-white text-gray-900"
     )}>
       {/* Desktop: Slim iconic sidebar (60px) */}
@@ -564,7 +564,7 @@ export default function Home() {
               </div>
 
               {/* Command Bar - now part of flex layout, not fixed */}
-              <div className="flex-shrink-0 pb-0 md:pb-0 mb-16 md:mb-0">
+              <div className="flex-shrink-0 pb-0 md:pb-0 mb-32 md:mb-0 z-10">
                 <CommandBar
                   status={connectionStatus}
                   isDarkMode={isDarkMode}
