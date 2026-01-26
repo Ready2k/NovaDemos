@@ -28,6 +28,7 @@ export interface TestConfiguration {
     personaId?: string; // ID of the persona to use
     successCriteria?: string; // "User successfully verifies ID"
     disconnectAction?: 'always' | 'never' | 'ask'; // What to do after outcome
+    testName?: string;
     saveReport?: boolean; // Whether to show the report at the end
     testInstructions?: string; // Specific instructions for the simulated user
 }

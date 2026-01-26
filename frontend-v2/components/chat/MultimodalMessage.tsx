@@ -65,12 +65,23 @@ export default function MultimodalMessage({ role, content, timestamp, media, isD
                         isTool && (isDarkMode ? "bg-amber-500/5 border-amber-500/10 font-mono text-[11px]" : "bg-amber-50 border-amber-100 font-mono text-[11px]")
                     )}>
                         {typeof content === 'string' ? (
-                            <p className={cn(
+                            <div className={cn(
                                 "text-sm leading-relaxed whitespace-pre-wrap transition-colors duration-300",
                                 isDarkMode ? "text-ink-text-primary" : "text-gray-900"
                             )}>
-                                {content}
-                            </p>
+                                {content.split(/(?<=[.!?])\s+(?=[A-Z])/).map((sentence, i) => {
+                                    // Fix currency spacing: "£1,200. 00" -> "£1,200.00"
+                                    const cleanSentence = sentence.replace(/(£|\$|€)(\d+(?:,\d+)*)\.\s+(\d{2})/g, "$1$2.$3");
+                                    // Also fix if the split happened inside a bad currency format initially, though the lookbehind should prevent that if it was "00". 
+                                    // Actually, "1,200. 00" -> The split regex looks for capital letter. "0" is not capital. So it shouldn't split the currency.
+
+                                    return (
+                                        <p key={i} className={i > 0 ? "mt-2" : ""}>
+                                            {cleanSentence}
+                                        </p>
+                                    );
+                                })}
+                            </div>
                         ) : (
                             <div>{content}</div>
                         )}

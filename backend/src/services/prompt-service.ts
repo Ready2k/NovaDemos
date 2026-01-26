@@ -118,7 +118,7 @@ export class PromptService {
      * Note: Langfuse SDK doesn't have a direct method for this,
      * so we'll need to track versions manually or use the API directly
      */
-    async listPromptVersions(name: string): Promise<PromptVersion[]> {
+    async listPromptVersions(_name: string): Promise<PromptVersion[]> {
         // This would require direct API calls to Langfuse
         // For now, return empty array - can be implemented later if needed
         console.warn(`[PromptService] listPromptVersions not yet implemented`);

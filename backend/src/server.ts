@@ -3,16 +3,15 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { SonicClient, AudioChunk, SonicEvent } from './sonic-client';
+import { SonicClient, SonicEvent } from './sonic-client';
 import { callBankAgent } from './bedrock-agent-client';
 import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
 import { SimulationService } from './simulation-service';
-import { formatVoicesForFrontend, fetchAvailableVoices, DEFAULT_VOICE_MAP, VoiceMap } from './voice-service';
-import { parseTranscribeLocale, getVoiceForLocale } from './dialect-detector';
-import { shouldSwitchVoice, generateTransitionMessage } from './transition-handler';
+
+import { formatVoicesForFrontend } from './voice-service';
 import { PromptService } from './services/prompt-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
@@ -20,7 +19,7 @@ import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/
 
 import * as dotenv from 'dotenv';
 import { Langfuse } from 'langfuse';
-import { detectPhantomAction, logPhantomAction } from './phantom-action-watcher';
+
 
 
 // Load environment variables
@@ -659,14 +658,35 @@ function saveTranscript(session: ClientSession) {
             feedback: session.feedback || pendingFeedback.get(session.sessionId) // Merge pending feedback
         };
 
-        // Clear from pending if used
         if (pendingFeedback.has(session.sessionId)) {
             console.log(`[Server] Picking up pending feedback for session ${session.sessionId.substring(0, 8)}...`);
             pendingFeedback.delete(session.sessionId);
         }
 
+        // Add Test Metadata if applicable
+        if (session.isTest) {
+            (data as any).isAutoTest = true;
+            (data as any).testResult = session.testResult;
+            (data as any).userResult = session.userResult;
+            (data as any).tags = ['auto-test'];
+        }
+
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         console.log(`[Server] Saved chat history to ${filename}`);
+
+        // Duplicate to Test Logs if it's a test
+        if (session.isTest) {
+            const testLogsDir = path.join(__dirname, '../../tests/test_logs');
+            if (!fs.existsSync(testLogsDir)) {
+                fs.mkdirSync(testLogsDir, { recursive: true });
+            }
+            // Filename format: test_TIMESTAMP_SYSRESULT_USERRESULT_SESSIONID.json
+            const sysRes = session.testResult || 'UNKNOWN';
+            const usrRes = session.userResult || 'UNKNOWN';
+            const testFilename = `test_${timestamp}_${sysRes}_${usrRes}_${session.sessionId}.json`;
+            fs.writeFileSync(path.join(testLogsDir, testFilename), JSON.stringify(data, null, 2));
+            console.log(`[Server] Saved AUTO TEST log to ${testFilename}`);
+        }
     } catch (err) {
         console.error('[Server] Failed to save chat history:', err);
     }
@@ -1030,7 +1050,12 @@ interface ClientSession {
     // Workflow State
     activeWorkflowStepId?: string;
     currentWorkflowId?: string; // Track active workflow name
-    workflowChecks?: { [key: string]: any }; // Track collected variables for UI
+    // Simulation / Test State
+    isTest?: boolean;
+    testResult?: 'PASS' | 'FAIL' | 'UNKNOWN';
+    userResult?: 'PASS' | 'FAIL' | 'UNKNOWN';
+    testName?: string;
+    workflowChecks?: { [key: string]: string }; // Track collected variables for UI
 
     // Tool Deduplication
     toolsCalledThisTurn?: string[]; // Track tools called in current turn
@@ -1677,6 +1702,65 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Test Logs API
+    if (req.method === 'GET' && req.url?.startsWith('/api/tests')) {
+        const testLogsDir = path.join(__dirname, '../../tests/test_logs');
+
+        // List all test logs
+        if (req.url === '/api/tests') {
+            if (!fs.existsSync(testLogsDir)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify([]));
+                return;
+            }
+
+            try {
+                const files = fs.readdirSync(testLogsDir)
+                    .filter(f => f.endsWith('.json'))
+                    .map(filename => {
+                        const filePath = path.join(testLogsDir, filename);
+                        const stats = fs.statSync(filePath);
+                        return {
+                            filename,
+                            created: stats.birthtime,
+                            size: stats.size
+                        };
+                    })
+                    .sort((a, b) => b.created.getTime() - a.created.getTime()); // Newest first
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(files));
+            } catch (error: any) {
+                console.error('[Server] Error listing test logs:', error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+            return;
+        }
+
+        // Get specific test log
+        if (req.url?.startsWith('/api/tests/')) {
+            const filename = req.url.split('/api/tests/')[1];
+            // Security check: unexpected path chars
+            if (filename.includes('..') || filename.includes('/') || !filename.endsWith('.json')) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid filename' }));
+                return;
+            }
+
+            const filePath = path.join(testLogsDir, filename);
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf-8');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(content);
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Log not found' }));
+            }
+            return;
+        }
+    }
+
 
     // Knowledge Base APIs
     if (pathname === '/api/knowledge-bases') {
@@ -2067,9 +2151,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
     // Handle incoming messages (JSON config or binary audio)
     ws.on('message', async (data: any) => {
-        const isBuffer = Buffer.isBuffer(data);
-        let firstByte = 'N/A';
-        if (isBuffer && data.length > 0) firstByte = data[0].toString();
+
+
 
         try {
             // Check if it's a JSON message (configuration)
@@ -2099,6 +2182,15 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 }
                             }
                         }
+                        return;
+                    }
+
+                    if (parsed.type === 'test_config') {
+                        console.log(`[Server] Received test config for session ${sessionId}:`, parsed.data);
+                        session.isTest = true;
+                        if (parsed.data.testName) session.testName = parsed.data.testName;
+                        if (parsed.data.result) session.testResult = parsed.data.result;
+                        if (parsed.data.userResult) session.userResult = parsed.data.userResult;
                         return;
                     }
 
@@ -2207,6 +2299,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 "[SENTIMENT: 0.7]\n" +
                                 "[SENTIMENT: -0.4]\n" +
                                 "[SENTIMENT: 0.0]\n" +
+                                "\n" +
+                                "########## NO INTERNAL MONOLOGUE ##########\n" +
+                                "You must NOT output your internal thoughts, reasoning processes, or summaries of what the user said.\n" +
+                                "Do NOT say 'The user provided...', 'I verified...', 'Let me process this'.\n" +
+                                "Only output the direct response to the user.\n" +
                                 "\n" +
                                 "WRONG (DO NOT DO THIS):\n" +
                                 "SENTIMENT: 0.7]  ← MISSING OPENING BRACKET\n" +
@@ -2940,7 +3037,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     });
 
     // Handle client disconnect
-    ws.on('close', async (code: number, reason: Buffer) => {
+    ws.on('close', async (code: number, _reason: Buffer) => {
         console.log(`[Server] Client disconnected: ${sessionId} (code: ${code})`);
 
         const session = activeSessions.get(ws);
@@ -2984,6 +3081,12 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 } catch (err) {
                     console.error('[Server] ❌ Failed to auto-save history:', err);
                 }
+            }
+
+            // Check if test state needs resolution
+            if (session.isTest && (!session.testResult || session.testResult === 'UNKNOWN')) {
+                console.warn(`[Server] Test session ${sessionId} closed without explicit result. Defaulting to FAIL.`);
+                session.testResult = 'FAIL';
             }
 
             activeSessions.delete(ws);
@@ -3286,7 +3389,7 @@ function convertWorkflowToText(workflow: any): string {
         if (node.type === 'workflow' && node.workflowId) {
             // Generate the target start node ID based on standard prefixing logic
             // We assume the prefix is the UPPERCASE workflowId (e.g., idv -> IDV_start)
-            const prefix = node.workflowId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+            // const prefix = node.workflowId.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
             // DRIP FEED: Instead of "Jump to", we instruct the agent to use the Context Switch Tool
             // This loads the new workflow into the system prompt.
@@ -3957,7 +4060,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     // Handle streaming transcripts
                     if (event.data.isStreaming) {
                         // Apply deduplication to streaming transcripts too
-                        const now = Date.now();
+                        // const now = Date.now();
                         let isDuplicateStreaming = false;
 
                         if (session.recentAgentReplies) {
@@ -4108,24 +4211,6 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 // If `stepId` is not defined, this will cause an error.
                                 // If `broadcastToClients` is not defined, this will cause an error.
                                 // I will add a placeholder for `stepId` and `broadcastToClients` if they are not globally available.
-                                // Given the context, it's likely `stepId` and `broadcastToClients` are part of a larger system.
-                                // For now, I'll assume they are accessible.
-                                // If `stepId` is not available, it might need to be derived from `session` or `event.data`.
-                                // If `broadcastToClients` is not available, it might be a function defined elsewhere.
-                                // For a faithful edit, I'll insert it as is, assuming the environment supports it.
-                                const updateMsg = {
-                                    type: 'workflow_update',
-                                    activeNodeId: session.activeWorkflowStepId || 'unknown', // Placeholder if stepId is not directly available
-                                    context: {
-                                        transcript: finalText,
-                                        extractedKeys: contextKeys
-                                    }
-                                };
-                                // Assuming broadcastToClients is a function that sends messages to all connected clients
-                                // If not defined, this line will cause a runtime error.
-                                // For a faithful edit, I'm including it as provided.
-                                // If this is meant to be `ws.send`, the structure would need to change.
-                                // Given the name `broadcastToClients`, it implies a different mechanism than `ws.send` to a single client.
                                 // I will comment it out if `broadcastToClients` is not a known function in this context.
                                 // For now, I'll assume it's a valid function.
                                 // broadcastToClients(updateMsg); // Uncomment if broadcastToClients is defined and intended

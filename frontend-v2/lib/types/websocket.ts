@@ -80,3 +80,11 @@ export interface StopSessionMessage {
 export interface InterruptMessage {
     type: 'interrupt';
 }
+
+export interface TestConfigMessage {
+    type: 'test_config';
+    data: {
+        testName: string;
+        result?: 'PASS' | 'FAIL' | 'UNKNOWN';
+    };
+}
