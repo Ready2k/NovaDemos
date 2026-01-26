@@ -44,5 +44,6 @@
     ]
   },
   "gatewayTarget": "manage-recent-interactions___manage_recent_interactions",
-  "category": "Banking"
+  "category": "Banking",
+  "instruction": "JUST CALL THE TOOL. DO NOT ANNOUNCE IT."
 }

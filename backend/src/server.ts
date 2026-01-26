@@ -2284,56 +2284,17 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         // 1.9.5 Inject Sentiment Tagging Instruction
                         if (parsed.config.systemPrompt) {
-                            const sentimentInstruction = "\n\n" +
-                                "########## SENTIMENT TAGGING (CRITICAL REQUIREMENT) ##########\n" +
-                                "MANDATORY: You MUST append a sentiment tag to EVERY response.\n" +
-                                "\n" +
-                                "EXACT FORMAT (MEMORIZE THIS):\n" +
-                                "Step 1: Type an opening square bracket: [\n" +
-                                "Step 2: Type the word: SENTIMENT\n" +
-                                "Step 3: Type a colon and space: : \n" +
-                                "Step 4: Type the score (number from -1 to 1)\n" +
-                                "Step 5: Type a closing square bracket: ]\n" +
-                                "\n" +
-                                "CORRECT EXAMPLES:\n" +
-                                "[SENTIMENT: 0.7]\n" +
-                                "[SENTIMENT: -0.4]\n" +
-                                "[SENTIMENT: 0.0]\n" +
-                                "\n" +
+                            // REMOVED: Sentiment tagging causing audio leaks in S2S mode.
+
+                            // Inject "No Internal Monologue" rule strictly
+                            const noThoughtsWrapper = "\n\n" +
                                 "########## NO INTERNAL MONOLOGUE ##########\n" +
                                 "You must NOT output your internal thoughts, reasoning processes, or summaries of what the user said.\n" +
                                 "Do NOT say 'The user provided...', 'I verified...', 'Let me process this'.\n" +
-                                "Only output the direct response to the user.\n" +
-                                "\n" +
-                                "WRONG (DO NOT DO THIS):\n" +
-                                "SENTIMENT: 0.7]  ← MISSING OPENING BRACKET\n" +
-                                "[SENTIMENT 0.7]  ← MISSING COLON\n" +
-                                "ENTIMENT: 0.7]   ← MISSING OPENING BRACKET AND 'S'\n" +
-                                "\n" +
-                                "FEW-SHOT EXAMPLES (Copy this exact format):\n" +
-                                "1. User: \"Hello, how are you?\"\n" +
-                                "   Assistant: \"I'm doing great, thanks for asking! How can I help you today? [SENTIMENT: 0.7]\"\n" +
-                                "\n" +
-                                "2. User: \"This is terrible! I'm very upset!\"\n" +
-                                "   Assistant: \"I sincerely apologize for the frustration you're experiencing. Let me help resolve this right away. [SENTIMENT: -0.4]\"\n" +
-                                "\n" +
-                                "3. User: \"Can you check my account balance?\"\n" +
-                                "   Assistant: \"Of course, I can help you with that. [SENTIMENT: 0.1]\"\n" +
-                                "\n" +
-                                "4. User: \"Thank you so much! You've been wonderful!\"\n" +
-                                "   Assistant: \"You're very welcome! I'm so glad I could help. [SENTIMENT: 0.9]\"\n" +
-                                "\n" +
-                                "5. User: \"I need to make a complaint.\"\n" +
-                                "   Assistant: \"I understand, and I'm here to listen. Please tell me what happened. [SENTIMENT: -0.1]\"\n" +
-                                "\n" +
-                                "CRITICAL RULES:\n" +
-                                "- ALWAYS start with [ (opening bracket)\n" +
-                                "- ALWAYS end with ] (closing bracket)\n" +
-                                "- The tag is HIDDEN from the user. NEVER mention it in your response.\n" +
-                                "- ALWAYS include the tag, even for short responses.\n" +
-                                "- Match the sentiment to YOUR tone, not the user's.\n" +
-                                "- FAILURE TO INCLUDE THIS TAG CORRECTLY WILL BREAK THE SYSTEM.\n";
-                            parsed.config.systemPrompt += sentimentInstruction;
+                                "Only output the direct response to the user.\n";
+
+                            parsed.config.systemPrompt += noThoughtsWrapper;
+                            console.log('[Server] 🎭 Injected Thought Suppression Instructions (Sentiment Disabled for Audio Safety)');
                         }
 
                         // 2. Handle Brain Mode
@@ -4256,33 +4217,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 return;
             }
 
+            // CRITICAL FIX: AGGRESSIVE DEBOUNCING BY NAME WITHIN TURN
+            // If we have already called this tool name significantly recently in this turn (or even just once), we should suspect duplication.
+            // Nova sometimes emits multiple events for the same logical call if latency is high.
+            if (session.toolsCalledThisTurn && session.toolsCalledThisTurn.includes(actualToolName)) {
+                console.log(`[Server] 🛡️ AGGRESSIVE DEBOUNCE: Tool ${actualToolName} already called this turn. Ignoring duplicate. (Turn History: ${session.toolsCalledThisTurn.join(', ')})`);
+                return;
+            }
+
             // Mark this ID as processed
             if (toolUse.toolUseId) {
                 session.processedToolIds.add(toolUse.toolUseId);
             }
 
-            // FILLER WORD SYSTEM: DISABLED (Too slow/laggy)
-            // We rely on the model's "Latched Audio" (instructions to say "Let me check..." BEFORE tool call)
-            // This is zero-latency compared to server-side injection.
-
-            /* 
-            if (!session.toolsCalledThisTurn || session.toolsCalledThisTurn.length === 0) {
-                const fillerPhrase = FILLER_PHRASES[Math.floor(Math.random() * FILLER_PHRASES.length)];
-                const fillerInstruction = `[HIDDEN] (System Instruction) Please say exactly this phrase naturally to fill time: "${fillerPhrase}"`;
-                console.log(`[Server] 💉 Injecting filler instruction: "${fillerInstruction}"`);
-
-                session.isIntercepting = false;
-                session.isInterrupted = false;
-                (session as any).fillerTriggered = true;
-
-                if (session.sonicClient && session.sonicClient.getSessionId()) {
-                    session.sonicClient.sendText(fillerInstruction).catch(e => console.error("Failed to send filler:", e));
-                }
-            } else {
-                (session as any).fillerTriggered = false;
-            }
-            */
-            (session as any).fillerTriggered = false; // Always false now
+            // FALLBACK FILLER TRIGGER (If model doesn't say "Let me check")
+            // Only if this is the FIRST tool called this turn and no audio has flown recently
+            // ... filler logic ...
 
             // PHANTOM WATCHER: Track tool calls for this turn
             if (!session.toolsCalledThisTurn) {
@@ -4713,6 +4663,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'interruption':
             // Forward interruption signal
             if (ws.readyState === WebSocket.OPEN) {
+                // CRITICAL FIX: Suppress interruptions if we are in the middle of a tool call
+                // This prevents the "Let me check..." filler from being clipped by self-echo or VAD jitters.
+                if (session.toolsCalledThisTurn && session.toolsCalledThisTurn.length > 0) {
+                    console.log(`[Server] 🛡️ ALERT: Suppressing Interruption Signal during Tool Execution (${session.toolsCalledThisTurn.join(', ')})`);
+                    // We DO NOT forward the interruption to the client.
+                    // We let the filler finish playing.
+                    return;
+                }
+
                 ws.send(JSON.stringify({
                     type: 'interruption'
                 }));
@@ -4750,6 +4709,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'interactionTurnEnd':
             // Reset flow state for next interaction
             session.hasFlowedAudio = false;
+            session.toolsCalledThisTurn = []; // Clear tool tracker
             break;
 
 
