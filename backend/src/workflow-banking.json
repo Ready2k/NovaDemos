@@ -112,7 +112,7 @@
     },
     {
       "id": "classify",
-      "label": "Classify Issue Type: If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
+      "label": "Classify Issue Type: CRITICAL: If user says 'I did not do this', 'It wasn't me', 'I don't recognise this', or implies unauthorized use, CATEGORIZE AS FRAUD/UNAUTHORIZED IMMEDIATELY. If the user mentions SUBSCRIPTION or recurring payment, classify as DISPUTE. Otherwise: Gambling → Gambling route, Unauthorised/Fraud → Fraud route, Authorised/Dispute → Dispute route.",
       "type": "decision"
     },
     {

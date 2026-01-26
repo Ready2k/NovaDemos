@@ -3065,7 +3065,7 @@ function cleanAssistantDisplay(text: string): string {
     // 1. Remove all specific bracketed tags but keep contents of [Read Digits]
     clean = clean.replace(/\[STEP:\s*[^\]]*\]\s*/gi, '');
     clean = clean.replace(/\[DIALECT:\s*[^\]]*\]\s*/gi, '');
-    clean = clean.replace(/\[SENTIMENT:\s*[^\]]*\]\s*/gi, '');
+    clean = clean.replace(/(?:\[|\b)S?E?N?TIMENT:?\s*[^\]]*\]?/gi, ''); // Robust TIMENT stripping
     clean = clean.replace(/\[TRANSLATION:\s*[^\]]*\]\s*/gi, '');
     clean = clean.replace(/\[SYSTEM_INJECTION:[^\]]*\]\s*/gi, '');
 
@@ -3075,6 +3075,9 @@ function cleanAssistantDisplay(text: string): string {
     // 3. Remove any other [TAG: ...] or [TAG] but be careful not to strip legitimate markdown/UI elements
     // We only strip tags that are all caps and likely internal.
     clean = clean.replace(/\[[A-Z0-9_\s]+\s*(?::\s*[^\]]*)?\]/g, '');
+
+    // 3.5 Fix Money Formatting (e.g. £4. 50 -> £4.50)
+    clean = clean.replace(/£\s*(\d+)\s*[.,]\s+(\d{2})/g, '£$1.$2');
 
     // 4. Fix missing spaces after punctuation (common after tag stripping)
     // Add space after . ! ? if followed by a letter or number, but NOT for decimals
@@ -4516,12 +4519,12 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             // Send RAW STRING to avoid JSON nesting confusion
 
                             // RACE CONDITION FIX: "Smart Delay"
-                            // We wait a short 500ms to allow any "Latched Audio" (e.g. "Let me check...") 
+                            // We wait a short 4000ms to allow any "Latched Audio" (e.g. "Let me check...") 
                             // to start playing on the client. If we send the tool result too fast, 
                             // it might cut off that audio or arrive before the client is ready.
-                            // 500ms is short enough to feel "snappy" but long enough to cover network jitter.
-                            console.log('[Server] ⏱️ Smart Delay: Waiting 500ms before sending tool result...');
-                            await new Promise(resolve => setTimeout(resolve, 500));
+                            // 4000ms is short enough to feel "snappy" but long enough to cover network jitter.
+                            console.log('[Server] ⏱️ Smart Delay: Waiting 4000ms before sending tool result...');
+                            await new Promise(resolve => setTimeout(resolve, 4000));
 
                             await session.sonicClient.sendToolResult(
                                 toolUse.toolUseId,

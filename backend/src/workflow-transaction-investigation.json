@@ -35,7 +35,7 @@
         },
         {
             "id": "classify_issue",
-            "label": "Classify Issue: Gambling? Fraud (Unauthorised)? Dispute (Authorised)?",
+            "label": "Classify Issue: CRITICAL: If user says 'I did not do this', 'It wasn't me', or implies unauthorized use, CATEGORIZE AS FRAUD/UNAUTHORIZED IMMEDIATELY. Otherwise: Gambling? Fraud (Unauthorised)? Dispute (Authorised)?",
             "type": "decision"
         },
         {
