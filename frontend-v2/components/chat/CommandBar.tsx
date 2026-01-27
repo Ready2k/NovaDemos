@@ -148,10 +148,7 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                 {/* Power Button (Connection Toggle) */}
                 {/* Power Button (Connection Toggle) */}
                 <button
-                    onClick={(e) => {
-                        console.log('[CommandBar] Connect Button Clicked. Logic:', !!onToggleConnection);
-                        if (onToggleConnection) onToggleConnection();
-                    }}
+                    onClick={onToggleConnection}
                     className={cn(
                         "w-12 h-12 rounded-full border transition-all duration-300 flex items-center justify-center shadow-lg hover:shadow-xl relative overflow-hidden group cursor-pointer touch-manipulation",
                         // Dynamic Colors based on status

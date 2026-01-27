@@ -286,6 +286,15 @@ export default function Home() {
   }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings]);
 
   // Initialize WebSocket
+  const getWebSocketUrl = () => {
+    let wsUrl = 'ws://localhost:8080/sonic';
+    if (typeof window !== 'undefined' && window.location.protocol !== 'file:') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host}/sonic`;
+    }
+    return wsUrl;
+  };
+
   const {
     connect,
     disconnect,
@@ -293,7 +302,7 @@ export default function Home() {
     sendBinary,
     isConnected,
   } = useWebSocket({
-    url: 'ws://localhost:8080/sonic',
+    url: getWebSocketUrl(),
     autoConnect: false, // Manual connect to avoid Strict Mode issues
     onOpen: () => {
       console.log('[WebSocket] Connected to server, waiting for confirmation...');
@@ -473,7 +482,6 @@ export default function Home() {
 
   // Handle Connection Toggle (Manual)
   const handleConnectionToggle = useCallback(() => {
-    console.log('[App] handleConnectionToggle called. Status:', connectionStatus);
     if (connectionStatus === 'connected' || connectionStatus === 'recording' || connectionStatus === 'connecting') {
       // Disconnecting
       console.log('[App] Disconnecting... hasInteracted:', hasInteracted, 'Session (Ref):', sessionIdRef.current, 'Session (State):', currentSession?.sessionId);
