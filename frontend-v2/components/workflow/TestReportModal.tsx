@@ -130,19 +130,30 @@ export default function TestReportModal({
                     <div className={cn("flex-1 flex flex-col border-r overflow-hidden", isDarkMode ? "border-white/10" : "border-gray-200")}>
                         {/* Workflow Journey Visualization */}
                         {(() => {
-                            const steps = messages
+                            const workflowSteps = messages
+                                .map((m, i) => ({ ...m, id: `test-msg-${i}` }))
                                 .filter(m => m.role === 'system' && m.type === 'workflow_step')
-                                .map(m => {
-                                    if (m.metadata?.stepId) return m.metadata.stepId;
-                                    const match = (m.content as string).match(/Active Workflow Step: (.*)/);
-                                    return match ? match[1] : null;
-                                })
-                                .filter(Boolean) as string[];
+                                .map(m => ({
+                                    msgId: m.id,
+                                    label: m.metadata?.stepId || (typeof m.content === 'string' && m.content.match(/Active Workflow Step: (.*)/)?.[1])
+                                }))
+                                .filter(s => s.label);
 
-                            if (steps.length > 0) {
+                            if (workflowSteps.length > 0) {
                                 return (
                                     <div className="px-6 pt-6 pb-2 shrink-0">
-                                        <WorkflowJourney steps={steps} isDarkMode={isDarkMode} className="mb-0" />
+                                        <WorkflowJourney
+                                            steps={workflowSteps.map(s => s.label as string)}
+                                            isDarkMode={isDarkMode}
+                                            className="mb-0"
+                                            onStepClick={(step, idx) => {
+                                                const msgId = workflowSteps[idx].msgId;
+                                                const element = document.getElementById(msgId);
+                                                if (element) {
+                                                    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                }
+                                            }}
+                                        />
                                     </div>
                                 );
                             }
@@ -160,6 +171,7 @@ export default function TestReportModal({
                                 {messages.map((m, i) => (
                                     <MultimodalMessage
                                         key={i}
+                                        id={`test-msg-${i}`}
                                         role={m.role}
                                         type={m.type}
                                         content={m.content}

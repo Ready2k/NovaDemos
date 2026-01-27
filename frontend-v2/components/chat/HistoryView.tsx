@@ -75,8 +75,9 @@ export default function HistoryView({ className }: HistoryViewProps) {
                 finalMessages: 0,
                 usage: data.usage,
                 feedback: data.feedback,
-                transcript: data.transcript?.map((msg: any) => ({
+                transcript: data.transcript?.map((msg: any, i: number) => ({
                     ...msg,
+                    id: `msg-${i}`,
                     content: msg.content || msg.text, // Handle both content and text fields
                     type: msg.type
                 }))
@@ -153,21 +154,28 @@ export default function HistoryView({ className }: HistoryViewProps) {
 
                 {/* Workflow Journey Visualization */}
                 {(() => {
-                    const workflowSteps = selectedSession.transcript
+                    const workflowSteps = (selectedSession.transcript || [])
                         .filter(m => m.role === 'system' && m.type === 'workflow_step')
-                        // Extract step ID from metadata or text
-                        .map(m => {
-                            if (m.metadata?.stepId) return m.metadata.stepId;
-                            // Fallback invalid parsing
-                            const match = (m.content as string).match(/Active Workflow Step: (.*)/);
-                            return match ? match[1] : null;
-                        })
-                        .filter(Boolean) as string[];
+                        .map(m => ({
+                            id: (m as any).id,
+                            stepId: m.metadata?.stepId || (typeof m.content === 'string' && m.content.match(/Active Workflow Step: (.*)/)?.[1])
+                        }))
+                        .filter(s => s.stepId);
 
                     if (workflowSteps.length > 0) {
                         return (
                             <div className="px-8 pt-6 pb-0 max-w-4xl mx-auto w-full">
-                                <WorkflowJourney steps={workflowSteps} isDarkMode={isDarkMode} />
+                                <WorkflowJourney
+                                    steps={workflowSteps.map(s => s.stepId as string)}
+                                    isDarkMode={isDarkMode}
+                                    onStepClick={(step, idx) => {
+                                        const msgId = workflowSteps[idx].id;
+                                        const element = document.getElementById(msgId);
+                                        if (element) {
+                                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        }
+                                    }}
+                                />
                             </div>
                         );
                     }
@@ -188,6 +196,7 @@ export default function HistoryView({ className }: HistoryViewProps) {
                         {displayedMessages.map((msg, idx) => (
                             <MultimodalMessage
                                 key={idx}
+                                id={(msg as any).id}
                                 role={msg.role}
                                 type={msg.type}
                                 content={msg.content}

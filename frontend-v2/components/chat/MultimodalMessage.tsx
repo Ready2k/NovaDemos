@@ -11,10 +11,11 @@ interface MultimodalMessageProps {
     isDarkMode?: boolean;
     sentiment?: number;
     feedback?: 'up' | 'down';
+    id?: string;
 }
 
 export default function MultimodalMessage(props: MultimodalMessageProps) {
-    const { role, content, timestamp, media, isDarkMode = true, sentiment, feedback } = props;
+    const { role, content, timestamp, media, isDarkMode = true, sentiment, feedback, id } = props;
     const avatar = role === 'user' ? '👤' : (role === 'assistant' ? '🤖' : '🔧');
     const name = role === 'user' ? 'User' : (role === 'assistant' ? 'Agent' : 'System (Tool)');
 
@@ -24,7 +25,7 @@ export default function MultimodalMessage(props: MultimodalMessageProps) {
     // Workflow Step Visualization
     if (isWorkflowStep) {
         return (
-            <div className="flex justify-center my-4 opacity-80 hover:opacity-100 transition-opacity">
+            <div id={id} className="flex justify-center my-4 opacity-80 hover:opacity-100 transition-opacity scroll-mt-24">
                 <div className={cn(
                     "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border shadow-sm",
                     isDarkMode
@@ -39,8 +40,8 @@ export default function MultimodalMessage(props: MultimodalMessageProps) {
     }
 
     return (
-        <div className={cn(
-            "group relative py-3 px-0 flex",
+        <div id={id} className={cn(
+            "group relative py-3 px-0 flex scroll-mt-24",
             role === 'user' && "justify-end",
             (role === 'assistant' || isTool) && "justify-start"
         )}>
