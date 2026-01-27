@@ -27,10 +27,10 @@ export default function SettingsLayout() {
     ];
 
     return (
-        <div className="flex h-full w-full">
-            {/* Settings Sidebar */}
+        <div className="flex flex-col md:flex-row h-full w-full">
+            {/* Desktop: Sidebar */}
             <div className={cn(
-                "w-64 border-r p-6 flex flex-col gap-1 shrink-0",
+                "hidden md:flex w-64 border-r p-6 flex-col gap-1 shrink-0",
                 isDarkMode ? "border-white/10 bg-ink-bg" : "border-gray-200 bg-gray-50"
             )}>
                 <h2 className={cn(
@@ -63,8 +63,33 @@ export default function SettingsLayout() {
                 ))}
             </div>
 
+            {/* Mobile: Top Tab Bar */}
+            <div className={cn(
+                "md:hidden w-full flex-shrink-0 border-b overflow-x-auto flex items-center px-4 gap-2 no-scrollbar",
+                isDarkMode ? "bg-ink-bg border-white/10" : "bg-gray-50 border-gray-200"
+            )}>
+                {tabs.filter(t => ['general', 'persona', 'system'].includes(t.id)).map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveSettingsTab(tab.id)}
+                        className={cn(
+                            "whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                            activeSettingsTab === tab.id
+                                ? isDarkMode
+                                    ? "border-violet-500 text-violet-300"
+                                    : "border-violet-500 text-violet-700"
+                                : isDarkMode
+                                    ? "border-transparent text-ink-text-muted"
+                                    : "border-transparent text-gray-500"
+                        )}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-8 scrollbar-thin">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin">
                 {activeSettingsTab === 'general' && <GeneralSettings />}
                 {activeSettingsTab === 'persona' && <PersonaSettings />}
                 {activeSettingsTab === 'knowledge' && <KnowledgeSettings />}
