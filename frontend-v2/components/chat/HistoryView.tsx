@@ -7,6 +7,7 @@ import MultimodalMessage from './MultimodalMessage';
 import { Message } from '@/lib/types';
 import { format } from 'date-fns';
 import { ChevronLeft, Calendar, MessageSquare, Clock } from 'lucide-react';
+import WorkflowJourney from './WorkflowJourney';
 
 interface HistoryFile {
     id: string;
@@ -76,7 +77,8 @@ export default function HistoryView({ className }: HistoryViewProps) {
                 feedback: data.feedback,
                 transcript: data.transcript?.map((msg: any) => ({
                     ...msg,
-                    content: msg.content || msg.text // Handle both content and text fields
+                    content: msg.content || msg.text, // Handle both content and text fields
+                    type: msg.type
                 }))
             });
         } catch (err: any) {
@@ -149,6 +151,29 @@ export default function HistoryView({ className }: HistoryViewProps) {
                     </label>
                 </div>
 
+                {/* Workflow Journey Visualization */}
+                {(() => {
+                    const workflowSteps = selectedSession.transcript
+                        .filter(m => m.role === 'system' && m.type === 'workflow_step')
+                        // Extract step ID from metadata or text
+                        .map(m => {
+                            if (m.metadata?.stepId) return m.metadata.stepId;
+                            // Fallback invalid parsing
+                            const match = (m.content as string).match(/Active Workflow Step: (.*)/);
+                            return match ? match[1] : null;
+                        })
+                        .filter(Boolean) as string[];
+
+                    if (workflowSteps.length > 0) {
+                        return (
+                            <div className="px-8 pt-6 pb-0 max-w-4xl mx-auto w-full">
+                                <WorkflowJourney steps={workflowSteps} isDarkMode={isDarkMode} />
+                            </div>
+                        );
+                    }
+                    return null;
+                })()}
+
                 {/* Transcript */}
                 <div className={cn(
                     "flex-1 overflow-y-auto px-8 py-6",
@@ -164,6 +189,7 @@ export default function HistoryView({ className }: HistoryViewProps) {
                             <MultimodalMessage
                                 key={idx}
                                 role={msg.role}
+                                type={msg.type}
                                 content={msg.content}
                                 timestamp={msg.timestamp ? format(new Date(msg.timestamp), 'h:mm a') : ''}
                                 isDarkMode={isDarkMode}

@@ -1,0 +1,94 @@
+{
+  "sessionId": "e17913fe-4441-49cd-a6f9-93b2a6b37f9e",
+  "startTime": 1769519671573,
+  "endTime": 1769519689007,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.",
+      "timestamp": 1769519671573,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.What can I help ye with today?",
+      "timestamp": 1769519673166,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.What can I help ye with today?",
+      "timestamp": 1769519673587,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "I apologize, but I do not actually have a persona named \"Captain Blackbeard\". I am the Barclays Banking Assistant, here to help you with your banking needs. How can I assist you today?",
+      "timestamp": 1769519676747
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769519677678,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.No worries, shipmate! How can I help ye today?",
+      "timestamp": 1769519677678,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.No worries, shipmate! How can I help ye today?Need a balance check, transaction history, or perhaps a dispute sorted out?",
+      "timestamp": 1769519678600,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome to Barclays, I’m Captain Blackbeard at yer service.No worries, shipmate! How can I help ye today?Need a balance check, transaction history, or perhaps a dispute sorted out?",
+      "timestamp": 1769519679882,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'm the Barclays Banking Assistant. How can I help you today? What is the account number and sort code I can look up for you?",
+      "timestamp": 1769519682128
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, shipmate! How can I help ye today?Ahoy there! I be ready to assist ye. But first, I’ll need yer account number and sort code to proceed.",
+      "timestamp": 1769519682915,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, shipmate! How can I help ye today?Ahoy there! I be ready to assist ye. But first, I’ll need yer account number and sort code to proceed.What be them digits, matey?",
+      "timestamp": 1769519684699,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, shipmate! How can I help ye today?Ahoy there! I be ready to assist ye. But first, I’ll need yer account number and sort code to proceed.What be them digits, matey?",
+      "timestamp": 1769519685125,
+      "type": "final"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 6492,
+    "outputTokens": 715,
+    "totalTokens": 7207,
+    "cost": 0.030201,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

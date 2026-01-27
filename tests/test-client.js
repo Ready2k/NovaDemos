@@ -54,19 +54,19 @@ class TestClient {
     handleMessage(data) {
         try {
             const message = JSON.parse(data.toString());
-            
+
             switch (message.type) {
                 case 'connected':
                     this.sessionId = message.sessionId;
                     console.log(`[TestClient] 🎯 Session ID: ${this.sessionId}`);
                     break;
-                    
+
                 case 'transcript':
                     const role = message.role === 'user' ? '👤 User' : '🤖 Assistant';
                     const finalStatus = message.isFinal ? '✓ FINAL' : '⋯ STREAMING';
                     console.log(`[TestClient] ${role}: "${message.text}" (${finalStatus})`);
                     break;
-                    
+
                 case 'debugInfo':
                     if (message.data.toolUse) {
                         console.log(`[TestClient] 🔧 Tool Use: ${message.data.toolUse.name}`);
@@ -75,11 +75,15 @@ class TestClient {
                         console.log(`[TestClient] 📊 System: ${message.data.systemInfo.mode} - ${message.data.systemInfo.persona}`);
                     }
                     break;
-                    
+
+                case 'workflow_update':
+                    console.log(`[TestClient] 🔄 Active Workflow Step: ${message.currentStep}`);
+                    break;
+
                 case 'error':
                     console.error(`[TestClient] ❌ Error: ${message.message}`);
                     break;
-                    
+
                 default:
                     // Ignore other message types for cleaner output
                     break;
@@ -104,7 +108,7 @@ class TestClient {
 
         console.log('[TestClient] 📤 Sending configuration...');
         this.ws.send(JSON.stringify(config));
-        
+
         // Wait a moment for config to be processed
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -123,30 +127,30 @@ class TestClient {
         try {
             // Connect
             await this.connect();
-            
+
             // Configure session
             await this.sendConfig();
-            
+
             // Test sequence
             console.log('\n[TestClient] 🧪 Starting test sequence...\n');
-            
+
             // Test 1: Simple greeting
             await this.sendTextMessage("Hello!");
             await new Promise(resolve => setTimeout(resolve, 3000));
-            
+
             // Test 2: Time request (the main test)
             console.log('\n[TestClient] 🕐 Testing time tool...\n');
             await this.sendTextMessage("What's the current time?");
-            
+
             // Wait for response
             await new Promise(resolve => setTimeout(resolve, 10000));
-            
+
             // Test 3: Follow-up
             await this.sendTextMessage("Thank you!");
             await new Promise(resolve => setTimeout(resolve, 3000));
-            
+
             console.log('\n[TestClient] ✅ Test completed');
-            
+
         } catch (error) {
             console.error('[TestClient] ❌ Test failed:', error);
         } finally {
@@ -167,16 +171,16 @@ class TestClient {
 async function main() {
     console.log('🚀 Nova Sonic Direct Mode Test Client');
     console.log('=====================================\n');
-    
+
     const client = new TestClient();
-    
+
     // Handle Ctrl+C gracefully
     process.on('SIGINT', () => {
         console.log('\n[TestClient] 🛑 Stopping test...');
         client.disconnect();
         process.exit(0);
     });
-    
+
     await client.runTest();
 }
 

@@ -1,0 +1,75 @@
+{
+  "sessionId": "39e13bc4-7956-48aa-8d4f-494f24024726",
+  "startTime": 1769519789741,
+  "endTime": 1769519801187,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the Barclays ship –  I’m yer loyal first mate, Captain Blackbeard!",
+      "timestamp": 1769519789741,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the Barclays ship –  I’m yer loyal first mate, Captain Blackbeard!What can I do for ye today?  Need to check yer treasure chest, or perhaps ye’ve got a query ‘bout the sea of finance?",
+      "timestamp": 1769519791268,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the Barclays ship –  I’m yer loyal first mate, Captain Blackbeard!What can I do for ye today?  Need to check yer treasure chest, or perhaps ye’ve got a query ‘bout the sea of finance?",
+      "timestamp": 1769519792839,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*clears throat* Ahoy, matey! Captain Blackbeard at yer service! Aye, I heard ye be wantin' to check the balance of yer treasure chest, eh? Let me dive into the hold and count every last coin... *pauses, thinking* Errr... let's-sh-see here... Aha! Ye be holdin' account number 12345678, with a sort code of 112233, correct? *lowers voice* Aye... the mark be true... *clears throat* Now, let me check the weight of yer cargo against the strength of yer hull... *taps on desk* Whoop! Ye be sittin' on a balance of £2,547! Not bad, not bad at all, matey. Ye be doin' well in these treacherous waters. Shall we go huntin' for more gold soon, eh? *laughs heartily*",
+      "timestamp": 1769519797627
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1769519798755,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the Barclays ship –  I’m yer loyal first mate, Captain Blackbeard!Aye, that be a fine haul indeed! £2,547 in yer treasure chest –  not a bad haul for these treacherous waters!",
+      "timestamp": 1769519798755,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 6622,
+    "outputTokens": 495,
+    "totalTokens": 7117,
+    "cost": 0.027291000000000003,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

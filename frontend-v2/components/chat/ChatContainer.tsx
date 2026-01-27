@@ -22,11 +22,11 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
     }, [messages]);
 
     // Format timestamp
-    const formatTimestamp = (timestamp: string): string => {
+    const formatTimestamp = (timestamp: string | number): string => {
         try {
             return format(new Date(timestamp), 'h:mm a');
         } catch {
-            return timestamp;
+            return String(timestamp);
         }
     };
 
@@ -38,8 +38,8 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
                 // Custom scrollbar styling
                 "[&::-webkit-scrollbar]:w-2",
                 isDarkMode
-                    ? "[&::-webkit-scrollbar-track]:bg-transparent"
-                    : "[&::-webkit-scrollbar-track]:bg-gray-50",
+                    ? "bg-transparent"
+                    : "bg-gray-50",
                 isDarkMode
                     ? "[&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:hover:bg-white/20"
                     : "[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:hover:bg-gray-400",
@@ -75,6 +75,7 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
                         <MultimodalMessage
                             key={idx}
                             role={msg.role}
+                            type={msg.type}
                             content={msg.content}
                             timestamp={formatTimestamp(msg.timestamp)}
                             isDarkMode={isDarkMode}

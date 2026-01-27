@@ -372,8 +372,8 @@
   ],
   "testConfig": {
     "personaId": "persona-BankingDisputes",
-    "successCriteria": "The system is empathetic and it passes me to a Fraud specialist",
-    "testInstructions": "I think some one has cloned my card, as I did not spend any money at Pret. I can't remember the date but I don't go those places. I want my money back.\nAccount 12345678, sort code 112233. \n",
+    "successCriteria": "The system gives me my balance, shows me some transactions and checks my disputes ",
+    "testInstructions": "I just want my balance for account 12345678, \nWait and give the sort code only when asked, 112233\nI also need to see my last 2 transactions and if i have any open disputes",
     "disconnectAction": "always",
     "saveReport": true,
     "maxTurns": 10

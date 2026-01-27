@@ -1047,8 +1047,9 @@ interface ClientSession {
         role: string;
         text: string;
         timestamp: number;
-        type?: 'speculative' | 'final'; // New: Track type of transcript
-        sentiment?: any; // New: Store sentiment metadata
+        type?: 'speculative' | 'final' | 'workflow_step'; // New: Track type of transcript
+        sentiment?: number; // Check sentiment
+        metadata?: any; // Extra data (e.g. stepId, contextKeys)
     }[];
 
     // AWS Credentials (Per Session)
@@ -3527,11 +3528,27 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
         case 'workflow_update':
             console.log(`[Server] Forwarding workflow update: ${event.data.currentStep}`);
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'workflow_update',
-                    currentStep: event.data.currentStep
-                }));
+            {
+                const stepId = event.data.currentStep;
+                if (stepId && stepId !== session.activeWorkflowStepId) {
+                    session.activeWorkflowStepId = stepId;
+
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'workflow_update',
+                            currentStep: stepId
+                        }));
+                    }
+
+                    // PERSISTENCE: Save to transcript
+                    session.transcript.push({
+                        role: 'system',
+                        type: 'workflow_step',
+                        text: `Active Workflow Step: ${stepId}`,
+                        timestamp: Date.now(),
+                        metadata: { stepId }
+                    });
+                }
             }
             break;
 
@@ -3724,31 +3741,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 console.log(`[DEBUG] Transcript received: "${text}"`);
 
                 // --- WORKFLOW VISUALIZATION LOGIC ---
+                // Note: SonicClient emits 'workflow_update' events separately.
+                // If tags are stripped, this heuristic might not trigger, which is fine.
                 const stepMatch = text.match(/\[STEP:\s*([a-zA-Z0-9_]+)\]/i);
                 if (stepMatch) {
-                    const stepId = stepMatch[1];
-                    session.activeWorkflowStepId = stepId; // Store for valid access
-                    console.log(`[Server] Workflow Step Detected: ${stepId}`);
-
-                    // Heuristic Context Extraction
-                    const contextKeys: string[] = [];
-                    if (text.match(/\b\d{8}\b/)) contextKeys.push('accountNumber');
-                    if (text.match(/\b\d{6}\b/)) contextKeys.push('sortCode');
-
-                    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-                        session.ws.send(JSON.stringify({
-                            type: 'workflow_update',
-                            activeNodeId: stepId,
-                            context: {
-                                transcript: text,
-                                extractedKeys: contextKeys
-                            }
-                        }));
-                    }
-
-                    // Clean tag from spoken text if desired, but for now we interpret it as 'thought'
-                    // If we want to hide it from the user, we should strip it from 'processedText' below
+                    // Legacy/Fallback handling only
+                    // (Code removed as redundant/dead)
                 }
+
                 // ------------------------------------
 
                 // CRITICAL FIX: Apply response parsing immediately for assistant responses

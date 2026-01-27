@@ -1,8 +1,10 @@
 import { cn } from '@/lib/utils';
 import { ReactNode } from 'react';
+import { GitGraph } from 'lucide-react';
 
 interface MultimodalMessageProps {
-    role: 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'tool';
+    role: 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'tool' | 'system';
+    type?: string;
     content: string | ReactNode;
     timestamp?: string;
     media?: ReactNode;
@@ -11,11 +13,30 @@ interface MultimodalMessageProps {
     feedback?: 'up' | 'down';
 }
 
-export default function MultimodalMessage({ role, content, timestamp, media, isDarkMode = true, sentiment, feedback }: MultimodalMessageProps) {
+export default function MultimodalMessage(props: MultimodalMessageProps) {
+    const { role, content, timestamp, media, isDarkMode = true, sentiment, feedback } = props;
     const avatar = role === 'user' ? '👤' : (role === 'assistant' ? '🤖' : '🔧');
     const name = role === 'user' ? 'User' : (role === 'assistant' ? 'Agent' : 'System (Tool)');
 
     const isTool = role === 'tool_use' || role === 'tool_result' || (role as string) === 'tool';
+    const isWorkflowStep = role === 'system' && (props.type === 'workflow_step');
+
+    // Workflow Step Visualization
+    if (isWorkflowStep) {
+        return (
+            <div className="flex justify-center my-4 opacity-80 hover:opacity-100 transition-opacity">
+                <div className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border shadow-sm",
+                    isDarkMode
+                        ? "bg-violet-900/20 border-violet-500/20 text-violet-300"
+                        : "bg-violet-50 border-violet-200 text-violet-700"
+                )}>
+                    <GitGraph className="w-3 h-3" />
+                    <span>{content}</span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className={cn(

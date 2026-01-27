@@ -1,8 +1,11 @@
 import { useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Message, TestConfiguration } from '@/lib/types';
-import { RefreshCw, Settings, X, CheckCircle2, XCircle, AlertCircle, Copy, Download, Loader2 } from 'lucide-react';
+import { RefreshCw, Settings, X, CheckCircle2, XCircle, AlertCircle, Copy, Download, Loader2, Clock } from 'lucide-react';
 import { useApp } from '@/lib/context/AppContext';
+import WorkflowJourney from '@/components/chat/WorkflowJourney';
+import MultimodalMessage from '@/components/chat/MultimodalMessage';
+import { format } from 'date-fns';
 
 interface TestReportModalProps {
     isOpen: boolean;
@@ -124,24 +127,49 @@ export default function TestReportModal({
                 <div className="flex-1 overflow-y-auto p-0 flex flex-col md:flex-row">
 
                     {/* Left: Transcript */}
-                    <div className={cn("flex-1 p-6 border-r overflow-y-auto min-h-[300px]", isDarkMode ? "border-white/10" : "border-gray-200")}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Transcript</h3>
-                            <button onClick={handleCopyTranscript} className="p-1.5 rounded hover:bg-white/10" title="Copy">
-                                <Copy className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-                        <div className="space-y-4">
-                            {messages.map((m, i) => (
-                                <div key={i} className={cn("text-sm p-3 rounded-lg border",
-                                    m.role === 'user'
-                                        ? isDarkMode ? "bg-white/5 border-white/5 ml-8" : "bg-gray-50 border-gray-100 ml-8"
-                                        : isDarkMode ? "bg-violet-500/10 border-violet-500/20 mr-8" : "bg-violet-50 border-violet-100 mr-8"
-                                )}>
-                                    <div className="text-[10px] uppercase font-bold mb-1 opacity-50">{m.role}</div>
-                                    <div className="whitespace-pre-wrap">{m.content}</div>
-                                </div>
-                            ))}
+                    <div className={cn("flex-1 flex flex-col border-r overflow-hidden", isDarkMode ? "border-white/10" : "border-gray-200")}>
+                        {/* Workflow Journey Visualization */}
+                        {(() => {
+                            const steps = messages
+                                .filter(m => m.role === 'system' && m.type === 'workflow_step')
+                                .map(m => {
+                                    if (m.metadata?.stepId) return m.metadata.stepId;
+                                    const match = (m.content as string).match(/Active Workflow Step: (.*)/);
+                                    return match ? match[1] : null;
+                                })
+                                .filter(Boolean) as string[];
+
+                            if (steps.length > 0) {
+                                return (
+                                    <div className="px-6 pt-6 pb-2 shrink-0">
+                                        <WorkflowJourney steps={steps} isDarkMode={isDarkMode} className="mb-0" />
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
+
+                        <div className="flex-1 overflow-y-auto p-6 pt-2">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xs font-bold uppercase tracking-wider opacity-70">Transcript</h3>
+                                <button onClick={handleCopyTranscript} className="p-1.5 rounded hover:bg-white/10" title="Copy">
+                                    <Copy className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                {messages.map((m, i) => (
+                                    <MultimodalMessage
+                                        key={i}
+                                        role={m.role}
+                                        type={m.type}
+                                        content={m.content}
+                                        timestamp={m.timestamp ? format(new Date(m.timestamp), 'h:mm a') : ''}
+                                        isDarkMode={isDarkMode}
+                                        sentiment={m.sentiment}
+                                        feedback={m.feedback}
+                                    />
+                                ))}
+                            </div>
                         </div>
                     </div>
 

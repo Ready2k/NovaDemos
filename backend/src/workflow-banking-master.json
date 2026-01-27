@@ -152,9 +152,10 @@
   ],
   "testConfig": {
     "personaId": "persona-BankingDisputes",
-    "successCriteria": "Balance should be around 1200",
-    "testInstructions": "I want to check the balance for account 12345678, sort code 112233. ",
+    "successCriteria": "I want to create a new dispute case if Netflix was seen on my account",
+    "testInstructions": "I want to see if i've got any open disputes for account 12345678, sort code 112233. \nIf not then I want to know my last 5 transactions, and see if Netflix has come out. IF it has then I want to raise a dispute, I've cancelled my subscription but they keep taking money, I've told them to stop",
     "disconnectAction": "always",
-    "saveReport": true
+    "saveReport": true,
+    "maxTurns": 10
   }
 }

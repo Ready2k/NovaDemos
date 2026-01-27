@@ -1,13 +1,15 @@
 // Session and transcript types
 
 export interface Message {
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result' | 'tool';
     content: string;
-    timestamp: string;
+    text?: string; // Support for backend property name
+    timestamp: string | number;
     sentiment?: number;
     isFinal?: boolean;
     feedback?: 'up' | 'down';
-    type?: 'final' | 'speculative' | 'tool_use' | 'tool_result'; // Added for improved history filtering
+    type?: 'final' | 'speculative' | 'tool_use' | 'tool_result' | 'workflow_step';
+    metadata?: any;
 }
 
 export interface Session {

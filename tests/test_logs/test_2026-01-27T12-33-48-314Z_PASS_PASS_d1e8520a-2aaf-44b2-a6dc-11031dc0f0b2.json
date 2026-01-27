@@ -1,0 +1,124 @@
+{
+  "sessionId": "d1e8520a-2aaf-44b2-a6dc-11031dc0f0b2",
+  "startTime": 1769517213653,
+  "endTime": 1769517228315,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769517213653,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769517215148,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769517215672,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'm calling about my account. I'd like to check my balance for account number 12345678, with sort code 112233.",
+      "timestamp": 1769517217579
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769517218500,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Right, I can help with that. Let me verify those details now.",
+      "timestamp": 1769517218510,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769517219170,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769517219864,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769517220220,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.",
+      "timestamp": 1769517221007,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Is there anything else I can help you with today?",
+      "timestamp": 1769517222063,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Is there anything else I can help you with today?",
+      "timestamp": 1769517222821,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thank you. That's all I needed to check, my balance is £1,200.00.",
+      "timestamp": 1769517224753
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Is there anything else I can help you with today?",
+      "timestamp": 1769517225442,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Is there anything else I can help you with today?",
+      "timestamp": 1769517226072,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7169,
+    "outputTokens": 689,
+    "totalTokens": 7858,
+    "cost": 0.031841999999999995,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

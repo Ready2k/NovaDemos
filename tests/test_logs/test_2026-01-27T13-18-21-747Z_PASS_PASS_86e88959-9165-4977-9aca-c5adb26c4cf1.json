@@ -1,0 +1,221 @@
+{
+  "sessionId": "86e88959-9165-4977-9aca-c5adb26c4cf1",
+  "startTime": 1769519839553,
+  "endTime": 1769519901747,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769519839553,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769519840607,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769519841034,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'm looking to check the balance on my account. The account number is 12345678 and the sort code is 112233.",
+      "timestamp": 1769519843402
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769519844512,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769519844519,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Right, I can help you check your balance.",
+      "timestamp": 1769519844519,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: request_details",
+      "timestamp": 1769519845318,
+      "metadata": {
+        "stepId": "request_details"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Right, I can help you check your balance.Let me verify those details now.\n I have your account number and sort code.",
+      "timestamp": 1769519845318,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769519845994,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769519846482,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769519846625,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769519847863,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1769519848534,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.",
+      "timestamp": 1769519848534,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me check those details for you. I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3. Is that correct?",
+      "timestamp": 1769519848889
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: confirmation",
+      "timestamp": 1769519850056,
+      "metadata": {
+        "stepId": "confirmation"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.",
+      "timestamp": 1769519850057,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.Is that correct?",
+      "timestamp": 1769519851952,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.account number 1 2 3 4 5 6 7 8 and sort code 1 1 2 2 3 3.Is that correct?",
+      "timestamp": 1769519852262,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "yes",
+      "timestamp": 1769519890268
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1769519893475,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your balance is £1,200.00. Is there anything else I can help you with today?",
+      "timestamp": 1769519893475,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your balance is £1,200.00. Is there anything else I can help you with today?",
+      "timestamp": 1769519894776,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "No, that's all I needed. Thank you for checking my balance, it's £1,200.00. That's great, I appreciate you looking that up for me.",
+      "timestamp": 1769519898185
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_additional_help",
+      "timestamp": 1769519898974,
+      "metadata": {
+        "stepId": "check_additional_help"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your balance is £1,200.00. Is there anything else I can help you with today?No problem at all. I'm glad I could help.",
+      "timestamp": 1769519898974,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your balance is £1,200.00. Is there anything else I can help you with today?No problem at all. I'm glad I could help.If you need anything else, just let me know.",
+      "timestamp": 1769519899755,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7431,
+    "outputTokens": 1320,
+    "totalTokens": 8751,
+    "cost": 0.042093000000000005,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

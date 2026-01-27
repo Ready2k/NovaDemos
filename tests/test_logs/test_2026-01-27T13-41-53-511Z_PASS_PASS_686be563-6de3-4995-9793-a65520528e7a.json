@@ -1,0 +1,195 @@
+{
+  "sessionId": "686be563-6de3-4995-9793-a65520528e7a",
+  "startTime": 1769521293405,
+  "endTime": 1769521313512,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769521293405,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769521294509,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769521294828,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Bonjour, j'aimerais consulter le solde de mon compte.",
+      "timestamp": 1769521296685
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769521297590,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.[DIALECT: fr-FR|0.95] Je peux vous aider à consulter le solde de votre compte.",
+      "timestamp": 1769521297590,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.[DIALECT: fr-FR|0.95] Je peux vous aider à consulter le solde de votre compte.Pour cela, j'ai besoin de votre numéro de compte et votre code de tri.",
+      "timestamp": 1769521298312,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.[DIALECT: fr-FR|0.95] Je peux vous aider à consulter le solde de votre compte.Pour cela, j'ai besoin de votre numéro de compte et votre code de tri.Pouvez-vous me fournir ces informations, s'il vous plaît ?",
+      "timestamp": 1769521299473,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.[DIALECT: fr-FR|0.95] Je peux vous aider à consulter le solde de votre compte.Pour cela, j'ai besoin de votre numéro de compte et votre code de tri.Pouvez-vous me fournir ces informations, s'il vous plaît ?",
+      "timestamp": 1769521300204,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Bien sûr, mon numéro de compte est le 12345678 et mon code guichet est le 112233.",
+      "timestamp": 1769521302110
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769521302873,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_auth",
+      "timestamp": 1769521302881,
+      "metadata": {
+        "stepId": "check_auth"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Merci, je vais vérifier ces informations pour vous.",
+      "timestamp": 1769521302881,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Merci, je vais vérifier ces informations pour vous.",
+      "timestamp": 1769521303772,
+      "type": "final"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769521304443,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769521305085,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769521305793,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1769521306614,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Votre solde actuel est de 1 200,00 £.",
+      "timestamp": 1769521306614,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Votre solde actuel est de 1 200,00 £.Souhaitez-vous autre chose ?",
+      "timestamp": 1769521307348,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Votre solde actuel est de 1 200,00 £.Souhaitez-vous autre chose ?",
+      "timestamp": 1769521307764,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Parfait, merci beaucoup d'avoir vérifié mon solde. C'est tout ce dont j'avais besoin pour le moment.",
+      "timestamp": 1769521309945
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_additional_help",
+      "timestamp": 1769521310779,
+      "metadata": {
+        "stepId": "check_additional_help"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Votre solde actuel est de 1 200,00 £.Très bien, je suis ravi que tout soit clair.",
+      "timestamp": 1769521310779,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Votre solde actuel est de 1 200,00 £.Très bien, je suis ravi que tout soit clair.Avez-vous d’autres questions ou puis-je vous aider avec autre chose aujourd’hui ?",
+      "timestamp": 1769521311483,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 7181,
+    "outputTokens": 985,
+    "totalTokens": 8166,
+    "cost": 0.036318,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

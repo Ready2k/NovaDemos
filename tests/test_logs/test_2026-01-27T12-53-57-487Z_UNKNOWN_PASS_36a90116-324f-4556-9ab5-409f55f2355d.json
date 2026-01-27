@@ -1,0 +1,269 @@
+{
+  "sessionId": "36a90116-324f-4556-9ab5-409f55f2355d",
+  "startTime": 1769518358426,
+  "endTime": 1769518437487,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769518358426,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769518359528,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769518359957,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'd like to check if I have any open disputes on my account number 12345678, sort code 112233.",
+      "timestamp": 1769518362097
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769518362960,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Thanks for sharing those details. Let me check your account for any open disputes.",
+      "timestamp": 1769518362977,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769518364396,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769518364787,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":false,\"activeDisputes\":[]}",
+      "timestamp": 1769518365210,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":false,\"activeDisputes\":[]}"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at this time.",
+      "timestamp": 1769518365956,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at this time.",
+      "timestamp": 1769518367161,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at this time.Right, so there are no open disputes on your account.",
+      "timestamp": 1769518368002,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at this time.Right, so there are no open disputes on your account.How else can I help you today?",
+      "timestamp": 1769518368664,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No worries, I've checked your account and there are no open disputes at this time.Right, so there are no open disputes on your account.How else can I help you today?",
+      "timestamp": 1769518369095,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, thanks for checking that. Could you also please check my last 5 transactions? I want to see if there's a Netflix charge on there.",
+      "timestamp": 1769518371077
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1769518371792,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1769518373326,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can see that. There are indeed Netflix charges on your account.",
+      "timestamp": 1769518374254,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can see that. There are indeed Netflix charges on your account.The most recent one was for £12 on January 12th 2026.",
+      "timestamp": 1769518375455,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can see that. There are indeed Netflix charges on your account.The most recent one was for £12 on January 12th 2026.Would you like me to look up the merchant details for that transaction to confirm it's the correct Netflix subscription?",
+      "timestamp": 1769518376840,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can see that. There are indeed Netflix charges on your account.The most recent one was for £12 on January 12th 2026.Would you like me to look up the merchant details for that transaction to confirm it's the correct Netflix subscription?",
+      "timestamp": 1769518378330,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Yes, please check the Netflix transaction details. I've actually cancelled my Netflix subscription but they keep taking the money out of my account. I'd like to raise a dispute for that unauthorized charge.",
+      "timestamp": 1769518380495
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can see that. There are indeed Netflix charges on your account.I understand your concern. Let me get the exact details of the Netflix transaction to help you with the dispute.",
+      "timestamp": 1769518381312,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: lookup_merchant_alias",
+      "timestamp": 1769518383614,
+      "toolName": "lookup_merchant_alias",
+      "toolInput": "{\"statementName\":\"Netflix\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"tradingName\":\"Netflix\",\"category\":\"Entertainment\",\"originalName\":\"Netflix\"}",
+      "timestamp": 1769518385087,
+      "toolName": "lookup_merchant_alias",
+      "result": "{\"found\":true,\"tradingName\":\"Netflix\",\"category\":\"Entertainment\",\"originalName\":\"Netflix\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.",
+      "timestamp": 1769518386025,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.Now, before I raise a dispute case, I need to confirm: have you already contacted Netflix directly about this issue?",
+      "timestamp": 1769518387124,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.Now, before I raise a dispute case, I need to confirm: have you already contacted Netflix directly about this issue?",
+      "timestamp": 1769518388936,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "No, I haven't contacted Netflix yet. I've tried to cancel with them but they're still taking the payments. I'd like to raise a dispute with you now if possible.",
+      "timestamp": 1769518390943
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.I understand you're having trouble cancelling with Netflix directly.",
+      "timestamp": 1769518391943,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.I understand you're having trouble cancelling with Netflix directly.Before we can raise a formal dispute case, I need to confirm that you've contacted Netflix to try to resolve",
+      "timestamp": 1769518392934,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.I understand you're having trouble cancelling with Netflix directly.Before we can raise a formal dispute case, I need to confirm that you've contacted Netflix to try to resolvethis. Have you already spoken to them about cancelling your subscription and stopping the payments?",
+      "timestamp": 1769518394429,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming. I found the merchant details for Netflix.I understand you're having trouble cancelling with Netflix directly.Before we can raise a formal dispute case, I need to confirm that you've contacted Netflix to try to resolvethis. Have you already spoken to them about cancelling your subscription and stopping the payments?",
+      "timestamp": 1769518395709,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "No, I haven't contacted Netflix yet. I was hoping to just raise the dispute directly with you. Can we go ahead and start the dispute process now?",
+      "timestamp": 1769518398007
+    },
+    {
+      "role": "assistant",
+      "text": "I understand you're having trouble cancelling with Netflix directly.I get that you're frustrated, but before we can raise a dispute case, I need you to contact Netflix first to try to resolve this issue directly with them.",
+      "timestamp": 1769518398927,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I understand you're having trouble cancelling with Netflix directly.I get that you're frustrated, but before we can raise a dispute case, I need you to contact Netflix first to try to resolve this issue directly with them.",
+      "timestamp": 1769518401164,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, I understand. I'll reach out to Netflix to try to cancel my subscription and stop the unauthorized charges. Once I've done that, can I come back and start the dispute process with you if I'm still having trouble?",
+      "timestamp": 1769518403330
+    },
+    {
+      "role": "assistant",
+      "text": "I get that you're frustrated, but before we can raise a dispute case, I need you to contact Netflix first to try to resolve this issue directly with them.Absolutely. That's the right approach. Please contact Netflix first to try to cancel your subscription and stop the payments.",
+      "timestamp": 1769518404190,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I get that you're frustrated, but before we can raise a dispute case, I need you to contact Netflix first to try to resolve this issue directly with them.Absolutely. That's the right approach. Please contact Netflix first to try to cancel your subscription and stop the payments.",
+      "timestamp": 1769518406246,
+      "type": "final"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 8462,
+    "outputTokens": 2823,
+    "totalTokens": 11285,
+    "cost": 0.067731,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ],
+  "userResult": "PASS",
+  "notes": "didnt stop after 14 turns"
+}
