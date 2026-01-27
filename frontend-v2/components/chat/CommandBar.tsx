@@ -74,9 +74,9 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
     const isDisabled = currentStatus === 'disconnected' || currentStatus === 'connecting';
 
     return (
-        <div className="px-8 py-6">
+        <div className="px-4 md:px-8 py-4 md:py-6 relative z-20">
             <div className={cn(
-                "max-w-3xl mx-auto p-4 flex items-center gap-4 rounded-xl border transition-all duration-300",
+                "max-w-3xl mx-auto p-2 md:p-4 flex items-center gap-2 md:gap-4 rounded-xl border transition-all duration-300",
                 isDarkMode
                     ? "bg-white/5 backdrop-blur-xl border-white/10"
                     : "bg-white border-gray-200 shadow-lg"

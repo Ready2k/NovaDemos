@@ -580,7 +580,7 @@ export default function Home() {
               </div>
 
               {/* Command Bar - now part of flex layout, not fixed */}
-              <div className="flex-shrink-0 pb-0 md:pb-0 mb-32 md:mb-0 z-10">
+              <div className="flex-shrink-0 pb-0 md:pb-0 mb-32 md:mb-0 z-20 relative">
                 <CommandBar
                   status={connectionStatus}
                   isDarkMode={isDarkMode}
