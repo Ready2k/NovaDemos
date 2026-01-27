@@ -286,6 +286,10 @@ export default function Home() {
   }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings]);
 
   // Initialize WebSocket
+  const wsUrl = typeof window !== 'undefined'
+    ? `ws://${window.location.hostname}:8080/sonic`
+    : 'ws://localhost:8080/sonic';
+
   const {
     connect,
     disconnect,
@@ -293,7 +297,7 @@ export default function Home() {
     sendBinary,
     isConnected,
   } = useWebSocket({
-    url: 'ws://localhost:8080/sonic',
+    url: wsUrl,
     autoConnect: false, // Manual connect to avoid Strict Mode issues
     onOpen: () => {
       console.log('[WebSocket] Connected to server, waiting for confirmation...');
@@ -473,6 +477,7 @@ export default function Home() {
 
   // Handle Connection Toggle (Manual)
   const handleConnectionToggle = useCallback(() => {
+    console.log('[App] handleConnectionToggle called. Status:', connectionStatus);
     if (connectionStatus === 'connected' || connectionStatus === 'recording' || connectionStatus === 'connecting') {
       // Disconnecting
       console.log('[App] Disconnecting... hasInteracted:', hasInteracted, 'Session (Ref):', sessionIdRef.current, 'Session (State):', currentSession?.sessionId);
@@ -581,17 +586,19 @@ export default function Home() {
 
               {/* Command Bar - Fixed on mobile (Z-60), Flex on desktop */}
               <div className={cn(
-                "flex-shrink-0 transition-all duration-300",
+                "flex-shrink-0 transition-all duration-300 pointer-events-none", // Wrapper allows clicks through
                 "md:static md:z-auto md:mb-0", // Desktop: Natural flow
-                "fixed bottom-[84px] left-0 right-0 z-[60] px-2 mb-0" // Mobile: Fixed floating above nav
+                "fixed bottom-[84px] left-0 right-0 z-[100] px-2 mb-0" // Mobile: Fixed floating above nav
               )}>
-                <CommandBar
-                  status={connectionStatus}
-                  isDarkMode={isDarkMode}
-                  onSendMessage={handleSendMessage}
-                  onToggleRecording={handleToggleRecording}
-                  onToggleConnection={handleConnectionToggle}
-                />
+                <div className="pointer-events-auto w-full">
+                  <CommandBar
+                    status={connectionStatus}
+                    isDarkMode={isDarkMode}
+                    onSendMessage={handleSendMessage}
+                    onToggleRecording={handleToggleRecording}
+                    onToggleConnection={handleConnectionToggle}
+                  />
+                </div>
               </div>
             </>
           ) : activeView === 'settings' ? (

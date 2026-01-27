@@ -146,10 +146,14 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                 )}
 
                 {/* Power Button (Connection Toggle) */}
+                {/* Power Button (Connection Toggle) */}
                 <button
-                    onClick={onToggleConnection}
+                    onClick={(e) => {
+                        console.log('[CommandBar] Connect Button Clicked. Logic:', !!onToggleConnection);
+                        if (onToggleConnection) onToggleConnection();
+                    }}
                     className={cn(
-                        "w-12 h-12 rounded-full border transition-all duration-300 flex items-center justify-center shadow-lg hover:shadow-xl relative overflow-hidden group",
+                        "w-12 h-12 rounded-full border transition-all duration-300 flex items-center justify-center shadow-lg hover:shadow-xl relative overflow-hidden group cursor-pointer touch-manipulation",
                         // Dynamic Colors based on status
                         currentStatus === 'connected' || currentStatus === 'recording'
                             ? (isDarkMode ? "bg-emerald-500/20 border-emerald-500/50 hover:bg-emerald-500/30" : "bg-emerald-50 border-emerald-200 hover:bg-emerald-100")
@@ -161,7 +165,7 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                 >
                     {/* Icon changes based on status */}
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                        className={cn("transition-colors duration-300",
+                        className={cn("transition-colors duration-300 pointer-events-none",
                             currentStatus === 'connected' || currentStatus === 'recording'
                                 ? "text-emerald-500"
                                 : currentStatus === 'connecting'
@@ -175,7 +179,7 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
 
                     {/* Ring glow effect for active state */}
                     {(currentStatus === 'connected' || currentStatus === 'recording') && (
-                        <span className="absolute inset-0 rounded-full border-2 border-emerald-500/30 animate-ping opacity-20"></span>
+                        <span className="absolute inset-0 rounded-full border-2 border-emerald-500/30 animate-ping opacity-20 pointer-events-none"></span>
                     )}
                 </button>
             </div>
