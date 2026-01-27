@@ -16,14 +16,26 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
                                     Knowledge Bases
 ```
 
+## 📸 Visuals
+
+| Dashboard | Workflow Designer |
+|-----------|------------------|
+| ![Dashboard](./docs/images/dashboard.png) | ![Workflow Designer](./docs/images/workflow_designer.png) |
+
+| System Settings | Visualizer Test Harness |
+|-----------------|-------------------------|
+| ![Settings](./docs/images/settings.png) | ![Visualizers](./docs/images/visualizers.png) |
+
+
 ## ✨ Core Features
 
 ### 🎙️ **Real-Time Voice Interaction**
 - **Bidirectional Streaming**: True real-time speech-to-speech with <500ms latency
 - **Multiple Voices**: Choose from Nova's expressive voice library (Matthew, Tiffany, Amy, etc.)
-- **Audio Visualization**: Dynamic waveform display for both user input and AI output
+- **Audio Visualization**: Multiple premium visualization modes (AntiGravity, Fluid, ParticleVortex, PulseWaveform) powered by Three.js and Canvas
 - **PCM16 Audio**: High-quality 16kHz mono audio streaming
 - **Interruption Handling**: Natural conversation flow with mid-sentence interruptions
+- **Sentiment Halo**: Visual feedback around the assistant based on real-time sentiment analysis
 
 ### 🧠 **Dual Architecture Modes**
 
@@ -78,11 +90,13 @@ Browser (Microphone) → WebSocket → Backend Server → Amazon Nova 2 Sonic �
 - **Live Dashboard**: Sentiment score displayed in sidebar and header
 
 ### 🕸️ **Visual Workflow System**
-- **Drag-and-Drop Editor**: Build complex agent behaviors visually
-- **Decision Trees**: Create branching logic based on user input
-- **Dynamic Injection**: Workflows automatically injected into system prompts
-- **Persona Coupling**: Link workflows to specific personas
-- **JSON Export**: Save and share workflow definitions
+- **Drag-and-Drop Editor**: Build complex agent behaviors visually with a node-based interface
+- **Interactive Workflow Journey**: Real-time tracking of user progress through defined workflows
+- **Clickable Steps**: Jump directly to specific workflow steps in the chat transcript
+- **Decision Trees**: Create branching logic based on user input and tool results
+- **Dynamic Injection**: Workflows automatically injected into system prompts based on current state
+- **Persona Coupling**: Link workflows to specific personas for tailored experiences
+- **JSON Export**: Save and share workflow definitions easily
 
 ### 📚 **Knowledge Base Integration**
 - **RAG Support**: Retrieve-Augment-Generate with external knowledge
