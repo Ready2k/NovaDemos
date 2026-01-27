@@ -194,6 +194,30 @@ export class SonicService {
     private async handleTranscript(event: SonicEvent) {
         const { ws } = this.session;
 
+        // Extract dialect detection from transcript if present
+        let processedText = event.data.transcript || "";
+        const dialectMatch = processedText.match(/\[DIALECT:\s*([a-z]{2}-[A-Z]{2})\|(\d*\.?\d+)\]/i);
+
+        if (dialectMatch) {
+            const detectedLocale = dialectMatch[1];
+            const confidence = parseFloat(dialectMatch[2]);
+            console.log(`[DialectDetection] Detected: ${detectedLocale} (confidence: ${confidence.toFixed(2)})`);
+
+            // Send metadata to frontend
+            if (ws.readyState === WebSocket.OPEN) {
+                const metadataPayload = {
+                    type: 'metadata',
+                    data: { detectedLanguage: detectedLocale, languageConfidence: confidence }
+                };
+                ws.send(JSON.stringify(metadataPayload));
+                console.log(`[DialectDetection] Sent metadata to frontend:`, JSON.stringify(metadataPayload));
+            }
+
+            // Remove dialect tag from text
+            processedText = processedText.replace(/\[DIALECT:\s*[a-z]{2}-[A-Z]{2}\|\d*\.?\d+\]/gi, '').trim();
+            event.data.transcript = processedText;
+        }
+
         if (this.session.brainMode === 'bedrock_agent') {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -658,7 +682,11 @@ export class SonicService {
 
     public saveTranscript() {
         const { session } = this;
-        if (!session.transcript || session.transcript.length === 0) return;
+        console.log(`[SonicService] saveTranscript called for session ${session.sessionId}, transcript length: ${session.transcript?.length || 0}`);
+        if (!session.transcript || session.transcript.length === 0) {
+            console.log(`[SonicService] Skipping save - empty transcript for session ${session.sessionId}`);
+            return;
+        }
 
         try {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -696,7 +724,7 @@ export class SonicService {
             console.log(`[SonicService] Saved chat history to ${filename}`);
 
             if (session.isTest) {
-                const testLogsDir = path.join(__dirname, '../../tests/test_logs');
+                const testLogsDir = path.join(__dirname, '../../test_logs');
                 if (!fs.existsSync(testLogsDir)) fs.mkdirSync(testLogsDir, { recursive: true });
                 const testFilename = `test_${timestamp}_${session.testResult || 'UNKNOWN'}_${session.userResult || 'UNKNOWN'}_${session.sessionId}.json`;
                 fs.writeFileSync(path.join(testLogsDir, testFilename), JSON.stringify(data, null, 2));

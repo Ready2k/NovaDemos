@@ -22,8 +22,7 @@ services:
       - redis
     volumes:
       # Mount chat history for persistence
-      # Mount chat history for persistence
-      - ./chat_history:/app/chat_history
+      - ./backend/history:/app/history
       # Mount knowledge bases config
       - ./knowledge_bases.json:/app/knowledge_bases.json
       # Mount tools definitions

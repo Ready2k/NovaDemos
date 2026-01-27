@@ -66,7 +66,7 @@ const writeJsonFile = (filePath: string, data: any) => {
 // structured relative to process.cwd() which is /app in docker
 const TOOLS_DIR = path.join(process.cwd(), 'tools');
 const WORKFLOWS_DIR = path.join(process.cwd(), 'workflows');
-const HISTORY_DIR = path.join(process.cwd(), 'chat_history');
+const HISTORY_DIR = path.join(process.cwd(), 'history');
 const KB_FILE = path.join(process.cwd(), 'knowledge_bases.json');
 
 // Ensure directories exist
@@ -268,7 +268,8 @@ app.delete('/api/knowledge-bases/:id', (req, res) => {
 // --- HISTORY API ---
 app.get('/api/history', (req, res) => {
     try {
-        const files = fs.readdirSync(HISTORY_DIR).filter(f => f.endsWith('.json'));
+        const files = fs.readdirSync(HISTORY_DIR)
+            .filter(f => f.endsWith('.json') && f.startsWith('session_')); // Only include session files
         // Sort by date desc (filename often contains date, or read content)
         // For performance, we'll just map them. Ideally, filename should allow sorting.
         // Assuming filename scheme is unique but maybe not strictly sortable by string.
@@ -277,10 +278,14 @@ app.get('/api/history', (req, res) => {
             // We need some metadata. Reading all files might be slow but necessary.
             try {
                 const content = readJsonFile(path.join(HISTORY_DIR, f));
+                // Generate a better summary from the first user message
+                const firstUserMsg = content.transcript?.find((m: any) => m.role === 'user');
+                const summary = firstUserMsg?.text || `Session ${content.sessionId?.substring(0, 8) || 'unknown'}`;
+
                 return {
                     id: f,
                     date: content.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
-                    summary: content.summary || `Session ${content.sessionId}`,
+                    summary: summary,
                     totalMessages: content.transcript?.length || 0,
                     usage: content.usage,
                     feedback: content.feedback

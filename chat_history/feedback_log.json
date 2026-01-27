@@ -12,5 +12,40 @@
     "score": 1,
     "name": "user-feedback",
     "timestamp": "2026-01-27T21:57:31.623Z"
+  },
+  {
+    "sessionId": "950b8e25-62c3-45a9-98c6-efdefd1aac53",
+    "traceId": "950b8e25-62c3-45a9-98c6-efdefd1aac53",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T22:04:41.304Z"
+  },
+  {
+    "sessionId": "d0fb203c-8126-4897-814c-ffd1c6fba1d1",
+    "traceId": "d0fb203c-8126-4897-814c-ffd1c6fba1d1",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T22:09:03.480Z"
+  },
+  {
+    "sessionId": "355d8a1b-1737-4fb9-b2d0-236c147ce2db",
+    "traceId": "355d8a1b-1737-4fb9-b2d0-236c147ce2db",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T22:13:46.628Z"
+  },
+  {
+    "sessionId": "49fe749e-9c6a-4032-972e-b216b35cb4fd",
+    "traceId": "49fe749e-9c6a-4032-972e-b216b35cb4fd",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T22:19:24.012Z"
+  },
+  {
+    "sessionId": "d37ea455-f7ee-4c60-9cf9-22568326dfeb",
+    "traceId": "d37ea455-f7ee-4c60-9cf9-22568326dfeb",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T22:19:59.112Z"
   }
 ]
