@@ -287,7 +287,7 @@ export default function Home() {
 
   // Initialize WebSocket
   const wsUrl = typeof window !== 'undefined'
-    ? `ws://${window.location.hostname}:8080/sonic`
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8080/sonic`
     : 'ws://localhost:8080/sonic';
 
   const {
