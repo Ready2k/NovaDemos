@@ -286,10 +286,6 @@ export default function Home() {
   }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings]);
 
   // Initialize WebSocket
-  const wsUrl = typeof window !== 'undefined'
-    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8080/sonic`
-    : 'ws://localhost:8080/sonic';
-
   const {
     connect,
     disconnect,
@@ -297,7 +293,7 @@ export default function Home() {
     sendBinary,
     isConnected,
   } = useWebSocket({
-    url: wsUrl,
+    url: 'ws://localhost:8080/sonic',
     autoConnect: false, // Manual connect to avoid Strict Mode issues
     onOpen: () => {
       console.log('[WebSocket] Connected to server, waiting for confirmation...');
