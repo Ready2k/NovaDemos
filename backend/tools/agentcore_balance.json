@@ -1,0 +1,23 @@
+{
+  "name": "agentcore_balance",
+  "originalName": "get-Balance___get_Balance",
+  "description": "Retrieve the current balance for a specified bank account. Gets the available cash balance for a unique account ID.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "accountId": {
+        "description": "The unique identifier for the customer's bank account (e.g., 10-digit number).",
+        "type": "string"
+      },
+      "sortCode": {
+        "description": "The 6-digit sort code required alongside the account ID for verification.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "accountId",
+      "sortCode"
+    ]
+  },
+  "gatewayTarget": "get-Balance___get_Balance"
+}

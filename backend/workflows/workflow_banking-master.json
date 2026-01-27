@@ -1,0 +1,163 @@
+{
+  "nodes": [
+    {
+      "id": "master_start",
+      "label": "Start Banking Session",
+      "type": "start"
+    },
+    {
+      "id": "link_idv",
+      "label": "Execute ID&V Protocol",
+      "type": "workflow",
+      "workflowId": "idv"
+    },
+    {
+      "id": "check_idv_outcome",
+      "label": "Did ID&V result in SUCCESS or VERIFIED? (If FAILURE or GENERAL_QUERY, Stop).",
+      "type": "decision"
+    },
+    {
+      "id": "stop_idv",
+      "label": "Session Ended (ID&V Failed or Query Solved)",
+      "type": "end",
+      "outcome": "SESSION_ENDED"
+    },
+    {
+      "id": "link_triage",
+      "label": "Execute Triage Protocol",
+      "type": "workflow",
+      "workflowId": "triage"
+    },
+    {
+      "id": "check_triage_outcome",
+      "label": "Did Triage result in a Handoff? (If PROCEED, Continue).",
+      "type": "decision"
+    },
+    {
+      "id": "stop_triage",
+      "label": "Session Ended (Triage Handoff)",
+      "type": "end",
+      "outcome": "HANDOFF_COMPLETE"
+    },
+    {
+      "id": "link_context",
+      "label": "Retrieve Context & History",
+      "type": "workflow",
+      "workflowId": "context"
+    },
+    {
+      "id": "main_intent",
+      "label": "Main Menu: What is the user's request?",
+      "type": "decision"
+    },
+    {
+      "id": "link_investigation",
+      "label": "Investigate Transaction",
+      "type": "workflow",
+      "workflowId": "transaction-investigation"
+    },
+    {
+      "id": "check_inv_outcome",
+      "label": "Did Investigation result in a Dispute (PROCEED_TO_DISPUTE)?",
+      "type": "decision"
+    },
+    {
+      "id": "link_disputes",
+      "label": "Manage Disputes",
+      "type": "workflow",
+      "workflowId": "disputes"
+    },
+    {
+      "id": "publish_summary",
+      "label": "MANDATORY: Call 'manage_recent_interactions' (action='PUBLISH') to save session summary.",
+      "type": "tool",
+      "toolName": "manage_recent_interactions"
+    },
+    {
+      "id": "master_end",
+      "label": "Session Wrapped Up",
+      "type": "end",
+      "outcome": "SESSION_SAVED"
+    }
+  ],
+  "edges": [
+    {
+      "from": "master_start",
+      "to": "link_idv"
+    },
+    {
+      "from": "link_idv",
+      "to": "check_idv_outcome"
+    },
+    {
+      "from": "check_idv_outcome",
+      "to": "stop_idv",
+      "label": "No (Stop)"
+    },
+    {
+      "from": "check_idv_outcome",
+      "to": "link_triage",
+      "label": "Yes (Proceed)"
+    },
+    {
+      "from": "link_triage",
+      "to": "check_triage_outcome"
+    },
+    {
+      "from": "check_triage_outcome",
+      "to": "stop_triage",
+      "label": "Handoff"
+    },
+    {
+      "from": "check_triage_outcome",
+      "to": "link_context",
+      "label": "Proceed"
+    },
+    {
+      "from": "link_context",
+      "to": "main_intent"
+    },
+    {
+      "from": "main_intent",
+      "to": "link_investigation",
+      "label": "Transaction Query"
+    },
+    {
+      "from": "main_intent",
+      "to": "link_disputes",
+      "label": "Dispute Issue"
+    },
+    {
+      "from": "link_investigation",
+      "to": "check_inv_outcome"
+    },
+    {
+      "from": "check_inv_outcome",
+      "to": "link_disputes",
+      "label": "Yes (Dispute)"
+    },
+    {
+      "from": "check_inv_outcome",
+      "to": "publish_summary",
+      "label": "No (Resolved/Handoff)"
+    },
+    {
+      "from": "link_disputes",
+      "to": "publish_summary"
+    },
+    {
+      "from": "publish_summary",
+      "to": "master_end"
+    }
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "I want to create a new dispute case if Netflix was seen on my account",
+    "testInstructions": "I want to see if i've got any open disputes for account 12345678, sort code 112233. \nIf not then I want to know my last 5 transactions, and see if Netflix has come out. IF it has then I want to raise a dispute, I've cancelled my subscription but they keep taking money, I've told them to stop",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 10
+  },
+  "id": "banking-master",
+  "name": "Banking Master"
+}

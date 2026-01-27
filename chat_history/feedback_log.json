@@ -1,0 +1,16 @@
+[
+  {
+    "sessionId": "5f642b0f-1ee6-4838-b7d0-3c61d97e04b3",
+    "traceId": "5f642b0f-1ee6-4838-b7d0-3c61d97e04b3",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T21:54:53.675Z"
+  },
+  {
+    "sessionId": "5d7dd22d-1318-416c-8883-c5ff7e28d08c",
+    "traceId": "5d7dd22d-1318-416c-8883-c5ff7e28d08c",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-27T21:57:31.623Z"
+  }
+]

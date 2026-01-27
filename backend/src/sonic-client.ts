@@ -322,7 +322,7 @@ export class SonicClient {
                         temperature: 0.7
                     },
                     turnDetectionConfiguration: {
-                        endpointingSensitivity: "HIGH"  // Controls when Nova detects end of user speech
+                        // endpointingSensitivity: "HIGH" // Let Nova default handle it
                     }
                 }
             }

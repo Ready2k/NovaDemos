@@ -6,6 +6,9 @@ import { ClientSession } from '../types';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { GraphExecutor } from '../graph/executor';
+import { WorkflowDefinition } from '../graph/types';
+import { convertWorkflowToText } from '../utils/server-utils';
 
 // --- AWS Bedrock AgentCore Client ---
 const REGION = process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
@@ -49,6 +52,11 @@ export class AgentService {
             console.warn('[AgentService] AgentCore Gateway Client initialization failed:', error);
         }
     }
+
+    public get gatewayClient(): AgentCoreGatewayClient | null {
+        return this.agentCoreGatewayClient;
+    }
+
 
     /**
      * Helper to call AWS AgentCore Runtime
@@ -293,6 +301,69 @@ export class AgentService {
                 status: "error",
                 message: e.message
             };
+        }
+    }
+
+    /**
+     * Executes a LangGraph workflow.
+     * Returns an async generator yielding graph events.
+     */
+    async * runGraph(session: ClientSession, workflowId: string, input: string) {
+        console.log(`[AgentService] Starting Graph Execution for workflow: ${workflowId}`);
+
+        // 1. Load Workflow Definition
+        const filename = `workflow-${workflowId}.json`;
+        // Try local path first (useful for testing), then backend root
+        const pathsToTry = [
+            path.join(__dirname, '../../', filename),
+            path.join(__dirname, '../', filename),
+            path.join(process.cwd(), filename),
+            path.join(process.cwd(), 'src', filename)
+        ];
+
+        let workflowDef: WorkflowDefinition | null = null;
+        for (const p of pathsToTry) {
+            if (fs.existsSync(p)) {
+                try {
+                    workflowDef = JSON.parse(fs.readFileSync(p, 'utf-8'));
+                    console.log(`[AgentService] Loaded workflow from: ${p}`);
+                    break;
+                } catch (e) {
+                    console.warn(`[AgentService] Failed to parse workflow at ${p}`, e);
+                }
+            }
+        }
+
+        if (!workflowDef) {
+            yield { type: 'error', message: `Workflow definition not found for ID: ${workflowId}` };
+            return;
+        }
+
+        // 2. Initialize Executor
+        const executor = new GraphExecutor(workflowDef);
+
+        // 3. Prepare Initial State
+        const initialState = {
+            context: {
+                sessionId: session.sessionId,
+                userId: "user", // TODO: Get from session
+                input: input
+            },
+            messages: [{ role: 'user', content: input } as any], // Cast for now
+            currentWorkflowId: workflowId,
+            currentNodeId: 'start'
+        };
+
+        // 4. Stream Execution
+        try {
+            const stream = await executor.stream(initialState);
+            for (const event of stream) {
+                // Yield events for SonicService to consume
+                yield event;
+            }
+        } catch (error: any) {
+            console.error('[AgentService] Graph Execution Error:', error);
+            yield { type: 'error', message: error.message };
         }
     }
 }

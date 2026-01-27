@@ -51,7 +51,8 @@ export default function GeneralSettings() {
 
     const brainModes = [
         { id: 'raw_nova', label: 'Raw Nova (Fastest, Direct LLM)' },
-        { id: 'agent', label: 'Bedrock Agent (Tools & Workflows)' },
+        { id: 'bedrock_agent', label: 'Bedrock Agent (Tools)' },
+        { id: 'langgraph', label: 'LangGraph (Workflows)' },
     ];
 
     return (

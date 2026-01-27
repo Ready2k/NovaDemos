@@ -12,6 +12,10 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Build Args (Required for Next.js Static Build)
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
+
 # Next.js telemetry disable
 ENV NEXT_TELEMETRY_DISABLED=1
 

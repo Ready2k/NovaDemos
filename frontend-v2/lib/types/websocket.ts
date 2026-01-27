@@ -58,6 +58,12 @@ export interface WorkflowUpdateMessage extends WebSocketMessage {
 }
 
 // Outgoing message types (Client -> Server)
+export interface GraphEventMessage extends WebSocketMessage {
+    type: 'graph_event';
+    data: any; // Contains node execution details
+}
+
+// Outgoing message types (Client -> Server)
 export interface StartSessionMessage {
     type: 'start_session';
     config: any;

@@ -1,0 +1,383 @@
+{
+  "id": "banking",
+  "name": "Banking",
+  "nodes": [
+    {
+      "id": "start",
+      "label": "Welcome lets check if its a general enquiry (public information) or account specific",
+      "type": "start"
+    },
+    {
+      "id": "check_intent",
+      "label": "Is this a General Query (Public Info) or Account Specific?",
+      "type": "decision"
+    },
+    {
+      "id": "answer_general",
+      "label": "Answer using Knowledge Base / Mortgage Tools. Do NOT ask for ID.",
+      "type": "process"
+    },
+    {
+      "id": "check_auth",
+      "label": "Is 'auth_status' VERIFIED? If NO, GoTo [request_details] IMMEDIATELY. Do not speak in this state.",
+      "type": "decision"
+    },
+    {
+      "id": "request_details",
+      "label": "Identity Verification. IF you have Account & Sort Code -> CALL 'perform_idv_check' NOW. IF NOT -> Ask for them.",
+      "type": "tool",
+      "toolName": "perform_idv_check"
+    },
+    {
+      "id": "triage",
+      "label": "Account & Vulnerability Triage\n(Check 'marker_Vunl' & 'account_status')",
+      "type": "process"
+    },
+    {
+      "id": "handoff_vuln",
+      "label": "Inform & Handoff to\nSpecialist Agent",
+      "type": "end",
+      "outcome": "VULNERABILITY_HANDOFF"
+    },
+    {
+      "id": "handoff_frozen",
+      "label": "Inform & Handoff to\nSecurity Team",
+      "type": "end",
+      "outcome": "ACCOUNT_FROZEN_HANDOFF"
+    },
+    {
+      "id": "retrieve_history",
+      "label": "ENTRY POINT ONLY. Check if you have already retrieved history. IF NOT, Call 'manage_recent_interactions' (action='RETRIEVE'). IF YOU HAVE THE RESULT, GOTO [check_dispute] IMMEDIATELY. DO NOT CALL TWICE. NEVER CALL THIS AFTER [publish_summary].",
+      "type": "tool",
+      "toolName": "manage_recent_interactions"
+    },
+    {
+      "id": "check_dispute",
+      "label": "Evaluate the 'manage_recent_interactions' result. if disputesOpen=true -> Yes. if disputesOpen=false -> No.",
+      "type": "decision"
+    },
+    {
+      "id": "manage_dispute",
+      "label": "Manage Existing Dispute\n(Check Cooling-Off & Status)",
+      "type": "process"
+    },
+    {
+      "id": "route_service",
+      "label": "Determine Intent: If asking for Balance/Funds -> 'Balance'. If asking for Transactions/Statement -> 'Transactions'.",
+      "type": "decision"
+    },
+    {
+      "id": "show_balance",
+      "label": "Call 'agentcore_balance'. Then ask if they need anything else.",
+      "type": "tool",
+      "toolName": "agentcore_balance"
+    },
+    {
+      "id": "check_cooling",
+      "label": "Cooling Off < 15 Days?",
+      "type": "decision"
+    },
+    {
+      "id": "dispute_handoff",
+      "label": "Handoff to Dispute Agent",
+      "type": "end",
+      "outcome": "DISPUTE_HANDOFF"
+    },
+    {
+      "id": "update_case",
+      "label": "Request Info & Call\n'update_dispute_case'",
+      "type": "tool",
+      "toolName": "update_dispute_case"
+    },
+    {
+      "id": "query_txn",
+      "label": "FIRST: Call 'get_account_transactions' to show the user their recent transactions. THEN: ASK the user which specific transaction they want to query or dispute. WAIT for user response.",
+      "type": "tool",
+      "toolName": "get_account_transactions"
+    },
+    {
+      "id": "lookup_alias",
+      "label": "Call 'lookup_merchant_alias'. THEN explicitly tell the user the merchant details found. ASK the user if they recognise the transaction now that they know the real merchant name. WAIT for their response.",
+      "type": "tool",
+      "toolName": "lookup_merchant_alias"
+    },
+    {
+      "id": "recognise_txn",
+      "label": "Customer Recognises Transaction?",
+      "type": "decision"
+    },
+    {
+      "id": "resolved",
+      "label": "Issue Resolved - Call 'update_dispute_case' to set status='CLOSED' and inform the user.",
+      "type": "tool",
+      "toolName": "update_dispute_case"
+    },
+    {
+      "id": "classify",
+      "label": "Classify Issue Type. STRICT RULES:\n1. FRAUD (Unauthorised): User says 'I didn't do it', 'unauthorized', 'cloned', 'don't recognize', or 'hacked'. -> Route to 'Fraud (Unauthorised)'.\n2. DISPUTE (Authorised): User MADE the purchase but has an issue (e.g. 'subscription', 'goods not received', 'not refunded'). -> Route to 'Dispute (Authorised)'.\n3. GAMBLING: Gambling related. -> 'Gambling'.",
+      "type": "decision"
+    },
+    {
+      "id": "handoff_gambling",
+      "label": "Inform & Prepare Handoff\n(Gambling Route)",
+      "type": "end",
+      "outcome": "GAMBLING_HANDOFF"
+    },
+    {
+      "id": "handoff_fraud",
+      "label": "Inform & Prepare Handoff\n(Fraud Route)",
+      "type": "process",
+      "outcome": "FRAUD_HANDOFF"
+    },
+    {
+      "id": "contacted_merch",
+      "label": "CRITICAL CHECKPOINT: Before proceeding, you MUST confirm whether the user has contacted the merchant. If you don't already know from the conversation, ASK: 'Before I can raise a dispute case, have you already contacted [Merchant Name] about this issue?' WAIT for their answer. If they say Yes/confirmed → create_dispute. If they say No/not yet → advise_contact. If unclear, ask again for clarification. DO NOT assume or guess - you must have explicit confirmation.",
+      "type": "decision",
+      "required_context": [
+        "merchantContacted"
+      ]
+    },
+    {
+      "id": "advise_contact",
+      "label": "STOP. User has NOT contacted merchant. Say: 'I recommend contacting [Merchant Name] directly first to try to resolve this issue. If they don't help or resolve it, please call us back and we can raise a formal dispute for you.' Then END the dispute flow. Do NOT create a dispute case.",
+      "type": "process"
+    },
+    {
+      "id": "create_dispute",
+      "label": "PREREQUISITE: User confirmed they contacted merchant. EXECUTE NOW: Call 'create_dispute_case' tool IMMEDIATELY with merchantContacted=true. Do NOT say 'I will create' without calling the tool. After calling, say: 'I've opened a dispute case about the [Merchant] charge. Your Barclays reference is [case ID]. We'll investigate this with the merchant and keep you updated.' AVOID words like 'unauthorized', 'fraud', 'raised with merchant' - use 'opened a case about' or 'started an investigation regarding'.",
+      "type": "tool",
+      "toolName": "create_dispute_case",
+      "required_context": [
+        "merchantContacted"
+      ]
+    },
+    {
+      "id": "publish_summary",
+      "label": "Call 'manage_recent_interactions' with action='PUBLISH' to save the session. This is the FINAL step. After this, STOP. DO NOT LOOP BACK.",
+      "type": "tool",
+      "toolName": "manage_recent_interactions"
+    },
+    {
+      "id": "end_interaction",
+      "label": "Provide a concise summary of the interaction, ensure that its voice friendly and if needed ask the user if there's anything else you can help with today.",
+      "type": "end",
+      "outcome": ""
+    },
+    {
+      "id": "Gambling_end",
+      "label": "Tell the user that the contact will be transferred to a specialist agent",
+      "type": "end",
+      "outcome": "GAMBLING"
+    },
+    {
+      "id": "publish_gambling",
+      "label": "Call 'manage_recent_interactions' with action='PUBLISH' to save the session. This is the FINAL step. After this, STOP. DO NOT LOOP BACK.",
+      "type": "process"
+    },
+    {
+      "id": "check_additional_help",
+      "label": "Did the user ask for more help? If Yes/Transactions/Dispute -> 'Yes'. If No/Thanks/Bye -> 'No'.",
+      "type": "decision"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "check_intent"
+    },
+    {
+      "from": "check_intent",
+      "to": "answer_general",
+      "label": "General Query"
+    },
+    {
+      "from": "check_intent",
+      "to": "check_auth",
+      "label": "Account Query"
+    },
+    {
+      "from": "answer_general",
+      "to": "resolved"
+    },
+    {
+      "from": "check_auth",
+      "to": "request_details",
+      "label": "No (UNVERIFIED)"
+    },
+    {
+      "from": "request_details",
+      "to": "check_auth",
+      "label": "Retry"
+    },
+    {
+      "from": "check_auth",
+      "to": "triage",
+      "label": "Yes (VERIFIED)"
+    },
+    {
+      "from": "triage",
+      "to": "handoff_vuln",
+      "label": "High Vuln Score (>5)"
+    },
+    {
+      "from": "triage",
+      "to": "handoff_frozen",
+      "label": "Account Frozen"
+    },
+    {
+      "from": "triage",
+      "to": "retrieve_history",
+      "label": "Safe (Open & Low Vuln)"
+    },
+    {
+      "from": "retrieve_history",
+      "to": "check_dispute"
+    },
+    {
+      "from": "check_dispute",
+      "to": "manage_dispute",
+      "label": "Yes"
+    },
+    {
+      "from": "check_dispute",
+      "to": "route_service",
+      "label": "No"
+    },
+    {
+      "from": "route_service",
+      "to": "show_balance",
+      "label": "Balance"
+    },
+    {
+      "from": "route_service",
+      "to": "query_txn",
+      "label": "Transactions"
+    },
+    {
+      "from": "show_balance",
+      "to": "check_additional_help"
+    },
+    {
+      "from": "check_additional_help",
+      "to": "route_service",
+      "label": "Yes"
+    },
+    {
+      "from": "check_additional_help",
+      "to": "publish_summary",
+      "label": "No"
+    },
+    {
+      "from": "manage_dispute",
+      "to": "check_cooling"
+    },
+    {
+      "from": "check_cooling",
+      "to": "resolved",
+      "label": "Within Cooling Off"
+    },
+    {
+      "from": "check_cooling",
+      "to": "dispute_handoff",
+      "label": "Expired (Status OPEN)"
+    },
+    {
+      "from": "check_cooling",
+      "to": "update_case",
+      "label": "Expired (Status MORE_INFO)"
+    },
+    {
+      "from": "query_txn",
+      "to": "lookup_alias"
+    },
+    {
+      "from": "lookup_alias",
+      "to": "recognise_txn"
+    },
+    {
+      "from": "recognise_txn",
+      "to": "resolved",
+      "label": "Yes"
+    },
+    {
+      "from": "recognise_txn",
+      "to": "classify",
+      "label": "No"
+    },
+    {
+      "from": "classify",
+      "to": "handoff_gambling",
+      "label": "Gambling"
+    },
+    {
+      "from": "classify",
+      "to": "handoff_fraud",
+      "label": "Fraud (Unauthorised)"
+    },
+    {
+      "from": "classify",
+      "to": "contacted_merch",
+      "label": "Dispute (Authorised)"
+    },
+    {
+      "from": "contacted_merch",
+      "to": "advise_contact",
+      "label": "No"
+    },
+    {
+      "from": "contacted_merch",
+      "to": "create_dispute",
+      "label": "Yes"
+    },
+    {
+      "from": "create_dispute",
+      "to": "publish_summary"
+    },
+    {
+      "from": "update_case",
+      "to": "publish_summary"
+    },
+    {
+      "from": "handoff_vuln",
+      "to": "publish_summary"
+    },
+    {
+      "from": "handoff_frozen",
+      "to": "publish_summary"
+    },
+    {
+      "from": "handoff_gambling",
+      "to": "publish_gambling",
+      "label": ""
+    },
+    {
+      "from": "handoff_fraud",
+      "to": "publish_summary"
+    },
+    {
+      "from": "dispute_handoff",
+      "to": "publish_summary"
+    },
+    {
+      "from": "resolved",
+      "to": "publish_summary"
+    },
+    {
+      "from": "publish_summary",
+      "to": "end_interaction"
+    },
+    {
+      "from": "publish_gambling",
+      "to": "Gambling_end",
+      "label": ""
+    }
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "The system gives me my balance, shows me some transactions and checks my disputes ",
+    "testInstructions": "I just want my balance for account 12345678, \nWait and give the sort code only when asked, 112233\nI also need to see my last 2 transactions and if i have any open disputes",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 10
+  }
+}

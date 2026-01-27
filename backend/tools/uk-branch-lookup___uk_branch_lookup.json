@@ -1,0 +1,18 @@
+{
+  "name": "uk-branch-lookup___uk_branch_lookup",
+  "originalName": "uk-branch-lookup___uk_branch_lookup",
+  "description": "Searches for the closest Barclays Branch in the UK given a valid location name or postal code using geocoding.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "description": "this can be a place name in the UK or a valid UK postal code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "location"
+    ]
+  },
+  "gatewayTarget": "uk-branch-lookup___uk_branch_lookup"
+}

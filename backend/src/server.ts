@@ -10,7 +10,7 @@ import { AgentService } from './services/agent-service';
 import { SonicService } from './services/sonic-service';
 import { PromptService } from './services/prompt-service';
 import { ToolService } from './services/tool-service';
-import { AgentCoreGatewayClient } from './agentcore-gateway-client';
+// AgentCoreGatewayClient is internal to AgentService
 
 // Load environment variables
 const envPath = path.join(__dirname, '../../.env');
@@ -30,14 +30,7 @@ const toolService = new ToolService();
 // We initialize AgentService. It will use session-specific Credentials passed in ClientSession.
 const agentService = new AgentService();
 
-// Agent Core Gateway Client (Optional - for legacy tools or specific gateway calls)
-let agentCoreGatewayClient: AgentCoreGatewayClient | null = null;
-if (process.env.AGENT_CORE_GATEWAY_URL) {
-    agentCoreGatewayClient = new AgentCoreGatewayClient();
-    console.log('[Server] AgentCore Gateway Client initialized.');
-} else {
-    console.warn('[Server] AGENT_CORE_GATEWAY_URL not set. Gateway features disabled.');
-}
+// AgentService initializes its own AgentCoreGatewayClient if needed.
 
 // Active Sessions
 const activeSessions = new Map<WebSocket, SonicService>();
@@ -47,12 +40,47 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Helper for JSON File I/O
+const readJsonFile = (filePath: string, defaultVal: any = []) => {
+    try {
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        }
+    } catch (e) {
+        console.error(`[Server] Failed to read ${filePath}:`, e);
+    }
+    return defaultVal;
+};
+
+const writeJsonFile = (filePath: string, data: any) => {
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        return true;
+    } catch (e) {
+        console.error(`[Server] Failed to write ${filePath}:`, e);
+        return false;
+    }
+};
+
+// --- DATA PATHS ---
+// structured relative to process.cwd() which is /app in docker
+const TOOLS_DIR = path.join(process.cwd(), 'tools');
+const WORKFLOWS_DIR = path.join(process.cwd(), 'workflows');
+const HISTORY_DIR = path.join(process.cwd(), 'chat_history');
+const KB_FILE = path.join(process.cwd(), 'knowledge_bases.json');
+
+// Ensure directories exist
+[TOOLS_DIR, WORKFLOWS_DIR, HISTORY_DIR].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+
 // Health Check
 app.get('/health', (req, res) => {
     res.send('OK');
 });
 
-// Prompt API Proxies
+// --- PROMPTS API ---
 app.get('/api/prompts', async (req, res) => {
     try {
         const prompts = await promptService.listPrompts();
@@ -71,10 +99,335 @@ app.post('/api/prompts/sync', async (req, res) => {
     }
 });
 
-// Simulation API (stub for now, needs SimulationService refactor if used)
+// Simulation API (stub for now)
 app.post('/api/simulation/generate', async (req, res) => {
-    // TODO: Move SimulationService to separate file and use it here
     res.status(501).json({ error: 'Simulation service pending refactor' });
+});
+
+// --- VOICES API ---
+app.get('/api/voices', (req, res) => {
+    // Return standard Amazon Polly/Nova voices
+    res.json([
+        { id: 'Matthew', name: 'Matthew (US Male)', language: 'en-US' },
+        { id: 'Ruth', name: 'Ruth (US Female)', language: 'en-US' },
+        { id: 'Stephen', name: 'Stephen (US Male)', language: 'en-US' },
+        { id: 'Danielle', name: 'Danielle (US Female)', language: 'en-US' },
+        { id: 'Amy', name: 'Amy (GB Female)', language: 'en-GB' },
+        { id: 'Arthur', name: 'Arthur (GB Male)', language: 'en-GB' },
+        // ... add more as needed, this satisfies the frontend requirements
+    ]);
+});
+
+// --- TOOLS API ---
+app.get('/api/tools', (req, res) => {
+    try {
+        // ToolService might use its own internal path logic !! 
+        // We should check ToolService too, but for now this API reads via ToolService
+        // Wait, checking ToolService code: it uses path.join(__dirname, '../../tools')
+        // We need to pass the path or fix ToolService too!
+        // Re-instantiate ToolService with correct path? 
+        // ToolService constructor doesn't take path. 
+        // We must fix ToolService.ts as well.
+        const tools = toolService.loadTools().map(t => {
+            // Reconstruct frontend-friendly object from ToolService output
+            // ToolService returns { toolSpec, instruction, agentPrompt }
+            // Frontend expects { name, description, instruction, parameters }
+            const spec = t.toolSpec;
+            let params = "{}";
+            try {
+                const schema = JSON.parse(spec.inputSchema.json);
+                params = JSON.stringify(schema, null, 2);
+            } catch (e) { }
+
+            return {
+                name: spec.name,
+                description: spec.description.split('\n\n[INSTRUCTION]:')[0], // Strip instruction if appended
+                instruction: t.instruction,
+                agentPrompt: t.agentPrompt,
+                parameters: params
+            };
+        });
+        res.json(tools);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/tools', (req, res) => {
+    const toolDef = req.body;
+    if (!toolDef.name) return res.status(400).json({ error: "Name required" });
+
+    // Save as JSON
+    const fileName = `${toolDef.name}.json`;
+    const filePath = path.join(TOOLS_DIR, fileName);
+
+    // Convert parameters string back to object if needed, or assume it's object
+    // Frontend sends object if it parsed it, or string? 
+    // ToolsSettings.tsx line 81: sends JSON.stringify(payload) where payload.parameters is object.
+
+    // We save strictly what is needed
+    // Map frontend structure to backend storage structure
+    const storageFormat = {
+        name: toolDef.name,
+        description: toolDef.description,
+        instruction: toolDef.instruction,
+        agentPrompt: toolDef.agentPrompt,
+        input_schema: toolDef.parameters // Frontend sends "parameters" object
+    };
+
+    if (writeJsonFile(filePath, storageFormat)) {
+        res.json({ success: true, tool: storageFormat });
+    } else {
+        res.status(500).json({ error: "Failed to save tool" });
+    }
+});
+
+app.delete('/api/tools/:name', (req, res) => {
+    const fileName = `${req.params.name}.json`;
+    const filePath = path.join(TOOLS_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: "Tool not found" });
+    }
+});
+
+// --- WORKFLOWS API ---
+app.get('/api/workflows', (req, res) => {
+    try {
+        const files = fs.readdirSync(WORKFLOWS_DIR).filter(f => f.startsWith('workflow_') && f.endsWith('.json'));
+        const workflows = files.map(f => {
+            const content = readJsonFile(path.join(WORKFLOWS_DIR, f), {});
+            return { id: content.id, name: content.name };
+        });
+        res.json(workflows);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/workflow/:id', (req, res) => {
+    const filePath = path.join(WORKFLOWS_DIR, `workflow_${req.params.id}.json`);
+    if (fs.existsSync(filePath)) {
+        res.json(readJsonFile(filePath));
+    } else {
+        res.status(404).json({ error: "Workflow not found" });
+    }
+});
+
+app.post('/api/workflow/:id', (req, res) => {
+    const filePath = path.join(WORKFLOWS_DIR, `workflow_${req.params.id}.json`);
+    const data = req.body;
+    // ensure ID matches
+    data.id = req.params.id;
+
+    if (writeJsonFile(filePath, data)) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Failed to save workflow" });
+    }
+});
+
+app.delete('/api/workflow/:id', (req, res) => {
+    const filePath = path.join(WORKFLOWS_DIR, `workflow_${req.params.id}.json`);
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: "Workflow not found" });
+    }
+});
+
+// --- KNOWLEDGE BASES API ---
+app.get('/api/knowledge-bases', (req, res) => {
+    res.json(readJsonFile(KB_FILE, []));
+});
+
+app.post('/api/knowledge-bases', (req, res) => {
+    const newKb = req.body;
+    const kbs = readJsonFile(KB_FILE, []);
+    kbs.push(newKb); // simplistic append, assumes frontend handles dupes or we don't care
+    if (writeJsonFile(KB_FILE, kbs)) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Failed to save KB" });
+    }
+});
+
+app.delete('/api/knowledge-bases/:id', (req, res) => {
+    let kbs = readJsonFile(KB_FILE, []);
+    kbs = kbs.filter((k: any) => k.id !== req.params.id);
+    if (writeJsonFile(KB_FILE, kbs)) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Failed to delete KB" });
+    }
+});
+
+// --- HISTORY API ---
+app.get('/api/history', (req, res) => {
+    try {
+        const files = fs.readdirSync(HISTORY_DIR).filter(f => f.endsWith('.json'));
+        // Sort by date desc (filename often contains date, or read content)
+        // For performance, we'll just map them. Ideally, filename should allow sorting.
+        // Assuming filename scheme is unique but maybe not strictly sortable by string.
+
+        const historyList = files.map(f => {
+            // We need some metadata. Reading all files might be slow but necessary.
+            try {
+                const content = readJsonFile(path.join(HISTORY_DIR, f));
+                return {
+                    id: f,
+                    date: content.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
+                    summary: content.summary || `Session ${content.sessionId}`,
+                    totalMessages: content.transcript?.length || 0,
+                    usage: content.usage,
+                    feedback: content.feedback
+                };
+            } catch { return null; }
+        }).filter(Boolean).sort((a: any, b: any) => b.date - a.date);
+
+        res.json(historyList);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/history/:id', (req, res) => {
+    const filePath = path.join(HISTORY_DIR, req.params.id);
+    if (fs.existsSync(filePath)) {
+        res.json(readJsonFile(filePath));
+    } else {
+        res.status(404).json({ error: "Session not found" });
+    }
+});
+
+// --- TESTS API ---
+const TEST_LOGS_DIR = path.join(process.cwd(), 'test_logs');
+const PRESETS_FILE = path.join(process.cwd(), 'presets.json');
+
+[TEST_LOGS_DIR].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+app.get('/api/tests', (req, res) => {
+    try {
+        if (!fs.existsSync(TEST_LOGS_DIR)) return res.json([]);
+        const files = fs.readdirSync(TEST_LOGS_DIR).filter(f => f.endsWith('.json'));
+
+        const logs = files.map(f => {
+            const stats = fs.statSync(path.join(TEST_LOGS_DIR, f));
+            return {
+                filename: f,
+                created: stats.birthtime,
+                size: stats.size
+            };
+        }).sort((a, b) => b.created.getTime() - a.created.getTime());
+
+        res.json(logs);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/tests/:filename', (req, res) => {
+    const filePath = path.join(TEST_LOGS_DIR, req.params.filename);
+    if (fs.existsSync(filePath)) {
+        res.json(readJsonFile(filePath));
+    } else {
+        res.status(404).json({ error: "Log not found" });
+    }
+});
+
+// --- PRESETS API ---
+app.get('/api/presets', (req, res) => {
+    res.json(readJsonFile(PRESETS_FILE, []));
+});
+
+app.post('/api/presets', (req, res) => {
+    const newPreset = req.body;
+    newPreset.id = Date.now().toString(); // simple ID gen
+    newPreset.createdAt = new Date().toISOString();
+
+    const presets = readJsonFile(PRESETS_FILE, []);
+    presets.push(newPreset);
+
+    if (writeJsonFile(PRESETS_FILE, presets)) {
+        res.json({ success: true, preset: newPreset });
+    } else {
+        res.status(500).json({ error: "Failed to save preset" });
+    }
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+    let presets = readJsonFile(PRESETS_FILE, []);
+    presets = presets.filter((p: any) => p.id !== req.params.id);
+    if (writeJsonFile(PRESETS_FILE, presets)) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Failed to delete preset" });
+    }
+});
+
+// System Status API
+app.get('/api/system/status', (req, res) => {
+    const awsConnected = !!(process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID);
+    res.json({
+        aws: awsConnected ? 'connected' : 'error',
+        region: process.env.AWS_REGION || process.env.NOVA_AWS_REGION || 'unknown'
+    });
+});
+
+app.post('/api/system/debug', (req, res) => {
+    const { enabled } = req.body;
+    // Set global debug flag (assuming simplistic implementation for now)
+    process.env.DEBUG = enabled ? 'true' : 'false';
+    console.log(`[Server] Debug mode set to: ${enabled}`);
+    res.json({ success: true, debug: enabled });
+});
+
+app.post('/api/system/reset', async (req, res) => {
+    console.log('[Server] Initiating System Reset...');
+    try {
+        // 1. Close all active sessions
+        for (const [ws, service] of activeSessions.entries()) {
+            await service.stop();
+            ws.close(1001, 'System Reset');
+        }
+        activeSessions.clear();
+
+        // 2. Clear Chat History (Optional - purely file based)
+        const historyDir = path.join(__dirname, '../../chat_history');
+        if (fs.existsSync(historyDir)) {
+            const files = fs.readdirSync(historyDir);
+            for (const file of files) {
+                if (file.endsWith('.json')) {
+                    fs.unlinkSync(path.join(historyDir, file));
+                }
+            }
+        }
+        console.log('[Server] System Reset Complete');
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error('[Server] Reset failed:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Feedback API
+app.post('/api/feedback', (req, res) => {
+    const feedback = req.body;
+    console.log('[Server] 📝 Received Feedback:', JSON.stringify(feedback, null, 2));
+
+    // In a real app, save to DB or send to Langfuse
+    // For now, we just log it to a file
+    const feedbackFile = path.join(HISTORY_DIR, 'feedback_log.json');
+    const logs = readJsonFile(feedbackFile, []);
+    logs.push({ ...feedback, timestamp: new Date().toISOString() });
+    writeJsonFile(feedbackFile, logs);
+
+    res.json({ success: true });
 });
 
 const server = http.createServer(app);
@@ -92,7 +445,6 @@ wss.on('connection', async (ws: WebSocket) => {
         agentService,
         promptService,
         toolService,
-        agentCoreGatewayClient
     );
 
     activeSessions.set(ws, sonicService);

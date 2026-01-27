@@ -7,7 +7,7 @@ import * as path from 'path';
 // However, the `langfuse` generic usage suggests we might want a singleton wrapper.
 import { Langfuse } from 'langfuse';
 
-const PROMPTS_DIR = path.join(__dirname, '../../prompts');
+const PROMPTS_DIR = path.join(process.cwd(), 'prompts');
 
 export class PromptService {
     private langfuse: Langfuse;
@@ -20,7 +20,7 @@ export class PromptService {
         this.langfuse = new Langfuse({
             publicKey: process.env.LANGFUSE_PUBLIC_KEY,
             secretKey: process.env.LANGFUSE_SECRET_KEY,
-            baseUrl: process.env.LANGFUSE_HOST || "https://cloud.langfuse.com"
+            baseUrl: process.env.LANGFUSE_HOST || process.env.LANGFUSE_BASEURL || "https://cloud.langfuse.com"
         });
 
         // Ensure prompt dir exists

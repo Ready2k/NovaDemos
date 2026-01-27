@@ -44,7 +44,7 @@ interface AppState {
     toggleWorkflow: (workflowId: string) => void;
     // Current live workflow execution state
     workflowState: { currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null;
-    setWorkflowState: (state: { currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null) => void;
+    setWorkflowState: React.Dispatch<React.SetStateAction<{ currentStep: string; stepId?: string; status: 'active' | 'completed' | 'idle' } | null>>;
 
     // Knowledge Bases
     knowledgeBases: KnowledgeBase[];

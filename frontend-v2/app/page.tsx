@@ -17,7 +17,7 @@ import { useApp } from '@/lib/context/AppContext';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
 import { cn } from '@/lib/utils';
-import { AppSettings, Message, WebSocketMessage, SessionStats, SessionStartMessage, AudioMessage, TranscriptMessage, ToolUseMessage, ToolResultMessage, ErrorMessage, TokenUsageMessage, WorkflowUpdateMessage } from '@/lib/types';
+import { AppSettings, Message, WebSocketMessage, SessionStats, SessionStartMessage, AudioMessage, TranscriptMessage, ToolUseMessage, ToolResultMessage, ErrorMessage, TokenUsageMessage, WorkflowUpdateMessage, GraphEventMessage } from '@/lib/types';
 import { useWorkflowSimulator } from '@/lib/hooks/useWorkflowSimulator';
 
 import SettingsLayout from '@/components/settings/SettingsLayout';
@@ -107,6 +107,14 @@ export default function Home() {
             });
           }
         }, 100); // 100ms delay
+        break;
+
+      case 'config_applied':
+        console.log('[App] Session configuration applied successfully');
+        // If we don't get a session_start immediately (e.g. raw nova lazy load), 
+        // we should assume we are ready to go.
+        setConnectionStatus('connected');
+        setHasInteracted(true);
         break;
 
       case 'session_start':
@@ -280,6 +288,21 @@ export default function Home() {
         audioProcessor.clearQueue();
         break;
 
+      case 'graph_event':
+        console.log('[Graph] Event:', message.data);
+        if (message.data) {
+          // Extract node name
+          const nodeName = Object.keys(message.data)[0];
+          if (nodeName && nodeName !== '__end__') {
+            setWorkflowState((prev: any) => ({
+              ...prev,
+              currentStep: nodeName,
+              status: 'active'
+            }));
+          }
+        }
+        break;
+
       default:
         console.log('[WebSocket] Unknown message type:', message.type);
     }
@@ -287,6 +310,9 @@ export default function Home() {
 
   // Initialize WebSocket
   const getWebSocketUrl = () => {
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      return `${process.env.NEXT_PUBLIC_WS_URL}/sonic`;
+    }
     let wsUrl = 'ws://localhost:8080/sonic';
     if (typeof window !== 'undefined' && window.location.protocol !== 'file:') {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

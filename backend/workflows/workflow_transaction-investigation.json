@@ -1,0 +1,129 @@
+{
+  "title": "Transaction Investigation",
+  "nodes": [
+    {
+      "id": "investigate_start",
+      "label": "Start Transaction Investigation",
+      "type": "start"
+    },
+    {
+      "id": "lookup_alias",
+      "label": "Call 'lookup_merchant_alias' for the queried transaction.",
+      "type": "tool",
+      "toolName": "lookup_merchant_alias"
+    },
+    {
+      "id": "check_alias_match",
+      "label": "Did 'lookup_merchant_alias' return a known alias (e.g. Love Coffee)?",
+      "type": "decision"
+    },
+    {
+      "id": "clarify_merchant",
+      "label": "Say: 'The merchant [Name] is also known as [Alias]. Do you recognise this transaction now?'",
+      "type": "process"
+    },
+    {
+      "id": "user_recognises",
+      "label": "Does the user recognise the transaction?",
+      "type": "decision"
+    },
+    {
+      "id": "resolved_alias",
+      "label": "Confusion Resolved.",
+      "type": "end",
+      "outcome": "RESOLVED_QUERY"
+    },
+    {
+      "id": "classify_issue",
+      "label": "Classify Issue: CRITICAL: If user says 'I did not do this', 'It wasn't me', or implies unauthorized use, CATEGORIZE AS FRAUD/UNAUTHORIZED IMMEDIATELY. Otherwise: Gambling? Fraud (Unauthorised)? Dispute (Authorised)?",
+      "type": "decision"
+    },
+    {
+      "id": "handoff_gambling",
+      "label": "Say: 'I will transfer you to a Fraud Colleague to discuss this sensitive matter.'",
+      "type": "process"
+    },
+    {
+      "id": "end_gambling",
+      "label": "Gambling Handoff",
+      "type": "end",
+      "outcome": "GAMBLING_HANDOFF"
+    },
+    {
+      "id": "handoff_fraud",
+      "label": "Say: 'As you did not authorise this transaction, I need to transfer you to a Fraud Colleague immediately to secure your account.'",
+      "type": "process"
+    },
+    {
+      "id": "end_fraud",
+      "label": "Fraud Handoff",
+      "type": "end",
+      "outcome": "FRAUD_HANDOFF"
+    },
+    {
+      "id": "proceed_dispute",
+      "label": "Dispute identified (Authorised but Incorrect). Proceed to Step 5.",
+      "type": "end",
+      "outcome": "PROCEED_TO_DISPUTE"
+    }
+  ],
+  "edges": [
+    {
+      "from": "investigate_start",
+      "to": "lookup_alias"
+    },
+    {
+      "from": "lookup_alias",
+      "to": "check_alias_match"
+    },
+    {
+      "from": "check_alias_match",
+      "to": "clarify_merchant",
+      "label": "Yes (Match Found)"
+    },
+    {
+      "from": "check_alias_match",
+      "to": "classify_issue",
+      "label": "No (No Match)"
+    },
+    {
+      "from": "clarify_merchant",
+      "to": "user_recognises"
+    },
+    {
+      "from": "user_recognises",
+      "to": "resolved_alias",
+      "label": "Yes"
+    },
+    {
+      "from": "user_recognises",
+      "to": "classify_issue",
+      "label": "No"
+    },
+    {
+      "from": "classify_issue",
+      "to": "handoff_gambling",
+      "label": "Gambling"
+    },
+    {
+      "from": "handoff_gambling",
+      "to": "end_gambling"
+    },
+    {
+      "from": "classify_issue",
+      "to": "handoff_fraud",
+      "label": "Fraud (Unauthorised)"
+    },
+    {
+      "from": "handoff_fraud",
+      "to": "end_fraud"
+    },
+    {
+      "from": "classify_issue",
+      "to": "proceed_dispute",
+      "label": "Dispute (Authorised)"
+    }
+  ],
+  "id": "transaction-investigation",
+  "name": "Transaction Investigation"
+}

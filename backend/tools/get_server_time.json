@@ -1,0 +1,15 @@
+{
+  "name": "get_server_time",
+  "originalName": "get-Time___get_current_time",
+  "description": "Retrieves the current date and time. Can optionally specify a timezone (UTC, EST, PST, GMT, CET, JST).",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "timezone": {
+        "description": "Optional timezone abbreviation (e.g. 'EST', 'PST', 'GMT'). Defaults to 'UTC' if not provided.",
+        "type": "string"
+      }
+    }
+  },
+  "gatewayTarget": "get-Time___get_current_time"
+}

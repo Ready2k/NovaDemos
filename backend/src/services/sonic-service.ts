@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { SonicClient, SonicEvent } from '../sonic-client';
 import { TranscribeClientWrapper } from '../transcribe-client';
-import { AgentCoreGatewayClient } from '../agentcore-gateway-client';
+
 import { AgentService } from './agent-service';
 import { PromptService } from './prompt-service';
 import { ToolService } from './tool-service';
@@ -31,7 +31,7 @@ export class SonicService {
     private toolService: ToolService;
     private promptService: PromptService;
     private agentService: AgentService;
-    private agentCoreGatewayClient: AgentCoreGatewayClient | null;
+
 
     // Helper map for pending feedback (if needed, or moved to DB later)
     private static pendingFeedback = new Map<string, any>();
@@ -41,13 +41,12 @@ export class SonicService {
         agentService: AgentService,
         promptService: PromptService,
         toolService: ToolService,
-        agentCoreGatewayClient: AgentCoreGatewayClient | null,
         sessionId?: string
     ) {
         this.agentService = agentService;
         this.promptService = promptService;
         this.toolService = toolService;
-        this.agentCoreGatewayClient = agentCoreGatewayClient;
+
 
         const effectiveSessionId = sessionId || crypto.randomUUID();
         const sonicClient = new SonicClient();
@@ -208,6 +207,52 @@ export class SonicService {
                         inputTokens: this.session.sonicClient.getSessionInputTokens(),
                         outputTokens: this.session.sonicClient.getSessionOutputTokens()
                     }));
+                }
+            }
+            return;
+        }
+
+        if (this.session.brainMode === 'langgraph') {
+            if (event.data.isFinal) {
+                const input = event.data.transcript || "";
+                // Default to 'banking-master' if no ID set
+                const wfId = this.session.currentWorkflowId || 'banking-master';
+                const workflowId = this.session.activeWorkflowStepId === 'start' ? wfId.toLowerCase() : wfId.toLowerCase();
+
+                console.log(`[SonicService] 🧠 Invoking LangGraph: ${workflowId} with input: "${input}"`);
+
+                // Stream events
+                const stream = this.agentService.runGraph(this.session, workflowId, input);
+
+                let finalOutput = "";
+
+                for await (const graphEvent of stream) {
+                    console.log('[SonicService] Graph Event:', JSON.stringify(graphEvent));
+
+                    // 1. Send Debug/Viz Info to Frontend
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'graph_event',
+                            data: graphEvent
+                        }));
+                    }
+
+                    // 2. Process specific events
+                    const eventObj = graphEvent as any;
+                    const nodeName = Object.keys(eventObj)[0];
+                    const nodeData = eventObj[nodeName];
+
+                    if (nodeData && nodeData.lastOutcome && typeof nodeData.lastOutcome === 'string') {
+                        // Simple heuristic: if outcome looks like speech, speak it
+                        // For now, let's assume 'assistant' node output is speech
+                        // In our banking workflow, we don't have explicit 'assistant' nodes yet, just 'end' or 'decision' outcomes.
+                    }
+                }
+
+                // For now, simulate a response acknowledging the graph ran
+                finalOutput = "I have processed that step in the workflow.";
+                if (this.session.sonicClient) {
+                    await this.session.sonicClient.sendText(finalOutput);
                 }
             }
             return;
@@ -481,10 +526,10 @@ export class SonicService {
                 ['agentcore_balance', 'agentcore_transactions', 'get_account_transactions', 'perform_idv_check',
                     'lookup_merchant_alias', 'create_dispute_case', 'manage_recent_interactions', 'update_dispute_case', 'get_server_time'].includes(actualToolName);
 
-            if (isAgentCoreGatewayTool && this.agentCoreGatewayClient) {
+            if (isAgentCoreGatewayTool && this.agentService.gatewayClient) {
                 const toolParams = toolUse.content ? JSON.parse(toolUse.content) : toolUse.input;
                 const gatewayTarget = toolDef ? toolDef.gatewayTarget : undefined;
-                let gatewayResult = await this.agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
+                let gatewayResult = await this.agentService.gatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
 
                 // Guardrails
                 if (actualToolName === 'perform_idv_check') {
@@ -721,8 +766,8 @@ export class SonicService {
                         this.session.sonicClient.updateCredentials(accessKeyId, secretAccessKey, region, agentCoreRuntimeArn);
 
                         // Gateway Client Update
-                        if (this.agentCoreGatewayClient) {
-                            this.agentCoreGatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
+                        if (this.agentService.gatewayClient) {
+                            this.agentService.gatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
                         }
                     }
 
@@ -758,6 +803,18 @@ export class SonicService {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'config_applied', success: true }));
                     }
+
+                    // Eagerly start session if not started, to allow model to speak first
+                    if (!this.session.sonicClient.getSessionId()) {
+                        console.log('[SonicService] Eagerly starting session for proactive greeting...');
+                        // Use this.session.sessionId 
+                        await this.session.sonicClient.startSession((event) => this.handleSonicEvent(event), this.session.sessionId);
+
+                        // Send a hidden text input to trigger the greeting
+                        // We do NOT add this to the transcript so it remains hidden from history
+                        await new Promise(r => setTimeout(r, 500)); // Brief pause to ensure connection stability
+                        await this.session.sonicClient.sendText("Please greet the user.");
+                    }
                     return;
                 }
 
@@ -790,8 +847,8 @@ export class SonicService {
                     this.session.agentCoreRuntimeArn = agentCoreRuntimeArn;
 
                     this.session.sonicClient.updateCredentials(accessKeyId, secretAccessKey, region, agentCoreRuntimeArn);
-                    if (this.agentCoreGatewayClient) {
-                        this.agentCoreGatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
+                    if (this.agentService.gatewayClient) {
+                        this.agentService.gatewayClient.updateCredentials(accessKeyId, secretAccessKey, region);
                     }
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'status', message: 'AWS Credentials Updated' }));
                     return;

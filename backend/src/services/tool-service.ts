@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Tool } from '../types';
 
-const TOOLS_DIR = path.join(__dirname, '../../tools');
+const TOOLS_DIR = path.join(process.cwd(), 'tools');
 
 export class ToolService {
     constructor() {

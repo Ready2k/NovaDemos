@@ -22,14 +22,26 @@ services:
       - redis
     volumes:
       # Mount chat history for persistence
+      # Mount chat history for persistence
       - ./chat_history:/app/chat_history
       # Mount knowledge bases config
       - ./knowledge_bases.json:/app/knowledge_bases.json
+      # Mount tools definitions
+      - ./backend/tools:/app/tools
+      # Mount workflows storage
+      - ./backend/workflows:/app/workflows
+      # Mount test logs
+      - ./backend/test_logs:/app/test_logs
+      # Mount presets
+      - ./backend/presets.json:/app/presets.json
 
   frontend:
     build:
       context: ./frontend-v2
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8080
+        - NEXT_PUBLIC_WS_URL=ws://localhost:8080
     ports:
       - "3000:3000"
     environment:

@@ -18,7 +18,7 @@ export interface ClientSession {
     sonicClient: SonicClient;
     sessionId: string;
     // Agent Mode State
-    brainMode: 'raw_nova' | 'bedrock_agent';
+    brainMode: 'raw_nova' | 'bedrock_agent' | 'langgraph';
     agentId?: string;
     agentAliasId?: string;
     agentBuffer: Buffer[];
