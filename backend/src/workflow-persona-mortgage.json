@@ -156,7 +156,7 @@
   "testConfig": {
     "personaId": "persona-mortgage",
     "successCriteria": "I'm given the right amount of information that meets my requirements, but it should say I can't afford that house",
-    "testInstructions": "I want a new mortgage as I'm a first time buyer, I'm 22 and have an income of £45000 per year, the house I want to buy is TownHouse on First Lane in Knutsford Cheshire and is valued at £3million.  I'm looking at 25 years and an initial 5 year deal.",
+    "testInstructions": "Start the conversation by saying Hi\nI want a new mortgage as I'm a first time buyer, I'm 22 and have an income of £45000 per year, the house I want to buy is TownHouse on First Lane in Knutsford Cheshire and is valued at £3million.  I'm looking at 25 years and an initial 5 year deal.",
     "disconnectAction": "always",
     "saveReport": true,
     "maxTurns": 20
