@@ -575,12 +575,16 @@ export default function Home() {
               </div>
 
               {/* Chat Container - takes remaining space */}
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden pb-48 md:pb-0">
                 <ChatContainer isDarkMode={isDarkMode} />
               </div>
 
-              {/* Command Bar - now part of flex layout, not fixed */}
-              <div className="flex-shrink-0 pb-0 md:pb-0 mb-32 md:mb-0 z-20 relative">
+              {/* Command Bar - Fixed on mobile (Z-60), Flex on desktop */}
+              <div className={cn(
+                "flex-shrink-0 transition-all duration-300",
+                "md:static md:z-auto md:mb-0", // Desktop: Natural flow
+                "fixed bottom-[84px] left-0 right-0 z-[60] px-2 mb-0" // Mobile: Fixed floating above nav
+              )}>
                 <CommandBar
                   status={connectionStatus}
                   isDarkMode={isDarkMode}
