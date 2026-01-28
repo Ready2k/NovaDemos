@@ -1,0 +1,20 @@
+{
+    "name": "voice-s2s-local-tools",
+    "version": "1.0.0",
+    "description": "Local MCP Tool Server",
+    "main": "dist/server.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/server.js",
+        "dev": "ts-node src/server.ts"
+    },
+    "dependencies": {
+        "express": "^4.21.2"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.5",
+        "@types/express": "^5.0.0",
+        "typescript": "^5.7.3",
+        "ts-node": "^10.9.2"
+    }
+}

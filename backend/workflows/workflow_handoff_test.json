@@ -1,0 +1,24 @@
+{
+    "id": "workflow_handoff_test",
+    "name": "Handoff Test Workflow",
+    "nodes": [
+        {
+            "id": "start",
+            "type": "llm",
+            "name": "Initial Triage",
+            "systemPrompt": "You are a triage bot. If the user says 'banking', set the handoff field to 'banking'.",
+            "edges": [
+                "check_handoff"
+            ]
+        },
+        {
+            "id": "check_handoff",
+            "type": "condition",
+            "name": "Check Handoff",
+            "edges": []
+        }
+    ],
+    "testConfig": {
+        "personaId": "persona-triage"
+    }
+}
