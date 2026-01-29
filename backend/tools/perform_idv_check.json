@@ -6,11 +6,11 @@
     "type": "object",
     "properties": {
       "accountNumber": {
-        "description": "8-digit account number.",
+        "description": "8 digit account number.",
         "type": "string"
       },
       "sortCode": {
-        "description": "6-digit sort code.",
+        "description": "6 digit sort code.",
         "type": "string"
       }
     },

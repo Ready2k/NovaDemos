@@ -6,11 +6,11 @@
     "type": "object",
     "properties": {
       "accountId": {
-        "description": "The unique identifier for the customer's bank account (e.g., 10-digit number).",
+        "description": "The unique 8 digit identifier for the customer's bank account.",
         "type": "string"
       },
       "sortCode": {
-        "description": "The 6-digit sort code required alongside the account ID for verification.",
+        "description": "The 6 digit sort code required alongside the account ID for verification.",
         "type": "string"
       }
     },

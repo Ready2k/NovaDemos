@@ -59,14 +59,16 @@ const WORKFLOWS_DIR = path.join(BASE_DIR, 'backend/workflows');
 const TOOLS_DIR = path.join(BASE_DIR, 'backend/tools');
 const HISTORY_DIR = path.join(BASE_DIR, 'backend/history');
 const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
+const PERSONAS_DIR = path.join(BASE_DIR, 'backend/personas');
 console.log('[Gateway] Running in:', isDocker ? 'Docker' : 'Local');
 console.log('[Gateway] BASE_DIR:', BASE_DIR);
 console.log('[Gateway] WORKFLOWS_DIR:', WORKFLOWS_DIR);
 console.log('[Gateway] TOOLS_DIR:', TOOLS_DIR);
 console.log('[Gateway] HISTORY_DIR:', HISTORY_DIR);
 console.log('[Gateway] PROMPTS_DIR:', PROMPTS_DIR);
+console.log('[Gateway] PERSONAS_DIR:', PERSONAS_DIR);
 // Ensure directories exist
-[WORKFLOWS_DIR, TOOLS_DIR, HISTORY_DIR, PROMPTS_DIR].forEach(dir => {
+[WORKFLOWS_DIR, TOOLS_DIR, HISTORY_DIR, PROMPTS_DIR, PERSONAS_DIR].forEach(dir => {
     if (!fs.existsSync(dir))
         fs.mkdirSync(dir, { recursive: true });
 });
@@ -341,6 +343,170 @@ app.get('/api/agents/:id', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+// ===== PERSONA ENDPOINTS =====
+// List all personas
+app.get('/api/personas', (req, res) => {
+    try {
+        const files = fs.readdirSync(PERSONAS_DIR).filter(f => f.endsWith('.json'));
+        const personas = files.map(file => {
+            try {
+                const content = fs.readFileSync(path.join(PERSONAS_DIR, file), 'utf-8');
+                const persona = JSON.parse(content);
+                return {
+                    id: persona.id || file.replace('.json', ''),
+                    name: persona.name || 'Untitled',
+                    description: persona.description || '',
+                    voiceId: persona.voiceId || 'matthew',
+                    workflows: persona.workflows || [],
+                    allowedToolsCount: (persona.allowedTools || []).length,
+                    metadata: persona.metadata || {}
+                };
+            }
+            catch (e) {
+                console.error(`[Gateway] Failed to parse persona ${file}:`, e);
+                return null;
+            }
+        }).filter(p => p !== null);
+        console.log(`[Gateway] Loaded ${personas.length} personas`);
+        res.json(personas);
+    }
+    catch (e) {
+        console.error('[Gateway] Failed to list personas:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+// Get individual persona
+app.get('/api/personas/:id', (req, res) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const filePath = path.join(PERSONAS_DIR, `${id}.json`);
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: `Persona ${id} not found` });
+        }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const persona = JSON.parse(content);
+        // Also load the prompt file if it exists
+        let promptContent = null;
+        if (persona.promptFile) {
+            const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
+            if (fs.existsSync(promptPath)) {
+                promptContent = fs.readFileSync(promptPath, 'utf-8');
+            }
+        }
+        res.json({
+            ...persona,
+            promptContent
+        });
+    }
+    catch (e) {
+        console.error('[Gateway] Failed to get persona:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+// Create new persona
+app.post('/api/personas', (req, res) => {
+    try {
+        const persona = req.body;
+        // Validate required fields
+        if (!persona.id) {
+            return res.status(400).json({ error: 'Persona ID is required' });
+        }
+        const filePath = path.join(PERSONAS_DIR, `${persona.id}.json`);
+        // Check if already exists
+        if (fs.existsSync(filePath)) {
+            return res.status(409).json({ error: 'Persona already exists' });
+        }
+        // Set defaults
+        const personaData = {
+            id: persona.id,
+            name: persona.name || 'Untitled Persona',
+            description: persona.description || '',
+            promptFile: persona.promptFile || null,
+            workflows: persona.workflows || [],
+            allowedTools: persona.allowedTools || [],
+            voiceId: persona.voiceId || 'matthew',
+            metadata: persona.metadata || {
+                language: 'en-US',
+                region: 'UK',
+                tone: 'professional'
+            }
+        };
+        // Write persona config file
+        fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
+        // Create prompt file if content provided
+        if (persona.promptContent && persona.promptFile) {
+            const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
+            fs.writeFileSync(promptPath, persona.promptContent, 'utf-8');
+        }
+        console.log(`[Gateway] Created persona: ${persona.id}`);
+        res.json({ success: true, persona: personaData });
+    }
+    catch (e) {
+        console.error('[Gateway] Failed to create persona:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+// Update persona
+app.put('/api/personas/:id', (req, res) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const updates = req.body;
+        const filePath = path.join(PERSONAS_DIR, `${id}.json`);
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: `Persona ${id} not found` });
+        }
+        // Read existing persona
+        const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        // Merge updates
+        const updated = {
+            ...existing,
+            ...updates,
+            id: existing.id // Don't allow ID changes
+        };
+        // Remove promptContent from persona file (it goes in separate file)
+        const { promptContent, ...personaData } = updated;
+        // Write updated persona config
+        fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
+        // Update prompt file if content provided
+        if (promptContent && personaData.promptFile) {
+            const promptPath = path.join(PROMPTS_DIR, personaData.promptFile);
+            fs.writeFileSync(promptPath, promptContent, 'utf-8');
+        }
+        console.log(`[Gateway] Updated persona: ${id}`);
+        res.json({ success: true, persona: personaData });
+    }
+    catch (e) {
+        console.error('[Gateway] Failed to update persona:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+// Delete persona
+app.delete('/api/personas/:id', (req, res) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const filePath = path.join(PERSONAS_DIR, `${id}.json`);
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: `Persona ${id} not found` });
+        }
+        // Read persona to get prompt file
+        const persona = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        // Delete persona config file
+        fs.unlinkSync(filePath);
+        // Optionally delete prompt file (commented out for safety)
+        // if (persona.promptFile) {
+        //     const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
+        //     if (fs.existsSync(promptPath)) {
+        //         fs.unlinkSync(promptPath);
+        //     }
+        // }
+        console.log(`[Gateway] Deleted persona: ${id}`);
+        res.json({ success: true, message: `Persona ${id} deleted` });
+    }
+    catch (e) {
+        console.error('[Gateway] Failed to delete persona:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
 // System Status endpoint
 app.get('/api/system/status', (req, res) => {
     const awsConnected = !!(process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID);
@@ -431,6 +597,8 @@ wss.on('connection', async (ws) => {
     const sessionId = (0, uuid_1.v4)();
     activeConnections.set(sessionId, ws);
     console.log(`[Gateway] New WebSocket connection: ${sessionId}`);
+    // Store selected workflow for this session
+    let selectedWorkflowId = 'triage'; // Default to triage
     // Send confirmation to frontend immediately
     ws.send(JSON.stringify({
         type: 'connected',
@@ -443,27 +611,16 @@ wss.on('connection', async (ws) => {
         name: 'a2a-session',
         sessionId: sessionId,
         metadata: {
-            initialAgent: 'triage',
+            initialAgent: selectedWorkflowId,
             timestamp: Date.now()
         }
     });
     const traceId = trace.id;
     console.log(`[Gateway] Created Langfuse trace: ${traceId}`);
-    // Create session and route to triage agent
-    const session = await router.createSession(sessionId, 'triage');
-    const triageAgent = await router.routeToAgent(sessionId);
-    if (!triageAgent) {
-        console.error('[Gateway] No triage agent available');
-        ws.send(JSON.stringify({
-            type: 'error',
-            message: 'No agents available. Please try again later.'
-        }));
-        ws.close();
-        return;
-    }
-    // Establish connection to agent
+    // Wait for workflow selection before routing
     let agentWs = null;
-    let currentAgent = triageAgent;
+    let currentAgent = null;
+    let sessionInitialized = false;
     const connectToAgent = async (agent) => {
         if (agentWs) {
             agentWs.removeAllListeners();
@@ -475,34 +632,75 @@ wss.on('connection', async (ws) => {
             agentWs = new ws_1.WebSocket(`${agentUrl}/session`);
             agentWs.on('open', () => {
                 console.log(`[Gateway] Connected to agent: ${agent.id}`);
-                // Send session initialization with trace context
-                agentWs.send(JSON.stringify({
-                    type: 'session_init',
-                    sessionId,
-                    traceId, // Pass trace ID to agent
-                    timestamp: Date.now()
-                }));
+                // Get current session memory to pass to new agent
+                router.getMemory(sessionId).then(memory => {
+                    // Send session initialization with trace context and memory
+                    agentWs.send(JSON.stringify({
+                        type: 'session_init',
+                        sessionId,
+                        traceId, // Pass trace ID to agent
+                        memory: memory || {}, // Pass session memory to agent
+                        timestamp: Date.now()
+                    }));
+                    if (memory && memory.verified) {
+                        console.log(`[Gateway] Passed verified user to agent ${agent.id}: ${memory.userName}`);
+                    }
+                });
             });
             // Handle messages from agent
             agentWs.on('message', async (data) => {
                 try {
                     const message = JSON.parse(data.toString());
                     console.log(`[Gateway] Received from agent ${agent.id}:`, message.type);
+                    // Handle memory updates from agents
+                    if (message.type === 'update_memory') {
+                        console.log(`[Gateway] Updating session memory:`, message.memory);
+                        await router.updateMemory(sessionId, message.memory);
+                        return; // Don't forward to client
+                    }
                     // INTERCEPT Hand-off requests!
                     if (message.type === 'handoff_request') {
                         console.log(`[Gateway] Handoff requested: ${agent.id} -> ${message.targetAgentId}`);
+                        // Get current session memory
+                        const sessionMemory = await router.getMemory(sessionId);
+                        // Update memory with handoff context
+                        if (message.context) {
+                            const updates = {
+                                lastAgent: agent.id
+                            };
+                            // Handle return to triage
+                            if (message.context.isReturn) {
+                                updates.taskCompleted = message.context.taskCompleted;
+                                updates.conversationSummary = message.context.summary;
+                                console.log(`[Gateway] Return handoff - Task: ${updates.taskCompleted}`);
+                            }
+                            else {
+                                // Store user intent from handoff reason
+                                if (message.context.reason) {
+                                    updates.userIntent = message.context.reason;
+                                    console.log(`[Gateway] Storing user intent: ${message.context.reason}`);
+                                }
+                                // Store last user message
+                                if (message.context.lastUserMessage) {
+                                    updates.lastUserMessage = message.context.lastUserMessage;
+                                }
+                            }
+                            await router.updateMemory(sessionId, updates);
+                        }
                         // Tag handoff event in Langfuse
                         trace.event({
                             name: 'a2a-handoff',
                             metadata: {
                                 from: agent.id,
                                 to: message.targetAgentId,
-                                reason: message.reason || 'unknown',
-                                sessionId: sessionId
+                                reason: message.context?.reason || message.context?.summary || 'unknown',
+                                isReturn: message.context?.isReturn || false,
+                                sessionId: sessionId,
+                                sessionMemory: sessionMemory
                             }
                         });
                         // 1. Update session in Redis
-                        await router.transferSession(sessionId, message.targetAgentId);
+                        await router.transferSession(sessionId, message.targetAgentId, message.context);
                         // 2. Resolve new agent
                         const nextAgent = await router.routeToAgent(sessionId);
                         if (nextAgent) {
@@ -546,16 +744,53 @@ wss.on('connection', async (ws) => {
             }));
         }
     };
-    // Connect to initial triage agent
-    await connectToAgent(triageAgent);
     // Forward messages from client to current agent
     ws.on('message', async (data, isBinary) => {
         try {
             const message = JSON.parse(data.toString());
+            // Handle workflow selection
+            if (message.type === 'select_workflow') {
+                console.log(`[Gateway] Workflow selected: ${message.workflowId}`);
+                selectedWorkflowId = message.workflowId || 'triage';
+                // Initialize session with selected workflow
+                if (!sessionInitialized) {
+                    const session = await router.createSession(sessionId, selectedWorkflowId);
+                    const agent = await router.routeToAgent(sessionId);
+                    if (!agent) {
+                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: `No agent available for ${selectedWorkflowId}. Please try again later.`
+                        }));
+                        return;
+                    }
+                    currentAgent = agent;
+                    await connectToAgent(agent);
+                    sessionInitialized = true;
+                }
+                return;
+            }
             // Handle special gateway commands
             if (message.type === 'ping') {
                 ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
                 return;
+            }
+            // Initialize with default workflow if not yet initialized
+            if (!sessionInitialized) {
+                console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
+                const session = await router.createSession(sessionId, selectedWorkflowId);
+                const agent = await router.routeToAgent(sessionId);
+                if (!agent) {
+                    console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'No agents available. Please try again later.'
+                    }));
+                    return;
+                }
+                currentAgent = agent;
+                await connectToAgent(agent);
+                sessionInitialized = true;
             }
             // Forward to current agent
             if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {

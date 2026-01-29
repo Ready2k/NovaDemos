@@ -59,6 +59,9 @@ export interface WorkflowTestConfig {
 }
 
 export interface WorkflowDefinition {
+    id?: string;
+    name?: string;
+    personaId?: string;  // Link to persona configuration
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
     testConfig?: WorkflowTestConfig;

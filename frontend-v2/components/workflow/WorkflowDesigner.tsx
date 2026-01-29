@@ -22,7 +22,7 @@ export default function WorkflowDesigner() {
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
     // Test Config State
-    const [prompts, setPrompts] = useState<{ id: string, name: string, source?: string }[]>([]);
+    const [personas, setPersonas] = useState<{ id: string, name: string }[]>([]);
     const [testConfig, setTestConfig] = useState<{
         personaId: string;
         successCriteria: string;
@@ -58,17 +58,17 @@ export default function WorkflowDesigner() {
     // Initial Load
     useEffect(() => {
         loadWorkflowsList();
-        fetchPrompts();
+        fetchPersonas();
     }, []);
 
-    const fetchPrompts = async () => {
+    const fetchPersonas = async () => {
         try {
-            const res = await fetch('/api/prompts');
+            const res = await fetch('/api/personas');
             if (res.ok) {
-                setPrompts(await res.json());
+                setPersonas(await res.json());
             }
         } catch (e) {
-            console.error("Failed to load prompts", e);
+            console.error("Failed to load personas", e);
         }
     };
 
@@ -454,7 +454,7 @@ export default function WorkflowDesigner() {
                                 {/* 1. Persona Selection */}
                                 <div className="space-y-2">
                                     <label className={cn("text-xs font-bold uppercase tracking-wider", isDarkMode ? "text-gray-400" : "text-gray-600")}>
-                                        Test Persona <span className="text-red-500">*</span>
+                                        Persona Config <span className="text-red-500">*</span>
                                     </label>
                                     <select
                                         value={testConfig.personaId}
@@ -467,15 +467,15 @@ export default function WorkflowDesigner() {
                                         )}
                                     >
                                         <option value="">Select a persona...</option>
-                                        {prompts.map(p => (
+                                        {personas.map(p => (
                                             <option key={p.id} value={p.id}>
-                                                {p.source === 'langfuse' ? '☁️' : '👤'} {p.name || 'Untitled Persona'}
+                                                {p.name}
                                             </option>
                                         ))}
                                     </select>
                                     {testConfig.personaId && (
                                         <p className="text-xs text-violet-500">
-                                            Role: {prompts.find(p => p.id === testConfig.personaId)?.name}
+                                            Persona: {personas.find(p => p.id === testConfig.personaId)?.name}
                                         </p>
                                     )}
                                 </div>

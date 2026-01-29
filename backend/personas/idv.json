@@ -1,0 +1,28 @@
+{
+  "id": "idv",
+  "name": "Identity Verification Specialist",
+  "description": "Identity verification specialist for security checks",
+  "promptFile": "persona-idv.txt",
+  "workflows": [
+    "idv"
+  ],
+  "allowedTools": [
+    "verify_account",
+    "return_to_triage",
+    "transfer_to_banking",
+    "transfer_to_idv",
+    "transfer_to_mortgage",
+    "transfer_to_disputes",
+    "transfer_to_investigation"
+  ],
+  "voiceId": "stephen",
+  "metadata": {
+    "language": "en-US",
+    "region": "UK",
+    "tone": "professional-security",
+    "specializations": [
+      "identity-verification",
+      "security-checks"
+    ]
+  }
+}

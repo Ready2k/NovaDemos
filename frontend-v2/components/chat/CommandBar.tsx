@@ -10,9 +10,21 @@ interface CommandBarProps {
     onSendMessage?: (message: string) => void;
     onToggleRecording?: () => void;
     onToggleConnection?: () => void;
+    selectedWorkflow?: string;
+    availableWorkflows?: Array<{id: string, name: string}>;
+    onWorkflowChange?: (workflowId: string) => void;
 }
 
-export default function CommandBar({ status, isDarkMode = true, onSendMessage, onToggleRecording, onToggleConnection }: CommandBarProps) {
+export default function CommandBar({ 
+    status, 
+    isDarkMode = true, 
+    onSendMessage, 
+    onToggleRecording, 
+    onToggleConnection,
+    selectedWorkflow,
+    availableWorkflows = [],
+    onWorkflowChange
+}: CommandBarProps) {
     const { connectionStatus, settings, isHydrated } = useApp();
     const [message, setMessage] = useState('');
 
@@ -75,6 +87,39 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
 
     return (
         <div className="px-4 md:px-8 py-4 md:py-6 relative z-20">
+            {/* Workflow Selector - Only show when disconnected */}
+            {currentStatus === 'disconnected' && availableWorkflows.length > 0 && (
+                <div className={cn(
+                    "max-w-3xl mx-auto mb-3 p-3 rounded-lg border transition-all duration-300",
+                    isDarkMode
+                        ? "bg-white/5 backdrop-blur-xl border-white/10"
+                        : "bg-white border-gray-200 shadow-sm"
+                )}>
+                    <label className={cn(
+                        "block text-xs font-medium mb-2 transition-colors duration-300",
+                        isDarkMode ? "text-ink-text-muted" : "text-gray-600"
+                    )}>
+                        Select Experience
+                    </label>
+                    <select
+                        value={selectedWorkflow}
+                        onChange={(e) => onWorkflowChange?.(e.target.value)}
+                        className={cn(
+                            "w-full px-3 py-2 rounded-lg border text-sm transition-all duration-300",
+                            isDarkMode
+                                ? "bg-white/5 border-white/10 text-ink-text-primary hover:bg-white/10"
+                                : "bg-gray-50 border-gray-200 text-gray-900 hover:bg-gray-100"
+                        )}
+                    >
+                        {availableWorkflows.map(workflow => (
+                            <option key={workflow.id} value={workflow.id}>
+                                {workflow.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+            
             <div className={cn(
                 "max-w-3xl mx-auto p-2 md:p-4 flex items-center gap-2 md:gap-4 rounded-xl border transition-all duration-300",
                 isDarkMode

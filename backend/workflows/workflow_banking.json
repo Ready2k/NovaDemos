@@ -1,6 +1,7 @@
 {
   "id": "banking",
   "name": "Banking",
+  "personaId": "persona-BankingDisputes",
   "nodes": [
     {
       "id": "start",

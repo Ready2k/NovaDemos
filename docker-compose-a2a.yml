@@ -42,8 +42,16 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
     volumes:
       - ./backend/workflows/workflow_triage.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
     depends_on:
       - redis
       - local-tools
@@ -66,8 +74,16 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
     volumes:
       - ./backend/workflows/workflow_banking-master.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
     depends_on:
       - redis
       - local-tools
@@ -90,8 +106,16 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
     volumes:
       - ./backend/workflows/workflow_persona-mortgage.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
     depends_on:
       - redis
       - local-tools
@@ -114,8 +138,16 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
     volumes:
       - ./backend/workflows/workflow_idv.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
     depends_on:
       - redis
       - local-tools
@@ -138,8 +170,48 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
     volumes:
       - ./backend/workflows/workflow_disputes.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
+    depends_on:
+      - redis
+      - local-tools
+      - gateway
+    networks:
+      - agent-network
+
+  # Investigation Agent (Fraud Investigation)
+  agent-investigation:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile.agent
+    ports:
+      - "8086:8086"
+    environment:
+      - AGENT_ID=investigation
+      - AGENT_PORT=8086
+      - REDIS_URL=redis://redis:6379
+      - GATEWAY_URL=http://gateway:8080
+      - LOCAL_TOOLS_URL=http://local-tools:9000
+      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - WORKFLOW_FILE=/app/workflow.json
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
+    volumes:
+      - ./backend/workflows/workflow_investigation.json:/app/workflow.json:ro
+      - ./backend/personas:/app/backend/personas:ro
+      - ./backend/prompts:/app/backend/prompts:ro
     depends_on:
       - redis
       - local-tools

@@ -1,4 +1,7 @@
 {
+  "id": "mortgage",
+  "name": "Mortgage",
+  "personaId": "persona-mortgage",
   "nodes": [
     {
       "id": "start",
@@ -161,8 +164,6 @@
     "saveReport": true,
     "maxTurns": 20
   },
-  "id": "persona-mortgage",
-  "name": "Persona Mortgage",
   "voiceId": "amy",
   "metadata": {
     "persona": "mortgage-advisor",

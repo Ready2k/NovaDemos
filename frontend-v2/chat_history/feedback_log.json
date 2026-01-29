@@ -40,5 +40,201 @@
     "score": 0,
     "name": "user-feedback",
     "timestamp": "2026-01-29T19:34:19.489Z"
+  },
+  {
+    "sessionId": "56410847-f657-49fc-b7cc-1b9928d152ce",
+    "traceId": "56410847-f657-49fc-b7cc-1b9928d152ce",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T20:17:19.093Z"
+  },
+  {
+    "sessionId": "ff77ca00-d0de-4c6e-bcb6-1ebdc9912dab",
+    "traceId": "ff77ca00-d0de-4c6e-bcb6-1ebdc9912dab",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T20:26:28.406Z"
+  },
+  {
+    "sessionId": "aeda6bba-8819-4af9-b32d-bac55a6a4108",
+    "traceId": "aeda6bba-8819-4af9-b32d-bac55a6a4108",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T20:33:08.608Z"
+  },
+  {
+    "sessionId": "2a72b92a-b53a-4e5d-b2f0-52cd79710837",
+    "traceId": "2a72b92a-b53a-4e5d-b2f0-52cd79710837",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T20:34:02.300Z"
+  },
+  {
+    "sessionId": "9244f461-c635-41e1-9f09-b74e81f4e26b",
+    "traceId": "9244f461-c635-41e1-9f09-b74e81f4e26b",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T20:55:34.161Z"
+  },
+  {
+    "sessionId": "7d54dcf6-6350-4fae-bca9-9300c98e0393",
+    "traceId": "7d54dcf6-6350-4fae-bca9-9300c98e0393",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:02:52.380Z"
+  },
+  {
+    "sessionId": "8460c230-1237-428b-81b2-d3048881bd9d",
+    "traceId": "8460c230-1237-428b-81b2-d3048881bd9d",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:06:28.194Z"
+  },
+  {
+    "sessionId": "7f305512-e9c9-451c-b8d4-0d1f671d6d93",
+    "traceId": "7f305512-e9c9-451c-b8d4-0d1f671d6d93",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:11:40.661Z"
+  },
+  {
+    "sessionId": "65b50522-b204-4825-ba36-a4d4e326b4e8",
+    "traceId": "65b50522-b204-4825-ba36-a4d4e326b4e8",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:13:47.763Z"
+  },
+  {
+    "sessionId": "bd3999a5-9a44-49a7-9063-fc6d8b4305e6",
+    "traceId": "bd3999a5-9a44-49a7-9063-fc6d8b4305e6",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:14:51.326Z"
+  },
+  {
+    "sessionId": "184ae929-e64e-4ebb-9d61-46796d1e62a7",
+    "traceId": "184ae929-e64e-4ebb-9d61-46796d1e62a7",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:24:21.561Z"
+  },
+  {
+    "sessionId": "edd16f3f-be3c-4fe8-bdb2-3333877dacd9",
+    "traceId": "edd16f3f-be3c-4fe8-bdb2-3333877dacd9",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:29:20.226Z"
+  },
+  {
+    "sessionId": "78d772dc-c34b-4663-982b-fdbeb1b40d66",
+    "traceId": "78d772dc-c34b-4663-982b-fdbeb1b40d66",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:37:57.461Z"
+  },
+  {
+    "sessionId": "4e5fc55d-a9a9-4021-b870-81d5ef078f45",
+    "traceId": "4e5fc55d-a9a9-4021-b870-81d5ef078f45",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:44:23.601Z"
+  },
+  {
+    "sessionId": "75777aa8-ae78-4ad7-8752-97a1b6217493",
+    "traceId": "75777aa8-ae78-4ad7-8752-97a1b6217493",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:49:57.816Z"
+  },
+  {
+    "sessionId": "0050ae3e-7348-4298-b816-f85df234fa79",
+    "traceId": "0050ae3e-7348-4298-b816-f85df234fa79",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:53:40.494Z"
+  },
+  {
+    "sessionId": "ae74b58b-d3f1-4ebe-84f5-2d519771453c",
+    "traceId": "ae74b58b-d3f1-4ebe-84f5-2d519771453c",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T21:59:44.248Z"
+  },
+  {
+    "sessionId": "3445e072-2938-4679-b146-086acf8fb6e9",
+    "traceId": "3445e072-2938-4679-b146-086acf8fb6e9",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:02:49.801Z"
+  },
+  {
+    "sessionId": "a03d48f1-67bc-4730-94e9-95e688cf36db",
+    "traceId": "a03d48f1-67bc-4730-94e9-95e688cf36db",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:07:44.533Z"
+  },
+  {
+    "sessionId": "8931238d-cd91-4ae9-b152-fa685cf61150",
+    "traceId": "8931238d-cd91-4ae9-b152-fa685cf61150",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:13:07.121Z"
+  },
+  {
+    "sessionId": "50ea96fd-784d-4c4c-b865-8c4fd6494238",
+    "traceId": "50ea96fd-784d-4c4c-b865-8c4fd6494238",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:18:28.843Z"
+  },
+  {
+    "sessionId": "8389cfcc-521f-4474-aff8-abf40e7633dc",
+    "traceId": "8389cfcc-521f-4474-aff8-abf40e7633dc",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:24:48.126Z"
+  },
+  {
+    "sessionId": "9647f778-1d7e-4018-b0e9-3c6288ba6185",
+    "traceId": "9647f778-1d7e-4018-b0e9-3c6288ba6185",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:36:59.644Z"
+  },
+  {
+    "sessionId": "c694cd8c-0b06-475b-951d-4dac88a253ed",
+    "traceId": "c694cd8c-0b06-475b-951d-4dac88a253ed",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:38:55.946Z"
+  },
+  {
+    "sessionId": "ada7eab6-85c0-44fa-b35b-02c2232c19f7",
+    "traceId": "ada7eab6-85c0-44fa-b35b-02c2232c19f7",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:47:40.322Z"
+  },
+  {
+    "sessionId": "b036b24c-34de-4d6f-a67c-402ceccb5b1a",
+    "traceId": "b036b24c-34de-4d6f-a67c-402ceccb5b1a",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T22:53:02.270Z"
+  },
+  {
+    "sessionId": "e9d54587-7a8c-4d7e-8ccf-bb9b330f884c",
+    "traceId": "e9d54587-7a8c-4d7e-8ccf-bb9b330f884c",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T23:02:17.885Z"
+  },
+  {
+    "sessionId": "267f0cc6-12fd-4eee-b017-28262633a631",
+    "traceId": "267f0cc6-12fd-4eee-b017-28262633a631",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T23:05:20.069Z"
   }
 ]

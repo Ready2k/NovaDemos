@@ -1,215 +1,60 @@
 {
-  "title": "Identity & Verification (Iron Gate)",
+  "id": "idv",
+  "name": "Identity Verification",
+  "personaId": "idv",
+  "voiceId": "stephen",
+  "metadata": {
+    "persona": "security-focused",
+    "language": "en-US",
+    "description": "Identity verification and security checks"
+  },
   "nodes": [
     {
       "id": "idv_start",
-      "label": "Start ID&V Security Protocol",
+      "label": "Start Identity Verification",
       "type": "start"
     },
     {
-      "id": "check_intent",
-      "label": "Is this a GENERAL QUERY (public info, e.g. rates, hours) or an ACCOUNT SPECIFIC query?",
-      "type": "decision"
-    },
-    {
-      "id": "answer_public",
-      "label": "Answer using Knowledge Base / Tools. DO NOT ask for ID.",
+      "id": "verify_identity",
+      "label": "Verify customer identity through security questions",
       "type": "process"
     },
     {
-      "id": "end_public",
-      "label": "General Query Resolved (Bypass ID&V)",
-      "type": "end",
-      "outcome": "GENERAL_QUERY"
-    },
-    {
-      "id": "check_auth_status",
-      "label": "Check Memory: Is 'auth_status' already 'VERIFIED'?",
+      "id": "check_verification",
+      "label": "Check: Identity verified successfully?",
       "type": "decision"
     },
     {
-      "id": "already_verified",
-      "label": "User is already verified. Return to Main Flow.",
+      "id": "verification_success",
+      "label": "Identity verified - proceed with request",
       "type": "end",
       "outcome": "VERIFIED"
     },
     {
-      "id": "analyze_input",
-      "label": "CRITICAL GUARDRAIL: Extract EXACT digits from user speech. NEVER pad, invent, or add digits. Check: (1) If BOTH valid 8-digit Account Number AND 6-digit Sort Code present → perform_idv. (2) If ONLY valid 8-digit Account Number present → ask_sortcode_only. (3) If ONLY valid 6-digit Sort Code present → ask_account_only. (4) If NEITHER or INVALID lengths → ask_details. NEVER call perform_idv unless you have EXACTLY 8 digits for account AND EXACTLY 6 digits for sort code.",
-      "type": "decision",
-      "required_context": [
-        "accountNumber",
-        "sortCode"
-      ]
-    },
-    {
-      "id": "handle_typo",
-      "label": "I heard 9 digits (Account) or 7 digits (Sort). Ask user to repeat digit-by-digit.",
-      "type": "process"
-    },
-    {
-      "id": "end_typo",
-      "label": "Waiting for correction...",
+      "id": "verification_failed",
+      "label": "Verification failed - escalate to security",
       "type": "end",
-      "outcome": "WAITING_FOR_INPUT"
-    },
-    {
-      "id": "ask_sortcode_only",
-      "label": "User provided valid 8-digit Account Number. Say: 'Thank you. Now I just need your 6-digit Sort Code to complete verification.'",
-      "type": "process"
-    },
-    {
-      "id": "end_ask_sortcode",
-      "label": "Waiting for sort code...",
-      "type": "end",
-      "outcome": "WAITING_FOR_SORTCODE"
-    },
-    {
-      "id": "ask_account_only",
-      "label": "User provided valid 6-digit Sort Code. Say: 'Thank you. Now I just need your 8-digit Account Number to complete verification.'",
-      "type": "process"
-    },
-    {
-      "id": "end_ask_account",
-      "label": "Waiting for account number...",
-      "type": "end",
-      "outcome": "WAITING_FOR_ACCOUNT"
-    },
-    {
-      "id": "ask_details",
-      "label": "Say: 'For security, I need to verify your identity. Please provide your Account Number and Sort Code.'",
-      "type": "process"
-    },
-    {
-      "id": "end_ask",
-      "label": "Waiting for details...",
-      "type": "end",
-      "outcome": "WAITING_FOR_INPUT"
-    },
-    {
-      "id": "perform_idv",
-      "label": "Call 'perform_idv_check' with detected details.",
-      "type": "tool",
-      "toolName": "perform_idv_check"
-    },
-    {
-      "id": "check_result",
-      "label": "Did 'perform_idv_check' return account_status='OPEN'?",
-      "type": "decision"
-    },
-    {
-      "id": "idv_success",
-      "label": "Verification Successful. Proceed to fulfill request.",
-      "type": "end",
-      "outcome": "SUCCESS"
-    },
-    {
-      "id": "idv_fail",
-      "label": "Inform user verification failed.",
-      "type": "process"
-    },
-    {
-      "id": "end_fail",
-      "label": "Verification Failed",
-      "type": "end",
-      "outcome": "FAILURE"
+      "outcome": "FAILED"
     }
   ],
   "edges": [
     {
       "from": "idv_start",
-      "to": "check_intent"
+      "to": "verify_identity"
     },
     {
-      "from": "check_intent",
-      "to": "answer_public",
-      "label": "General Query"
+      "from": "verify_identity",
+      "to": "check_verification"
     },
     {
-      "from": "answer_public",
-      "to": "end_public"
+      "from": "check_verification",
+      "to": "verification_success",
+      "label": "Yes"
     },
     {
-      "from": "check_intent",
-      "to": "check_auth_status",
-      "label": "Account Specific"
-    },
-    {
-      "from": "check_auth_status",
-      "to": "already_verified",
-      "label": "Yes (Verified)"
-    },
-    {
-      "from": "check_auth_status",
-      "to": "analyze_input",
-      "label": "No (Unverified)"
-    },
-    {
-      "from": "analyze_input",
-      "to": "perform_idv",
-      "label": "Both Valid (8 + 6 digits)"
-    },
-    {
-      "from": "analyze_input",
-      "to": "ask_sortcode_only",
-      "label": "Only Account (8 digits)"
-    },
-    {
-      "from": "analyze_input",
-      "to": "ask_account_only",
-      "label": "Only Sort Code (6 digits)"
-    },
-    {
-      "from": "analyze_input",
-      "to": "ask_details",
-      "label": "Missing Both or Invalid"
-    },
-    {
-      "from": "analyze_input",
-      "to": "handle_typo",
-      "label": "Typo (9 or 7 digits)"
-    },
-    {
-      "from": "handle_typo",
-      "to": "end_typo"
-    },
-    {
-      "from": "ask_sortcode_only",
-      "to": "end_ask_sortcode"
-    },
-    {
-      "from": "ask_account_only",
-      "to": "end_ask_account"
-    },
-    {
-      "from": "ask_details",
-      "to": "end_ask"
-    },
-    {
-      "from": "perform_idv",
-      "to": "check_result"
-    },
-    {
-      "from": "check_result",
-      "to": "idv_success",
-      "label": "OPEN"
-    },
-    {
-      "from": "check_result",
-      "to": "idv_fail",
-      "label": "CLOSED/FROZEN"
-    },
-    {
-      "from": "idv_fail",
-      "to": "end_fail"
+      "from": "check_verification",
+      "to": "verification_failed",
+      "label": "No"
     }
-  ],
-  "id": "idv",
-  "name": "Idv",
-  "voiceId": "matthew",
-  "metadata": {
-    "persona": "security-verification",
-    "language": "en-US",
-    "description": "Idv"
-  }
+  ]
 }

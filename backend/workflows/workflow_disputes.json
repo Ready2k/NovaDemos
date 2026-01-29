@@ -1,4 +1,7 @@
 {
+  "id": "disputes",
+  "name": "Disputes",
+  "personaId": "persona-BankingDisputes",
   "title": "Managing Disputes",
   "nodes": [
     {

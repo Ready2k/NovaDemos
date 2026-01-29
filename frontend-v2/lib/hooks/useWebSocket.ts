@@ -8,6 +8,7 @@ interface UseWebSocketOptions {
     autoConnect?: boolean;
     reconnectInterval?: number;
     maxReconnectAttempts?: number;
+    workflowId?: string; // Add workflow selection
     onOpen?: () => void;
     onClose?: () => void;
     onError?: (error: Event) => void;
@@ -31,6 +32,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         autoConnect = false,
         reconnectInterval = 3000,
         maxReconnectAttempts = 5,
+        workflowId,
         onOpen,
         onClose,
         onError,
@@ -121,6 +123,16 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
                 console.log('[WebSocket] Connected');
                 setStatus('connected');
                 reconnectAttemptsRef.current = 0;
+                
+                // Send workflow selection if provided
+                if (workflowId) {
+                    console.log('[WebSocket] Sending workflow selection:', workflowId);
+                    ws.send(JSON.stringify({
+                        type: 'select_workflow',
+                        workflowId: workflowId
+                    }));
+                }
+                
                 onOpenRef.current?.();
             };
 

@@ -48,6 +48,10 @@ export default function Home() {
   const [showSurvey, setShowSurvey] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [finishedSessionId, setFinishedSessionId] = useState<string | null>(null);
+  
+  // Workflow selection state
+  const [selectedWorkflow, setSelectedWorkflow] = useState('triage');
+  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{id: string, name: string}>>([]);
 
   // Test Report State
   const [showTestReport, setShowTestReport] = useState(false);
@@ -339,6 +343,7 @@ export default function Home() {
   } = useWebSocket({
     url: getWebSocketUrl(),
     autoConnect: false, // Manual connect to avoid Strict Mode issues
+    workflowId: selectedWorkflow, // Pass selected workflow
     onOpen: () => {
       console.log('[WebSocket] Connected to server, waiting for confirmation...');
       setConnectionStatus('connecting');
@@ -558,6 +563,25 @@ export default function Home() {
     }
   }, [connectionStatus, connect, disconnect, hasInteracted, currentSession]);
 
+  // Load available workflows on mount
+  useEffect(() => {
+    const loadWorkflows = async () => {
+      try {
+        const response = await fetch('/api/personas');
+        if (response.ok) {
+          const personas = await response.json();
+          setAvailableWorkflows(personas.map((p: any) => ({
+            id: p.id,
+            name: p.name
+          })));
+        }
+      } catch (error) {
+        console.error('[App] Failed to load workflows:', error);
+      }
+    };
+    loadWorkflows();
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -650,6 +674,9 @@ export default function Home() {
                     onSendMessage={handleSendMessage}
                     onToggleRecording={handleToggleRecording}
                     onToggleConnection={handleConnectionToggle}
+                    selectedWorkflow={selectedWorkflow}
+                    availableWorkflows={availableWorkflows}
+                    onWorkflowChange={setSelectedWorkflow}
                   />
                 </div>
               </div>

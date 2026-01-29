@@ -10,6 +10,29 @@ export interface SessionInfo {
     context: Record<string, any>;
 }
 
+export interface SessionMemory {
+    // User Identity
+    verified: boolean;
+    userName?: string;
+    account?: string;
+    sortCode?: string;
+    
+    // Financial Data
+    balance?: number;
+    currency?: string;
+    lastTransactions?: any[];
+    
+    // Journey State
+    lastAgent: string;
+    taskCompleted?: string;
+    conversationSummary?: string;
+    userIntent?: string;  // Original user request (e.g., "User needs balance check")
+    lastUserMessage?: string;
+    
+    // Custom context
+    [key: string]: any;
+}
+
 export class SessionRouter {
     private redis: RedisClientType;
     private registry: AgentRegistry;
@@ -32,7 +55,11 @@ export class SessionRouter {
             currentAgent: initialAgent,
             startTime: Date.now(),
             lastActivity: Date.now(),
-            context: {}
+            context: {
+                // Initialize session memory
+                verified: false,
+                lastAgent: initialAgent
+            }
         };
 
         await this.saveSession(session);
@@ -101,6 +128,23 @@ export class SessionRouter {
     async deleteSession(sessionId: string): Promise<void> {
         await this.redis.del(`${this.SESSION_PREFIX}${sessionId}`);
         console.log(`[SessionRouter] Deleted session ${sessionId}`);
+    }
+
+    // Memory Management Methods
+    async updateMemory(sessionId: string, memory: Partial<SessionMemory>): Promise<boolean> {
+        const session = await this.getSession(sessionId);
+        if (!session) return false;
+
+        session.context = { ...session.context, ...memory };
+        await this.saveSession(session);
+        console.log(`[SessionRouter] Updated memory for ${sessionId}:`, Object.keys(memory));
+        return true;
+    }
+
+    async getMemory(sessionId: string): Promise<SessionMemory | null> {
+        const session = await this.getSession(sessionId);
+        if (!session) return null;
+        return session.context as SessionMemory;
     }
 
     async close() {

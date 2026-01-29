@@ -40,12 +40,16 @@ const express_1 = __importDefault(require("express"));
 const ws_1 = require("ws");
 const http_1 = require("http");
 const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const axios_1 = __importDefault(require("axios"));
 const graph_executor_1 = require("./graph-executor");
 const tools_client_1 = require("./tools-client");
 const sonic_client_1 = require("./sonic-client");
 const workflow_utils_1 = require("./workflow-utils");
 const decision_evaluator_1 = require("./decision-evaluator");
+const persona_loader_1 = require("./persona-loader");
+const handoff_tools_1 = require("./handoff-tools");
+const banking_tools_1 = require("./banking-tools");
 // Environment configuration
 const AGENT_ID = process.env.AGENT_ID || 'unknown';
 const AGENT_PORT = parseInt(process.env.AGENT_PORT || '8081');
@@ -59,16 +63,51 @@ const WORKFLOW_FILE = process.env.WORKFLOW_FILE || '/app/workflow.json';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+// Determine base directories (Docker vs local)
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+const PERSONAS_DIR = path.join(BASE_DIR, 'backend/personas');
+const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
+// Initialize persona loader
+const personaLoader = new persona_loader_1.PersonaLoader(PERSONAS_DIR, PROMPTS_DIR);
+console.log(`[Agent:${AGENT_ID}] PersonaLoader initialized`);
+console.log(`[Agent:${AGENT_ID}] Personas dir: ${PERSONAS_DIR}`);
+console.log(`[Agent:${AGENT_ID}] Prompts dir: ${PROMPTS_DIR}`);
 // Initialize tools client
 const toolsClient = new tools_client_1.ToolsClient(LOCAL_TOOLS_URL, AGENTCORE_URL);
 // Initialize decision evaluator
 const decisionEvaluator = new decision_evaluator_1.DecisionEvaluator(AWS_REGION);
 // Load workflow definition
 let workflowDef = null;
+let personaConfig = null;
+let personaPrompt = '';
 try {
     if (fs.existsSync(WORKFLOW_FILE)) {
         workflowDef = JSON.parse(fs.readFileSync(WORKFLOW_FILE, 'utf-8'));
         console.log(`[Agent:${AGENT_ID}] Loaded workflow from ${WORKFLOW_FILE}`);
+        // Load persona configuration if specified
+        if (workflowDef && workflowDef.personaId) {
+            console.log(`[Agent:${AGENT_ID}] Loading persona: ${workflowDef.personaId}`);
+            const personaResult = personaLoader.loadPersona(workflowDef.personaId);
+            if (personaResult.success && personaResult.persona) {
+                personaConfig = personaResult.persona;
+                personaPrompt = personaResult.systemPrompt || '';
+                console.log(`[Agent:${AGENT_ID}] ✅ Persona loaded: ${personaConfig.name}`);
+                console.log(`[Agent:${AGENT_ID}]    Voice: ${personaConfig.voiceId}`);
+                console.log(`[Agent:${AGENT_ID}]    Allowed tools: ${personaConfig.allowedTools.length}`);
+                console.log(`[Agent:${AGENT_ID}]    Prompt length: ${personaPrompt.length} chars`);
+                // Override workflow voice with persona voice if not set
+                if (!workflowDef.voiceId && personaConfig.voiceId) {
+                    workflowDef.voiceId = personaConfig.voiceId;
+                }
+            }
+            else {
+                console.warn(`[Agent:${AGENT_ID}] ⚠️  Failed to load persona: ${personaResult.error}`);
+            }
+        }
+        else {
+            console.warn(`[Agent:${AGENT_ID}] ⚠️  No personaId specified in workflow`);
+        }
     }
     else {
         console.error(`[Agent:${AGENT_ID}] Workflow file not found: ${WORKFLOW_FILE}`);
@@ -131,17 +170,116 @@ wss.on('connection', (ws) => {
                     // Convert workflow to text instructions and inject into system prompt
                     let systemPrompt = '';
                     if (workflowDef) {
-                        systemPrompt = (0, workflow_utils_1.convertWorkflowToText)(workflowDef);
-                        console.log(`[Agent:${AGENT_ID}] Injected workflow context (${systemPrompt.length} chars)`);
-                        // Update session config with workflow instructions and voice
-                        sonicClient.updateSessionConfig({
+                        const workflowInstructions = (0, workflow_utils_1.convertWorkflowToText)(workflowDef);
+                        // Add handoff instructions for triage agent
+                        const handoffInstructions = AGENT_ID === 'triage' ? `
+
+### AGENT HANDOFF INSTRUCTIONS ###
+
+You are a ROUTING agent. Your ONLY job is to route users to the correct specialist agent BY CALLING THE APPROPRIATE TOOL.
+
+**CRITICAL: YOU MUST CALL A TOOL - DO NOT JUST SAY YOU WILL CONNECT THEM**
+
+**ROUTING RULES:**
+- User needs BALANCE, TRANSACTIONS, PAYMENTS → **CALL THE TOOL** 'transfer_to_banking' with reason="User needs banking services"
+- User needs IDENTITY VERIFICATION, SECURITY CHECKS → **CALL THE TOOL** 'transfer_to_idv' with reason="User needs identity verification"
+- User needs MORTGAGE information → **CALL THE TOOL** 'transfer_to_mortgage' with reason="User wants mortgage information"
+- User wants to DISPUTE a transaction → **CALL THE TOOL** 'transfer_to_disputes' with reason="User wants to dispute transaction"
+- User reports FRAUD or UNRECOGNIZED TRANSACTIONS → **CALL THE TOOL** 'transfer_to_investigation' with reason="User reports suspicious activity"
+
+**CRITICAL PROCESS:**
+1. User states their need
+2. You say ONE brief sentence acknowledging
+3. **YOU MUST IMMEDIATELY CALL THE APPROPRIATE TRANSFER TOOL**
+4. Do NOT continue talking - the tool call will handle the transfer
+
+**DO NOT:**
+- Just SAY you will connect them without calling the tool
+- Try to help with their actual problem
+- Ask for account details
+- Engage in extended conversation
+
+**YOU MUST:**
+- Call the appropriate transfer_to_* tool
+- Include a reason parameter
+- Do this IMMEDIATELY after identifying their need
+
+**Example:**
+User: "I need to check my balance"
+You: "I'll connect you to our banking specialist right away."
+**[YOU MUST NOW CALL THE TOOL: transfer_to_banking with reason="User needs balance check"]**
+
+**REMEMBER: Saying you will connect them is NOT enough - you MUST CALL THE TOOL!**
+
+` : '';
+                        // Add context injection if we have session memory (userIntent or verified user)
+                        let contextInjection = '';
+                        if (message.memory && (message.memory.userIntent || message.memory.verified) && AGENT_ID !== 'triage') {
+                            contextInjection = `
+
+### CURRENT SESSION CONTEXT ###
+`;
+                            if (message.memory.userIntent) {
+                                contextInjection += `
+**User's Original Request:** ${message.memory.userIntent}
+`;
+                            }
+                            if (message.memory.verified) {
+                                contextInjection += `
+**Customer Name:** ${message.memory.userName}
+**Account Number:** ${message.memory.account}
+**Sort Code:** ${message.memory.sortCode}
+**Verification Status:** VERIFIED
+`;
+                            }
+                            contextInjection += `
+**CRITICAL INSTRUCTION:** 
+- The customer is already verified and you have their details above
+- If the "User's Original Request" mentions what they want (balance, transactions, etc.), ACT ON IT IMMEDIATELY
+- Greet them by name and help them with their request
+- DO NOT ask "How can I help you?" if you already know what they want
+- Be proactive and efficient
+
+`;
+                            console.log(`[Agent:${AGENT_ID}] Injecting session context into system prompt`);
+                            if (message.memory.userIntent) {
+                                console.log(`[Agent:${AGENT_ID}]   - User Intent: ${message.memory.userIntent}`);
+                            }
+                            if (message.memory.verified) {
+                                console.log(`[Agent:${AGENT_ID}]   - Verified User: ${message.memory.userName}`);
+                            }
+                        }
+                        // Combine context + persona prompt + handoff + workflow
+                        // CRITICAL: Context must come FIRST so persona prompt can reference it
+                        if (personaPrompt) {
+                            systemPrompt = `${contextInjection}${personaPrompt}${handoffInstructions}\n\n### WORKFLOW INSTRUCTIONS ###\n${workflowInstructions}`;
+                            console.log(`[Agent:${AGENT_ID}] Combined context (${contextInjection.length} chars) + persona prompt (${personaPrompt.length} chars) + handoff (${handoffInstructions.length} chars) + workflow (${workflowInstructions.length} chars)`);
+                        }
+                        else {
+                            systemPrompt = `${contextInjection}${handoffInstructions}\n\n${workflowInstructions}`;
+                            console.log(`[Agent:${AGENT_ID}] Using context + handoff + workflow instructions (${contextInjection.length + handoffInstructions.length + workflowInstructions.length} chars)`);
+                        }
+                        // Generate handoff tools (available to all agents)
+                        const handoffTools = (0, handoff_tools_1.generateHandoffTools)();
+                        console.log(`[Agent:${AGENT_ID}] Generated ${handoffTools.length} handoff tools`);
+                        // Generate banking tools (for banking-related agents)
+                        const bankingTools = (0, banking_tools_1.generateBankingTools)();
+                        console.log(`[Agent:${AGENT_ID}] Generated ${bankingTools.length} banking tools`);
+                        // Combine all tools
+                        const allTools = [...handoffTools, ...bankingTools];
+                        // Configure session with workflow instructions, voice, and tools
+                        sonicClient.setConfig({
                             systemPrompt,
-                            voiceId: workflowDef.voiceId || 'Matthew'
+                            voiceId: workflowDef.voiceId || 'matthew',
+                            tools: allTools
                         });
-                        console.log(`[Agent:${AGENT_ID}] Voice configured: ${workflowDef.voiceId || 'Matthew'}`);
+                        console.log(`[Agent:${AGENT_ID}] Voice configured: ${workflowDef.voiceId || 'matthew'}`);
+                        console.log(`[Agent:${AGENT_ID}] Total tools configured: ${allTools.length}`);
+                        console.log(`[Agent:${AGENT_ID}] Handoff tools: ${handoffTools.map(t => t.toolSpec.name).join(', ')}`);
+                        console.log(`[Agent:${AGENT_ID}] Banking tools: ${bankingTools.map(t => t.toolSpec.name).join(', ')}`);
                     }
                     // Store session BEFORE starting Nova (so it's available for incoming messages)
-                    activeSessions.set(sessionId, {
+                    const newSession = {
                         sessionId,
                         ws,
                         sonicClient,
@@ -149,7 +287,23 @@ wss.on('connection', (ws) => {
                         startTime: Date.now(),
                         messages: [],
                         currentNode: workflowDef?.nodes?.find((n) => n.type === 'start')?.id
-                    });
+                    };
+                    // Restore verified user from session memory if available
+                    if (message.memory && message.memory.verified) {
+                        newSession.verifiedUser = {
+                            customer_name: message.memory.userName,
+                            account: message.memory.account,
+                            sortCode: message.memory.sortCode,
+                            auth_status: 'VERIFIED'
+                        };
+                        console.log(`[Agent:${AGENT_ID}] ✅ Restored verified user from memory: ${message.memory.userName}`);
+                    }
+                    // Store userIntent in session so it can be passed through handoffs
+                    if (message.memory && message.memory.userIntent) {
+                        newSession.userIntent = message.memory.userIntent;
+                        console.log(`[Agent:${AGENT_ID}] ✅ Stored userIntent in session: ${message.memory.userIntent}`);
+                    }
+                    activeSessions.set(sessionId, newSession);
                     // Send acknowledgment BEFORE starting Nova (to avoid race condition)
                     console.log(`[Agent:${AGENT_ID}] Sending 'connected' message to gateway`);
                     ws.send(JSON.stringify({
@@ -163,6 +317,19 @@ wss.on('connection', (ws) => {
                     // Start Nova Sonic S2S session
                     await sonicClient.startSession((event) => handleSonicEvent(event, sessionId, ws), sessionId);
                     console.log(`[Agent:${AGENT_ID}] Nova Sonic S2S session started for ${sessionId}`);
+                    // DON'T inject context as a message - Nova Sonic will speak it!
+                    // Context is already in the system prompt via contextInjection
+                    // Just log that we have context available
+                    if (message.memory && (message.memory.userIntent || message.memory.verified)) {
+                        console.log(`[Agent:${AGENT_ID}] Session context available:`);
+                        if (message.memory.userIntent) {
+                            console.log(`[Agent:${AGENT_ID}]   - User Intent: ${message.memory.userIntent}`);
+                        }
+                        if (message.memory.verified) {
+                            console.log(`[Agent:${AGENT_ID}]   - Verified User: ${message.memory.userName}`);
+                            console.log(`[Agent:${AGENT_ID}]   - Account: ${message.memory.account}`);
+                        }
+                    }
                     return;
                 }
                 // Handle text input (for testing)
@@ -401,13 +568,160 @@ async function handleSonicEvent(event, sessionId, ws) {
                 }
                 break;
             case 'toolUse':
-                // Log tool usage (Nova Sonic handles the actual execution)
-                console.log(`[Agent:${AGENT_ID}] Tool called: ${event.data.toolName || event.data.name}`);
-                // Forward to client for debugging
+                // Intercept handoff tool calls
+                const toolName = event.data.toolName || event.data.name;
+                console.log(`[Agent:${AGENT_ID}] Tool called: ${toolName}`);
+                // Check if this is a handoff tool
+                if ((0, handoff_tools_1.isHandoffTool)(toolName)) {
+                    const targetAgent = (0, handoff_tools_1.getTargetAgentFromTool)(toolName);
+                    if (targetAgent) {
+                        const targetPersonaId = (0, handoff_tools_1.getPersonaIdForAgent)(targetAgent);
+                        console.log(`[Agent:${AGENT_ID}] 🔄 HANDOFF TRIGGERED: ${AGENT_ID} → ${targetAgent} (${targetPersonaId})`);
+                        // Extract handoff context from tool input
+                        // Nova Sonic sends tool input in event.data.content as JSON string
+                        let toolInput = {};
+                        if (event.data.content) {
+                            try {
+                                toolInput = JSON.parse(event.data.content);
+                                console.log(`[Agent:${AGENT_ID}] Parsed tool input from content:`, toolInput);
+                            }
+                            catch (e) {
+                                console.error(`[Agent:${AGENT_ID}] Failed to parse tool content:`, e);
+                            }
+                        }
+                        else if (event.data.input) {
+                            toolInput = event.data.input;
+                            console.log(`[Agent:${AGENT_ID}] Using tool input directly:`, toolInput);
+                        }
+                        // Build handoff context
+                        const handoffContext = {
+                            fromAgent: AGENT_ID,
+                            lastUserMessage: toolInput.context || ''
+                        };
+                        // Handle return_to_triage specially
+                        if (toolName === 'return_to_triage') {
+                            handoffContext.taskCompleted = toolInput.taskCompleted || 'task_complete';
+                            handoffContext.summary = toolInput.summary || 'Task completed successfully';
+                            handoffContext.isReturn = true;
+                            console.log(`[Agent:${AGENT_ID}] Returning to Triage - Task: ${handoffContext.taskCompleted}`);
+                            console.log(`[Agent:${AGENT_ID}] Summary: ${handoffContext.summary}`);
+                        }
+                        else {
+                            // Use reason from tool input, or fall back to stored userIntent from session
+                            handoffContext.reason = toolInput.reason || toolInput.context || 'User needs specialist assistance';
+                            // If we have stored userIntent in session, pass it along
+                            if (!toolInput.reason && session.userIntent) {
+                                handoffContext.reason = session.userIntent;
+                                console.log(`[Agent:${AGENT_ID}] Using stored userIntent for handoff: ${session.userIntent}`);
+                            }
+                            console.log(`[Agent:${AGENT_ID}] Handoff reason: ${handoffContext.reason}`);
+                        }
+                        // CRITICAL: Include verified user data from session memory
+                        // This ensures Banking agent receives customer name and account details
+                        if (session.verifiedUser) {
+                            handoffContext.verified = true;
+                            handoffContext.userName = session.verifiedUser.customer_name;
+                            handoffContext.account = session.verifiedUser.account;
+                            handoffContext.sortCode = session.verifiedUser.sortCode;
+                            console.log(`[Agent:${AGENT_ID}] Including verified user in handoff: ${handoffContext.userName}`);
+                        }
+                        // Send handoff request to gateway
+                        if (ws.readyState === ws_1.WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'handoff_request',
+                                targetAgentId: targetPersonaId,
+                                context: handoffContext
+                            }));
+                            console.log(`[Agent:${AGENT_ID}] Handoff request sent to gateway`);
+                        }
+                        // Return success to Nova Sonic (tool executed successfully)
+                        // Nova Sonic will continue processing, but gateway will handle the actual handoff
+                        break;
+                    }
+                }
+                // Check if this is a banking tool
+                if ((0, banking_tools_1.isBankingTool)(toolName)) {
+                    console.log(`[Agent:${AGENT_ID}] 💰 BANKING TOOL: ${toolName}`);
+                    // Parse tool input
+                    const toolInput = event.data.content ? JSON.parse(event.data.content) : event.data.input || {};
+                    console.log(`[Agent:${AGENT_ID}] Tool input:`, toolInput);
+                    try {
+                        // Call local-tools service
+                        console.log(`[Agent:${AGENT_ID}] Calling local-tools service: ${LOCAL_TOOLS_URL}`);
+                        const response = await axios_1.default.post(`${LOCAL_TOOLS_URL}/tools/execute`, {
+                            tool: toolName,
+                            input: toolInput
+                        });
+                        const result = response.data.result;
+                        console.log(`[Agent:${AGENT_ID}] Tool result from local-tools:`, result);
+                        // CRITICAL: Store IDV verification result in session memory
+                        // AgentCore returns results wrapped in content array with text field
+                        if (toolName === 'perform_idv_check') {
+                            let idvData;
+                            // Parse the result structure from AgentCore
+                            if (result.content && result.content[0] && result.content[0].text) {
+                                try {
+                                    idvData = JSON.parse(result.content[0].text);
+                                }
+                                catch (e) {
+                                    console.error(`[Agent:${AGENT_ID}] Failed to parse IDV result:`, e);
+                                }
+                            }
+                            else if (result.auth_status) {
+                                // Fallback: direct structure
+                                idvData = result;
+                            }
+                            if (idvData && idvData.auth_status === 'VERIFIED') {
+                                session.verifiedUser = {
+                                    customer_name: idvData.customer_name,
+                                    account: toolInput.accountNumber,
+                                    sortCode: toolInput.sortCode,
+                                    auth_status: idvData.auth_status
+                                };
+                                console.log(`[Agent:${AGENT_ID}] ✅ Stored verified user in session: ${idvData.customer_name}`);
+                                // Also notify gateway to update session memory
+                                if (ws.readyState === ws_1.WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'update_memory',
+                                        memory: {
+                                            verified: true,
+                                            userName: idvData.customer_name,
+                                            account: toolInput.accountNumber,
+                                            sortCode: toolInput.sortCode
+                                        }
+                                    }));
+                                    console.log(`[Agent:${AGENT_ID}] ✅ Sent update_memory to gateway`);
+                                }
+                            }
+                            else {
+                                console.log(`[Agent:${AGENT_ID}] IDV check failed or not verified`);
+                            }
+                        }
+                        // Send result back to Nova Sonic
+                        await session.sonicClient.sendToolResult(event.data.toolUseId, result, false);
+                        // Forward tool result to client for debugging
+                        if (ws.readyState === ws_1.WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'tool_result',
+                                toolName: toolName,
+                                toolUseId: event.data.toolUseId,
+                                result: result,
+                                executionMode: 'local-tools'
+                            }));
+                        }
+                        break;
+                    }
+                    catch (error) {
+                        console.error(`[Agent:${AGENT_ID}] Banking tool error:`, error);
+                        await session.sonicClient.sendToolResult(event.data.toolUseId, { error: error.message }, true);
+                        break;
+                    }
+                }
+                // Forward non-handoff tool usage to client for debugging
                 if (ws.readyState === ws_1.WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'tool_use',
-                        toolName: event.data.toolName || event.data.name,
+                        toolName: toolName,
                         toolUseId: event.data.toolUseId
                     }));
                 }
@@ -459,13 +773,23 @@ async function handleSonicEvent(event, sessionId, ws) {
 // Register with gateway on startup
 async function registerWithGateway() {
     try {
+        const capabilities = workflowDef?.testConfig?.personaId
+            ? [workflowDef.testConfig.personaId]
+            : (workflowDef?.personaId ? [workflowDef.personaId] : []);
+        const voiceId = personaConfig?.voiceId || workflowDef?.voiceId || 'matthew';
+        const metadata = personaConfig?.metadata || workflowDef?.metadata || {};
         const response = await axios_1.default.post(`${GATEWAY_URL}/api/agents/register`, {
             id: AGENT_ID,
             url: `http://${AGENT_HOST}:${AGENT_PORT}`,
-            capabilities: workflowDef?.testConfig?.personaId ? [workflowDef.testConfig.personaId] : [],
+            capabilities,
             port: AGENT_PORT,
-            voiceId: workflowDef?.voiceId || 'Matthew',
-            metadata: workflowDef?.metadata || {}
+            voiceId,
+            metadata: {
+                ...metadata,
+                personaId: personaConfig?.id,
+                personaName: personaConfig?.name,
+                allowedTools: personaConfig?.allowedTools || []
+            }
         });
         console.log(`[Agent:${AGENT_ID}] Registered with gateway:`, response.data);
     }

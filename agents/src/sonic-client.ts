@@ -352,7 +352,10 @@ export class SonicClient {
                             mediaType: "application/json"
                         },
                         toolConfiguration: {
-                            tools: this.sessionConfig.tools
+                            tools: this.sessionConfig.tools,
+                            ...(this.config.agentCoreRuntimeArn ? {
+                                agentCoreRuntimeArn: this.config.agentCoreRuntimeArn
+                            } : {})
                         }
                     } : {})
                 }
@@ -360,6 +363,7 @@ export class SonicClient {
         };
         console.log('[SonicClient] Prompt Start Payload (with Tools):', JSON.stringify(promptStartEvent, null, 2));
         console.log('[SonicClient] DEBUG TOOLS:', JSON.stringify(this.sessionConfig.tools, null, 2));
+        console.log('[SonicClient] AgentCore ARN:', this.config.agentCoreRuntimeArn || 'NOT SET');
 
         // CRITICAL DEBUG: Check if tools structure is valid
         if (this.sessionConfig.tools && this.sessionConfig.tools.length > 0) {

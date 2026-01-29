@@ -35,7 +35,7 @@
         },
         {
             "id": "analyze_input",
-            "label": "CRITICAL GUARDRAIL: Extract EXACT digits from user speech. NEVER pad, invent, or add digits. Check: (1) If BOTH valid 8-digit Account Number AND 6-digit Sort Code present → perform_idv. (2) If ONLY valid 8-digit Account Number present → ask_sortcode_only. (3) If ONLY valid 6-digit Sort Code present → ask_account_only. (4) If NEITHER or INVALID lengths → ask_details. NEVER call perform_idv unless you have EXACTLY 8 digits for account AND EXACTLY 6 digits for sort code.",
+            "label": "CRITICAL GUARDRAIL: Extract EXACT digits from user speech. NEVER pad, invent, or add digits. Check: (1) If BOTH valid 8 digit Account Number AND 6 digit Sort Code present → perform_idv. (2) If ONLY valid 8 digit Account Number present → ask_sortcode_only. (3) If ONLY valid 6 digit Sort Code present → ask_account_only. (4) If NEITHER or INVALID lengths → ask_details. NEVER call perform_idv unless you have EXACTLY 8 digits for account AND EXACTLY 6 digits for sort code.",
             "type": "decision",
             "required_context": [
                 "accountNumber",
