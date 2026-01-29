@@ -73,5 +73,11 @@
     }
   ],
   "id": "context",
-  "name": "Context"
+  "name": "Context",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "context-handler",
+    "language": "en-US",
+    "description": "Context"
+  }
 }

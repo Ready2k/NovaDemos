@@ -12,6 +12,7 @@ interface UseAudioProcessorOptions {
 interface UseAudioProcessorReturn {
     isRecording: boolean;
     isMuted: boolean;
+    initialize: () => Promise<void>;
     startRecording: () => Promise<void>;
     stopRecording: () => void;
     playAudio: (audioData: ArrayBuffer) => Promise<void>;
@@ -226,8 +227,18 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         const audioContext = audioContextRef.current!;
 
         try {
+            // Ensure even byte length for Int16Array (16-bit PCM = 2 bytes per sample)
+            let buffer = audioData;
+            if (audioData.byteLength % 2 !== 0) {
+                console.warn(`[AudioProcessor] Padding odd-sized audio data: ${audioData.byteLength} -> ${audioData.byteLength + 1} bytes`);
+                const padded = new Uint8Array(audioData.byteLength + 1);
+                padded.set(new Uint8Array(audioData));
+                padded[audioData.byteLength] = 0; // Pad with zero
+                buffer = padded.buffer;
+            }
+
             // Convert ArrayBuffer to Int16Array (PCM16)
-            const pcm16Data = new Int16Array(audioData);
+            const pcm16Data = new Int16Array(buffer);
 
             // Convert PCM16 to Float32Array
             const float32Data = convertToFloat32(pcm16Data);
@@ -324,6 +335,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
     return {
         isRecording,
         isMuted,
+        initialize,
         startRecording,
         stopRecording,
         playAudio,

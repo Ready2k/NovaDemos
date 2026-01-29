@@ -16,7 +16,10 @@
         "@langchain/core": "^1.1.17",
         "@langchain/langgraph": "^1.1.2",
         "@aws-sdk/client-bedrock-runtime": "^3.716.0",
-        "axios": "^1.7.9"
+        "@aws-sdk/client-transcribe-streaming": "^3.716.0",
+        "axios": "^1.7.9",
+        "langfuse": "^3.30.1",
+        "dotenv": "^16.4.7"
     },
     "devDependencies": {
         "@types/node": "^22.10.5",

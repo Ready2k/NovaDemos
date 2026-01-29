@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Tool } from '../types';
 
-const TOOLS_DIR = path.join(process.cwd(), 'tools');
+// Determine if running in Docker or locally
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+const TOOLS_DIR = path.join(BASE_DIR, 'tools');
 
 export class ToolService {
     constructor() {

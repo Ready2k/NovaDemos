@@ -17,10 +17,21 @@ const PORT = parseInt(process.env.PORT || '8080');
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
 // --- DATA PATHS ---
-const WORKFLOWS_DIR = path.join(process.cwd(), 'workflows');
-const TOOLS_DIR = path.join(process.cwd(), 'tools');
-const HISTORY_DIR = path.join(process.cwd(), 'history');
-const PROMPTS_DIR = path.join(process.cwd(), 'prompts');
+// Determine if running in Docker or locally
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+
+const WORKFLOWS_DIR = path.join(BASE_DIR, 'backend/workflows');
+const TOOLS_DIR = path.join(BASE_DIR, 'backend/tools');
+const HISTORY_DIR = path.join(BASE_DIR, 'backend/history');
+const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
+
+console.log('[Gateway] Running in:', isDocker ? 'Docker' : 'Local');
+console.log('[Gateway] BASE_DIR:', BASE_DIR);
+console.log('[Gateway] WORKFLOWS_DIR:', WORKFLOWS_DIR);
+console.log('[Gateway] TOOLS_DIR:', TOOLS_DIR);
+console.log('[Gateway] HISTORY_DIR:', HISTORY_DIR);
+console.log('[Gateway] PROMPTS_DIR:', PROMPTS_DIR);
 
 // Ensure directories exist
 [WORKFLOWS_DIR, TOOLS_DIR, HISTORY_DIR, PROMPTS_DIR].forEach(dir => {
@@ -102,14 +113,32 @@ app.post('/api/agents/heartbeat', async (req: Request, res: Response) => {
 // API endpoints for frontend compatibility
 // These are stub implementations - in production, these would be backed by a database
 
-// Voices endpoint
+// Voices endpoint - Nova Sonic voices
 app.get('/api/voices', (req: Request, res: Response) => {
     res.json([
-        { id: 'nova-sonic', name: 'Nova Sonic (AWS)', language: 'en-US' },
-        { id: 'Matthew', name: 'Matthew (US Male)', language: 'en-US' },
-        { id: 'Ruth', name: 'Ruth (US Female)', language: 'en-US' },
-        { id: 'Stephen', name: 'Stephen (US Male)', language: 'en-US' },
-        { id: 'Amy', name: 'Amy (GB Female)', language: 'en-GB' }
+        // Polyglot voices (can speak all languages)
+        { id: 'tiffany', name: 'Tiffany (US Female, Polyglot)', language: 'en-US', polyglot: true },
+        { id: 'matthew', name: 'Matthew (US Male, Polyglot)', language: 'en-US', polyglot: true },
+        
+        // English variants
+        { id: 'amy', name: 'Amy (UK Female)', language: 'en-GB' },
+        { id: 'olivia', name: 'Olivia (AU Female)', language: 'en-AU' },
+        { id: 'kiara', name: 'Kiara (IN Female)', language: 'en-IN' },
+        { id: 'arjun', name: 'Arjun (IN Male)', language: 'en-IN' },
+        
+        // European languages
+        { id: 'ambre', name: 'Ambre (French Female)', language: 'fr-FR' },
+        { id: 'florian', name: 'Florian (French Male)', language: 'fr-FR' },
+        { id: 'beatrice', name: 'Beatrice (Italian Female)', language: 'it-IT' },
+        { id: 'lorenzo', name: 'Lorenzo (Italian Male)', language: 'it-IT' },
+        { id: 'tina', name: 'Tina (German Female)', language: 'de-DE' },
+        { id: 'lennart', name: 'Lennart (German Male)', language: 'de-DE' },
+        
+        // Spanish & Portuguese
+        { id: 'lupe', name: 'Lupe (Spanish US Female)', language: 'es-US' },
+        { id: 'carlos', name: 'Carlos (Spanish US Male)', language: 'es-US' },
+        { id: 'carolina', name: 'Carolina (Portuguese Female)', language: 'pt-BR' },
+        { id: 'leo', name: 'Leo (Portuguese Male)', language: 'pt-BR' }
     ]);
 });
 
@@ -142,6 +171,29 @@ app.get('/api/history', (req: Request, res: Response) => {
     }
 });
 
+// Individual history session endpoint
+app.get('/api/history/:id', (req: Request, res: Response) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        // Handle both with and without .json extension
+        const filename = id.endsWith('.json') ? id : `${id}.json`;
+        const sessionPath = path.join(HISTORY_DIR, filename);
+        
+        if (!fs.existsSync(sessionPath)) {
+            return res.status(404).json({ error: `Session ${id} not found` });
+        }
+        
+        const session = readJsonFile(sessionPath, null);
+        if (!session) {
+            return res.status(404).json({ error: `Failed to read session ${id}` });
+        }
+        
+        res.json(session);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Workflows endpoint
 app.get('/api/workflows', (req: Request, res: Response) => {
     try {
@@ -151,6 +203,86 @@ app.get('/api/workflows', (req: Request, res: Response) => {
             return { id: content.id || f, name: content.name || f };
         });
         res.json(workflows);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Individual workflow endpoint
+app.get('/api/workflow/:id', (req: Request, res: Response) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        // Try with and without workflow_ prefix and .json extension
+        const possibleFiles = [
+            `${id}.json`,
+            `workflow_${id}.json`,
+            id.endsWith('.json') ? id : `${id}.json`
+        ];
+        
+        let workflowPath: string | null = null;
+        for (const filename of possibleFiles) {
+            const testPath = path.join(WORKFLOWS_DIR, filename);
+            if (fs.existsSync(testPath)) {
+                workflowPath = testPath;
+                break;
+            }
+        }
+        
+        if (!workflowPath) {
+            return res.status(404).json({ error: `Workflow ${id} not found` });
+        }
+        
+        const workflow = readJsonFile(workflowPath, null);
+        if (!workflow) {
+            return res.status(404).json({ error: `Failed to read workflow ${id}` });
+        }
+        
+        res.json(workflow);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/workflow/:id', (req: Request, res: Response) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const workflow = req.body;
+        
+        // Determine filename
+        const filename = id.startsWith('workflow_') ? `${id}.json` : `workflow_${id}.json`;
+        const workflowPath = path.join(WORKFLOWS_DIR, filename);
+        
+        fs.writeFileSync(workflowPath, JSON.stringify(workflow, null, 2));
+        res.json({ success: true, message: `Workflow ${id} saved` });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/workflow/:id', (req: Request, res: Response) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const possibleFiles = [
+            `${id}.json`,
+            `workflow_${id}.json`,
+            id.endsWith('.json') ? id : `${id}.json`
+        ];
+        
+        let deleted = false;
+        for (const filename of possibleFiles) {
+            const testPath = path.join(WORKFLOWS_DIR, filename);
+            if (fs.existsSync(testPath)) {
+                fs.unlinkSync(testPath);
+                deleted = true;
+                break;
+            }
+        }
+        
+        if (!deleted) {
+            return res.status(404).json({ error: `Workflow ${id} not found` });
+        }
+        
+        res.json({ success: true, message: `Workflow ${id} deleted` });
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
@@ -169,6 +301,30 @@ app.get('/api/tools', (req: Request, res: Response) => {
             };
         });
         res.json(tools);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Agents endpoint - List all agents with metadata
+app.get('/api/agents', async (req: Request, res: Response) => {
+    try {
+        const agents = await registry.getAllAgents();
+        res.json(agents);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Individual agent endpoint
+app.get('/api/agents/:id', async (req: Request, res: Response) => {
+    try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const agent = await registry.getAgent(id);
+        if (!agent) {
+            return res.status(404).json({ error: `Agent ${id} not found` });
+        }
+        res.json(agent);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
@@ -273,6 +429,14 @@ wss.on('connection', async (ws: WebSocket) => {
 
     console.log(`[Gateway] New WebSocket connection: ${sessionId}`);
 
+    // Send confirmation to frontend immediately
+    ws.send(JSON.stringify({
+        type: 'connected',
+        sessionId: sessionId,
+        timestamp: Date.now()
+    }));
+    console.log(`[Gateway] Sent 'connected' confirmation to frontend`);
+
     // Create Langfuse trace for this session
     const trace = langfuse.trace({
         name: 'a2a-session',
@@ -329,6 +493,7 @@ wss.on('connection', async (ws: WebSocket) => {
             agentWs.on('message', async (data: Buffer) => {
                 try {
                     const message = JSON.parse(data.toString());
+                    console.log(`[Gateway] Received from agent ${agent.id}:`, message.type);
 
                     // INTERCEPT Hand-off requests!
                     if (message.type === 'handoff_request') {
@@ -361,8 +526,11 @@ wss.on('connection', async (ws: WebSocket) => {
                     }
 
                     // Forward all other messages to client
+                    console.log(`[Gateway] Forwarding ${message.type} to client`);
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(data);
+                    } else {
+                        console.warn(`[Gateway] Cannot forward ${message.type}, client WebSocket not open`);
                     }
                 } catch (e) {
                     // If not JSON, just forward (binary audio etc)

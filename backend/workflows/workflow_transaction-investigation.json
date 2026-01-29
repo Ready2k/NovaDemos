@@ -125,5 +125,11 @@
     }
   ],
   "id": "transaction-investigation",
-  "name": "Transaction Investigation"
+  "name": "Transaction Investigation",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "investigation-specialist",
+    "language": "en-US",
+    "description": "Transaction Investigation"
+  }
 }

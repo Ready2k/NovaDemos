@@ -64,6 +64,9 @@ export default function Home() {
 
   // Ref to track session ID for feedback (robust against state updates)
   const sessionIdRef = useRef<string | null>(null);
+  
+  // Ref to store audioProcessor (to avoid dependency issues)
+  const audioProcessorRef = useRef<any>(null);
 
   useEffect(() => {
     if (currentSession?.sessionId) {
@@ -75,7 +78,7 @@ export default function Home() {
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-    console.log('[WebSocket] Received message:', message.type);
+    console.log('[WebSocket] Received message:', message.type, message);
 
     switch (message.type) {
       case 'connected':
@@ -88,25 +91,23 @@ export default function Home() {
           sessionIdRef.current = message.sessionId;
         }
 
-        // Small delay to ensure WebSocket is fully ready
+        // Pre-initialize AudioContext to prevent clipping on first audio
+        if (audioProcessorRef.current) {
+          audioProcessorRef.current.initialize();
+        }
+
+        // Send initial greeting trigger to start the conversation
+        // Delay to ensure session is fully initialized
         setTimeout(() => {
+          console.log('[App] Sending initial greeting trigger');
           if (sendRef.current) {
             sendRef.current({
-              type: 'sessionConfig',
-              config: {
-                brainMode: settings.brainMode || 'raw_nova',
-                voiceId: settings.voicePreset || 'matthew',
-                systemPrompt: settings.systemPrompt || '',
-                speechPrompt: settings.speechPrompt || '',
-                enableGuardrails: settings.enableGuardrails ?? true,
-                selectedTools: settings.enabledTools || [],
-                linkedWorkflows: settings.linkedWorkflows || [],
-                agentId: settings.agentId,
-                agentAliasId: settings.agentAliasId,
-              },
+              type: 'user_input',
+              text: 'Hello'
             });
           }
-        }, 100); // 100ms delay
+        }, 500);
+        
         break;
 
       case 'config_applied':
@@ -141,8 +142,8 @@ export default function Home() {
 
       case 'audio':
         // Play received audio
-        if (message.audio) {
-          audioProcessor.playAudio(message.audio);
+        if (message.audio && audioProcessorRef.current) {
+          audioProcessorRef.current.playAudio(message.audio);
         }
         break;
 
@@ -155,6 +156,12 @@ export default function Home() {
           .replace(/^The user provided.*?(\n|$)/g, '')
           .replace(/^I verified.*?(\n|$)/g, '')
           .trim();
+
+        // Filter out the initial "Hello" that starts the conversation
+        if (message.role === 'user' && cleanText === 'Hello' && messages.length === 0) {
+          console.log('[App] Filtering out initial Hello message');
+          break;
+        }
 
         if (!cleanText) break;
 
@@ -285,7 +292,9 @@ export default function Home() {
 
       case 'interruption':
         console.log('[App] Interruption received - clearing audio queue');
-        audioProcessor.clearQueue();
+        if (audioProcessorRef.current) {
+          audioProcessorRef.current.clearQueue();
+        }
         break;
 
       case 'graph_event':
@@ -374,10 +383,16 @@ export default function Home() {
       audioProcessor.setMuted(false);
     }
   }, [settings.interactionMode, audioProcessor, connectionStatus]);
+  
   // Store send function in ref for use in message handler
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
+  
+  // Store audioProcessor in ref for use in message handler
+  useEffect(() => {
+    audioProcessorRef.current = audioProcessor;
+  }, [audioProcessor]);
 
   // Sync settings to backend when they change (if connected)
   useEffect(() => {
@@ -427,10 +442,13 @@ export default function Home() {
     // Note: We do NOT add the message to the UI here (Optimistic UI disabled).
     // We wait for the 'transcript' event from the backend to ensure Source of Truth & Zero Duplicates.
     console.log('[App] Sending message to WebSocket');
-    send({
-      type: 'textInput',
+    const message = {
+      type: 'user_input',  // Changed from 'textInput' to match agent expectation
       text: text
-    });
+    };
+    console.log('[App] Message payload:', JSON.stringify(message));
+    send(message);
+    console.log('[App] Message sent');
   }, [isConnected, send]);
 
   // --- Workflow Simulator ---
@@ -492,6 +510,11 @@ export default function Home() {
     if (connectionStatus === 'recording') {
       // Stop recording
       audioProcessor.stopRecording();
+      
+      // Send end-of-speech signal to backend
+      console.log('[App] Sending end_of_speech signal, isConnected:', isConnected);
+      send({ type: 'end_of_speech' });
+      
       setConnectionStatus('connected');
     } else if (connectionStatus === 'connected') {
       // Start recording
@@ -503,7 +526,7 @@ export default function Home() {
         alert('Failed to access microphone. Please check permissions.');
       }
     }
-  }, [connectionStatus, audioProcessor, setConnectionStatus]);
+  }, [connectionStatus, audioProcessor, setConnectionStatus, send, settings.interactionMode]);
 
 
   // Handle Connection Toggle (Manual)

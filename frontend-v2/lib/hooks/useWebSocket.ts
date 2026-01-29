@@ -150,23 +150,37 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
 
             ws.onmessage = (event) => {
                 try {
-                    // Handle binary data (audio)
+                    console.log('[WebSocket] Raw message received, type:', typeof event.data, 'instanceof ArrayBuffer:', event.data instanceof ArrayBuffer);
+                    
+                    // Handle binary data (could be audio OR text)
                     if (event.data instanceof ArrayBuffer) {
-                        const message: WebSocketMessage = {
-                            type: 'audio',
-                            audio: event.data,
-                        };
-                        setLastMessage(message);
-                        onMessageRef.current?.(message);
-                        return;
+                        // Try to decode as text first
+                        try {
+                            const text = new TextDecoder().decode(event.data);
+                            const message = JSON.parse(text);
+                            console.log('[WebSocket] Decoded ArrayBuffer as JSON:', message.type);
+                            setLastMessage(message);
+                            onMessageRef.current?.(message);
+                            return;
+                        } catch (e) {
+                            // Not JSON, treat as audio
+                            const message: WebSocketMessage = {
+                                type: 'audio',
+                                audio: event.data,
+                            };
+                            setLastMessage(message);
+                            onMessageRef.current?.(message);
+                            return;
+                        }
                     }
 
-                    // Handle JSON data
+                    // Handle JSON data (string)
+                    console.log('[WebSocket] Parsing as JSON:', event.data);
                     const message = JSON.parse(event.data);
                     setLastMessage(message);
                     onMessageRef.current?.(message);
                 } catch (error) {
-                    console.error('[WebSocket] Error parsing message', error);
+                    console.error('[WebSocket] Error parsing message', error, 'Data:', event.data);
                 }
             };
         } catch (error) {

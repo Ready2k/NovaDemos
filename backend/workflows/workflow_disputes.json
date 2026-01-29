@@ -206,5 +206,11 @@
     }
   ],
   "id": "disputes",
-  "name": "Disputes"
+  "name": "Disputes",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "professional-disputes",
+    "language": "en-US",
+    "description": "Disputes"
+  }
 }

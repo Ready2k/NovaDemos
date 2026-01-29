@@ -7,7 +7,10 @@ import * as path from 'path';
 // However, the `langfuse` generic usage suggests we might want a singleton wrapper.
 import { Langfuse } from 'langfuse';
 
-const PROMPTS_DIR = path.join(process.cwd(), 'prompts');
+// Determine if running in Docker or locally
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+const PROMPTS_DIR = path.join(BASE_DIR, 'prompts');
 
 export class PromptService {
     private langfuse: Langfuse;

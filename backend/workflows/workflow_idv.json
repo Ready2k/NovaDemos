@@ -205,5 +205,11 @@
     }
   ],
   "id": "idv",
-  "name": "Idv"
+  "name": "Idv",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "security-verification",
+    "language": "en-US",
+    "description": "Idv"
+  }
 }

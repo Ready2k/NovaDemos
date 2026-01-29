@@ -1,0 +1,105 @@
+services:
+  # Gateway - Routes WebSocket connections to agents
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=8080
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./backend/workflows:/app/workflows
+      - ./backend/tools:/app/tools
+      - ./backend/history:/app/history
+      - ./backend/prompts:/app/prompts
+      - ./backend/knowledge_bases.json:/app/knowledge_bases.json
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - agent-network
+
+  # Triage Agent with S2S
+  agent-triage-s2s:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile.agent-s2s
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./backend/.env
+    environment:
+      - AGENT_ID=triage
+      - AGENT_PORT=8081
+      - REDIS_URL=redis://redis:6379
+      - GATEWAY_URL=http://gateway:8080
+      - LOCAL_TOOLS_URL=http://local-tools:9000
+      - WORKFLOW_FILE=/app/workflow.json
+    volumes:
+      - ./backend/workflows/workflow_triage.json:/app/workflow.json:ro
+    depends_on:
+      - redis
+      - local-tools
+      - gateway
+    networks:
+      - agent-network
+
+  # Local Tool Host (MCP Server)
+  local-tools:
+    build:
+      context: ./local-tools
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - PORT=9000
+      - TOOLS_DIR=/app/tools
+    volumes:
+      - ./local-tools/src/tools:/app/tools:ro
+    networks:
+      - agent-network
+
+  # Redis State Store
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agent-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend-v2
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8080
+        - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+    depends_on:
+      - gateway
+    networks:
+      - agent-network
+
+networks:
+  agent-network:
+    driver: bridge
+
+volumes:
+  redis_data:

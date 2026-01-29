@@ -1,4 +1,12 @@
 {
+  "id": "triage",
+  "name": "Triage",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "professional-banking",
+    "language": "en-US",
+    "description": "Professional triage agent for initial customer routing"
+  },
   "nodes": [
     {
       "id": "triage_start",
@@ -77,7 +85,5 @@
       "to": "triage_success",
       "label": "No (OPEN)"
     }
-  ],
-  "id": "triage",
-  "name": "Triage"
+  ]
 }

@@ -62,4 +62,11 @@ export interface WorkflowDefinition {
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
     testConfig?: WorkflowTestConfig;
+    voiceId?: string;
+    metadata?: {
+        persona?: string;
+        language?: string;
+        description?: string;
+        [key: string]: any;
+    };
 }

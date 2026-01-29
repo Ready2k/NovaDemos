@@ -7,6 +7,12 @@ export interface AgentInfo {
     capabilities: string[];
     lastHeartbeat: number;
     port: number;
+    voiceId?: string;
+    metadata?: {
+        persona?: string;
+        language?: string;
+        [key: string]: any;
+    };
 }
 
 export class AgentRegistry {

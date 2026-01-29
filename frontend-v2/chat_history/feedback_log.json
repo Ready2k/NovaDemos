@@ -1,0 +1,44 @@
+[
+  {
+    "sessionId": "4dc0a105-1c72-4098-8316-5ae41bd38190",
+    "traceId": "4dc0a105-1c72-4098-8316-5ae41bd38190",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T18:58:23.428Z"
+  },
+  {
+    "sessionId": "463420c5-9bf0-4aba-8de1-18775ddf8f84",
+    "traceId": "463420c5-9bf0-4aba-8de1-18775ddf8f84",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T19:24:21.133Z"
+  },
+  {
+    "sessionId": "375d02c3-3e33-4a6b-b2b4-66c8ee46fc92",
+    "traceId": "375d02c3-3e33-4a6b-b2b4-66c8ee46fc92",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T19:27:01.063Z"
+  },
+  {
+    "sessionId": "90c1c980-229c-437d-b754-52cb01f8f462",
+    "traceId": "90c1c980-229c-437d-b754-52cb01f8f462",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T19:29:56.459Z"
+  },
+  {
+    "sessionId": "ed4acc83-90c4-4fc7-b47c-c6fb5ad449fd",
+    "traceId": "ed4acc83-90c4-4fc7-b47c-c6fb5ad449fd",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T19:30:20.365Z"
+  },
+  {
+    "sessionId": "72ade331-9c7c-40d6-928a-d153593c0a26",
+    "traceId": "72ade331-9c7c-40d6-928a-d153593c0a26",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-29T19:34:19.489Z"
+  }
+]

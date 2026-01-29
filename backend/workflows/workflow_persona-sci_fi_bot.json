@@ -100,5 +100,11 @@
   ],
   "testPersona": "just a test ",
   "id": "persona-sci_fi_bot",
-  "name": "Persona Sci Fi Bot"
+  "name": "Persona Sci Fi Bot",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "sci-fi-character",
+    "language": "en-US",
+    "description": "Persona Sci Fi Bot"
+  }
 }

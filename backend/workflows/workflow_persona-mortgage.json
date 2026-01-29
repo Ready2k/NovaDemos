@@ -162,5 +162,11 @@
     "maxTurns": 20
   },
   "id": "persona-mortgage",
-  "name": "Persona Mortgage"
+  "name": "Persona Mortgage",
+  "voiceId": "amy",
+  "metadata": {
+    "persona": "mortgage-advisor",
+    "language": "en-GB",
+    "description": "Persona Mortgage"
+  }
 }

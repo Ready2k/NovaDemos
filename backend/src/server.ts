@@ -63,11 +63,20 @@ const writeJsonFile = (filePath: string, data: any) => {
 };
 
 // --- DATA PATHS ---
-// structured relative to process.cwd() which is /app in docker
-const TOOLS_DIR = path.join(process.cwd(), 'tools');
-const WORKFLOWS_DIR = path.join(process.cwd(), 'workflows');
-const HISTORY_DIR = path.join(process.cwd(), 'history');
-const KB_FILE = path.join(process.cwd(), 'knowledge_bases.json');
+// Determine if running in Docker or locally
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '..');
+
+const TOOLS_DIR = path.join(BASE_DIR, 'tools');
+const WORKFLOWS_DIR = path.join(BASE_DIR, 'workflows');
+const HISTORY_DIR = path.join(BASE_DIR, 'history');
+const KB_FILE = path.join(BASE_DIR, 'knowledge_bases.json');
+
+console.log('[Server] Running in:', isDocker ? 'Docker' : 'Local');
+console.log('[Server] BASE_DIR:', BASE_DIR);
+console.log('[Server] TOOLS_DIR:', TOOLS_DIR);
+console.log('[Server] WORKFLOWS_DIR:', WORKFLOWS_DIR);
+console.log('[Server] HISTORY_DIR:', HISTORY_DIR);
 
 // Ensure directories exist
 [TOOLS_DIR, WORKFLOWS_DIR, HISTORY_DIR].forEach(dir => {

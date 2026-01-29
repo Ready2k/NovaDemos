@@ -21,7 +21,10 @@ import {
     calculateRMS
 } from '../utils/server-utils';
 
-const HISTORY_DIR = path.join(__dirname, '../../history');
+// Determine if running in Docker or locally
+const isDocker = fs.existsSync('/app');
+const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+const HISTORY_DIR = path.join(BASE_DIR, 'history');
 const FILLER_PHRASES = [
     "Hmm...", "Erm...", "Ok...", "Let me see...", "Just waiting for the system...", "One moment...", "Bear with me..."
 ];

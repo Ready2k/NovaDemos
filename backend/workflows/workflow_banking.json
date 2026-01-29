@@ -379,5 +379,11 @@
     "disconnectAction": "always",
     "saveReport": true,
     "maxTurns": 10
+  },
+  "voiceId": "tiffany",
+  "metadata": {
+    "persona": "friendly-banking",
+    "language": "en-US",
+    "description": "Banking"
   }
 }

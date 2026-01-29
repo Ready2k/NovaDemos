@@ -159,5 +159,11 @@
     "maxTurns": 10
   },
   "id": "banking-master",
-  "name": "Banking Master"
+  "name": "Banking Master",
+  "voiceId": "tiffany",
+  "metadata": {
+    "persona": "friendly-banking",
+    "language": "en-US",
+    "description": "Banking Master"
+  }
 }
