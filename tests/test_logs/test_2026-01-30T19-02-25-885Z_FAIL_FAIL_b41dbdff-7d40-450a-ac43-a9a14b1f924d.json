@@ -1,0 +1,122 @@
+{
+  "sessionId": "b41dbdff-7d40-450a-ac43-a9a14b1f924d",
+  "startTime": 1769799724836,
+  "endTime": 1769799745885,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?",
+      "timestamp": 1769799724836,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?What do you want?",
+      "timestamp": 1769799725899,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?What do you want?",
+      "timestamp": 1769799726216,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Haha, no worries! I'm Bar bot, your friendly neighborhood sci-fi enthusiast. I may not be fluent in every language, but I'm always happy to chat about out-of-this-world topics. So, what would you like to discuss? I'm particularly passionate about Star Wars - the factions, the characters, the technology, you name it! Let's see what we can find interesting about each faction and why Jarrar should be a main character. This is gonna be fun! *grins*",
+      "timestamp": 1769799729652
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: ask_question",
+      "timestamp": 1769799730615,
+      "metadata": {
+        "stepId": "ask_question"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...",
+      "timestamp": 1769799730615,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...but remember, diplomacy is the key to galactic peace, not blaster bolts.",
+      "timestamp": 1769799731617,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...but remember, diplomacy is the key to galactic peace, not blaster bolts.So, tell me... are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769799732692,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...but remember, diplomacy is the key to galactic peace, not blaster bolts.So, tell me... are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769799733885,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Ah, a fellow sci-fi aficionado, I see! Well, as much as I admire the diplomatic prowess of the Star Trek crews, I've always been drawn to the gritty, ragtag spirit of the Star Wars rebels. There's just something about that underdog mentality, fighting against overwhelming odds, that really speaks to me. \n\nNow, the factions in the Star Wars universe - they're all fascinating in their own way, aren't they? The disciplined might of the Empire, the cunning machinations of the Sith, the principled resolve of the Jedi. But my personal favorite has got to be the Rebel Alliance. There's just something so inspiring about a rag-tag group of freedom fighters taking on the most powerful regime in the galaxy. \n\nAnd Jarrar, oh Jarrar! Now there's a character that deserves more spotlight. I mean, think about it - a former Imperial officer who sees the error of his ways and defects to join the Rebellion. The internal conflict, the redemption arc, the potential for some truly epic moments. Jarrar could be the bridge between the two sides, a living embodiment of the complexity and nuance in this galaxy-spanning conflict. *grins* Just imagine the stories we could tell with him as a central figure!\n\nAnyway, what do you think? Are you",
+      "timestamp": 1769799739686
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: mode_solo",
+      "timestamp": 1769799740298,
+      "metadata": {
+        "stepId": "mode_solo"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...Rebels only! No Empire sympathizers allowed around here.",
+      "timestamp": 1769799740298,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, another Star Wars fan, are we?  Fine, fine...Rebels only! No Empire sympathizers allowed around here.",
+      "timestamp": 1769799741317,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "[FAIL] (Test stopped: Max turns reached - limit 2)",
+      "timestamp": 1769799742325
+    },
+    {
+      "role": "assistant",
+      "text": "Rebels only! No Empire sympathizers allowed around here.Sorry, I'm having a bit of trouble getting this sorted.",
+      "timestamp": 1769799743159,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Rebels only! No Empire sympathizers allowed around here.Sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769799743944,
+      "type": "speculative"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 3965,
+    "outputTokens": 820,
+    "totalTokens": 4785,
+    "cost": 0.024194999999999998,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "FAIL",
+  "userResult": "FAIL",
+  "tags": [
+    "auto-test"
+  ],
+  "status": "FAIL"
+}

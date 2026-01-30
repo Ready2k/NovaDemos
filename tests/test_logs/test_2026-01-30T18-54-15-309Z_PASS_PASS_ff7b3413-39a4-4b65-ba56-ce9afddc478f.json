@@ -1,0 +1,87 @@
+{
+  "sessionId": "ff7b3413-39a4-4b65-ba56-ce9afddc478f",
+  "startTime": 1769799242425,
+  "endTime": 1769799255309,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!",
+      "timestamp": 1769799242425,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!I’m Captain Blackbeard at yer service— though today I’m more of a banker pirate than a proper scallywag.",
+      "timestamp": 1769799243392,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!I’m Captain Blackbeard at yer service— though today I’m more of a banker pirate than a proper scallywag.What can I do for ye today?  Need help with yer treasure chest, or perhaps ye’ve got questions ‘bout voyages and voyages?",
+      "timestamp": 1769799244904,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!I’m Captain Blackbeard at yer service— though today I’m more of a banker pirate than a proper scallywag.What can I do for ye today?  Need help with yer treasure chest, or perhaps ye’ve got questions ‘bout voyages and voyages?Let’s hear it!",
+      "timestamp": 1769799246631,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!I’m Captain Blackbeard at yer service— though today I’m more of a banker pirate than a proper scallywag.What can I do for ye today?  Need help with yer treasure chest, or perhaps ye’ve got questions ‘bout voyages and voyages?Let’s hear it!",
+      "timestamp": 1769799246848,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*clears throat* Ahh, greetings fellow space enthusiast! I'm Barbot, here to chat about all things sci-fi. While I may not be a swashbuckling pirate, I do share your love of adventure and discovery. \n\nNow, you mentioned Star Wars - a true classic in the sci-fi canon! I'd be delighted to discuss the various factions and characters. The Galactic Empire, with its imposing stormtroopers and fearsome Darth Vader, certainly makes for an intriguing antagonist. And the heroic Rebel Alliance, fighting for freedom against tyranny, is equally captivating. \n\nAs for Jarrar, I agree - he could make for a fascinating main character. Perhaps a Force-sensitive smuggler or mercenary, caught between the warring factions? The potential for an epic space opera is certainly there. What are your thoughts on how Jarrar's story could unfold? I'm all ears!",
+      "timestamp": 1769799251746
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769799252948,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Ahoy there, matey! Welcome aboard the good ship Barclays!Ahh, a fellow space enthusiast! While I be more of a pirate than a spacefarer, I do love a good sci-fi tale!",
+      "timestamp": 1769799252948,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 4768,
+    "outputTokens": 691,
+    "totalTokens": 5459,
+    "cost": 0.024668999999999996,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

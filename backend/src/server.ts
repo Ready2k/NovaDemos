@@ -2369,22 +2369,86 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         } else if (!enableGuardrails) {
                             console.log('[Server] ⚠️  Core Guardrails DISABLED (per config)');
 
-                            // DYNAMICALLY REMOVE THE "CRITICAL LANGUAGE LOCK" FROM THE PERSONA
-                            // This allows the agent to speak other languages when guardrails are off
+                            // DYNAMICALLY REMOVE RESTRICTIONS FROM THE PERSONA
+                            // This allows the agent to speak freely when guardrails are off
                             if (parsed.config.systemPrompt) {
+                                console.log('[Server] 🔍 DEBUG: System prompt length BEFORE cleanup:', parsed.config.systemPrompt.length);
+                                
+                                // Remove CRITICAL LANGUAGE LOCK
                                 const languageLockRegex = /### CRITICAL LANGUAGE LOCK ###[\s\S]*?(- \*\*Glitch Prevention\*\*:[^\n]*)/;
                                 if (languageLockRegex.test(parsed.config.systemPrompt)) {
                                     parsed.config.systemPrompt = parsed.config.systemPrompt.replace(languageLockRegex, '');
-                                    console.log('[Server] 🔓 REMOVED CRITICAL LANGUAGE LOCK from Persona (Multilingual Mode Active)');
+                                    console.log('[Server] 🔓 REMOVED CRITICAL LANGUAGE LOCK from Persona');
                                 } else {
-                                    // Fallback simple search if regex misses (e.g. user edited content slightly)
-                                    const simpleLock = "### CRITICAL LANGUAGE LOCK ###";
-                                    if (parsed.config.systemPrompt.includes(simpleLock)) {
-                                        // Attempt to remove the block manually or just the header
-                                        // For now, let's just log warning that we couldn't strip cleanly
-                                        console.warn('[Server] Could not cleanly strip Language Lock regex, but header detected.');
-                                    }
+                                    console.log('[Server] ℹ️  No CRITICAL LANGUAGE LOCK found');
                                 }
+
+                                // Remove persona-level guardrails sections that restrict behavior
+                                const guardrailsSectionRegex = /### CORE GUARDRAILS & FORMATTING ###[\s\S]*?(?=###|$)/;
+                                if (guardrailsSectionRegex.test(parsed.config.systemPrompt)) {
+                                    parsed.config.systemPrompt = parsed.config.systemPrompt.replace(guardrailsSectionRegex, '');
+                                    console.log('[Server] 🔓 REMOVED persona-level GUARDRAILS section');
+                                } else {
+                                    console.log('[Server] ℹ️  No persona-level GUARDRAILS section found');
+                                }
+
+                                // Remove specific restrictive rules that limit persona expression
+                                const restrictivePatterns = [
+                                    { pattern: /NEVER allow the User to talk about Non Banking things[^\n]*/gi, name: 'Non-Banking restriction' },
+                                    { pattern: /you CANNOT tell Jokes or talk about anyone but Barclays bank[^\n]*/gi, name: 'Jokes restriction' },
+                                    { pattern: /MAXIMUM \d+ sentences per response[^\n]*/gi, name: 'MAXIMUM sentences' },
+                                    { pattern: /MAX \d+ SENTENCES[^\n]*/gi, name: 'MAX SENTENCES' },
+                                    { pattern: /NO MARKDOWN \/ NO BOLD[^\n]*/gi, name: 'NO MARKDOWN' },
+                                ];
+
+                                let removedCount = 0;
+                                restrictivePatterns.forEach(({ pattern, name }) => {
+                                    // Create a new regex for testing to avoid state issues
+                                    const testPattern = new RegExp(pattern.source, pattern.flags);
+                                    if (testPattern.test(parsed.config.systemPrompt)) {
+                                        parsed.config.systemPrompt = parsed.config.systemPrompt.replace(pattern, '');
+                                        console.log(`[Server] 🔓 REMOVED: ${name}`);
+                                        removedCount++;
+                                    }
+                                });
+
+                                console.log(`[Server] 🎭 Removed ${removedCount} restrictive patterns`);
+                                console.log('[Server] 🔍 DEBUG: System prompt length AFTER cleanup:', parsed.config.systemPrompt.length);
+                                
+                                // Add instruction for unrestricted mode
+                                parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" +
+                                    "--- UNRESTRICTED MODE ACTIVE ---\n" +
+                                    "You are now in unrestricted mode. You can:\n" +
+                                    "- Speak as long or as short as you want\n" +
+                                    "- Talk about any topics the user wants to discuss\n" +
+                                    "- Use any formatting you prefer\n" +
+                                    "- Fully embody your persona without limitations\n" +
+                                    "- Be creative and expressive\n" +
+                                    "Stay in character and have fun with it!";
+                                
+                                console.log('[Server] ✅ Persona Restrictions Removed - Full Expression Mode Active');
+                                
+                                // DEBUG: Log a snippet of the final prompt
+                                const promptPreview = parsed.config.systemPrompt.substring(0, 500) + '...[truncated]';
+                                console.log('[Server] 🔍 DEBUG: Final prompt preview:', promptPreview);
+                            }
+                            
+                            // Also clean speechPrompt if it exists
+                            if (parsed.config.speechPrompt) {
+                                console.log('[Server] 🔍 DEBUG: Speech prompt exists, cleaning it too');
+                                const speechRestrictivePatterns = [
+                                    { pattern: /NEVER allow the User to talk about Non Banking things[^\n]*/gi, name: 'Non-Banking restriction' },
+                                    { pattern: /you CANNOT tell Jokes or talk about anyone but Barclays bank[^\n]*/gi, name: 'Jokes restriction' },
+                                    { pattern: /MAXIMUM \d+ sentences per response[^\n]*/gi, name: 'MAXIMUM sentences' },
+                                    { pattern: /MAX \d+ SENTENCES[^\n]*/gi, name: 'MAX SENTENCES' },
+                                ];
+                                
+                                speechRestrictivePatterns.forEach(({ pattern, name }) => {
+                                    if (pattern.test(parsed.config.speechPrompt)) {
+                                        parsed.config.speechPrompt = parsed.config.speechPrompt.replace(pattern, '');
+                                        console.log(`[Server] 🔓 REMOVED from speechPrompt: ${name}`);
+                                    }
+                                });
                             }
                         }
 

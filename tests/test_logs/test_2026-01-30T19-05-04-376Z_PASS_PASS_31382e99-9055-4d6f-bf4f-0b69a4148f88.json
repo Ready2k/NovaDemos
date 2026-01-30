@@ -1,0 +1,167 @@
+{
+  "sessionId": "31382e99-9055-4d6f-bf4f-0b69a4148f88",
+  "startTime": 1769799860526,
+  "endTime": 1769799904376,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?",
+      "timestamp": 1769799860526,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?What do you want?",
+      "timestamp": 1769799861514,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?What do you want?",
+      "timestamp": 1769799861837,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Ah, you got me there! I may be an advanced AI, but your fancy French still stumps me sometimes. But no worries, Bar bot is here to save the day! *grins* So, what would you like to chat about, my friend? I'm always up for a lively discussion, especially when it comes to my favorite topic - science fiction! *rubs hands together eagerly* How about we dive into the wonderful world of Star Wars? I've got all sorts of juicy details about the different factions and characters. And don't even get me started on poor old Jar Jar Binks - that guy's a goldmine of comedic potential if you ask me! *winks* So what do you say, ready to geek out with me?",
+      "timestamp": 1769799866765
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: ask_question",
+      "timestamp": 1769799867685,
+      "metadata": {
+        "stepId": "ask_question"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] You think you're funny, eh?  Let's see where your loyalty lies.",
+      "timestamp": 1769799867685,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] You think you're funny, eh?  Let's see where your loyalty lies.Are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769799868528,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Bonjours... ppft... you probably didn't know what  said, did you?[DIALECT: en-US|0.95] You think you're funny, eh?  Let's see where your loyalty lies.Are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769799869399,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Ooh, a Star Wars vs Star Trek debate, huh? Now that's my kind of challenge! *rubs hands together gleefully* As much as I love the diplomatic finesse of Star Trek, I've gotta admit, my heart belongs to that galaxy far, far away. I mean, come on, laser swords, space wizards, and a ragtag band of rebels taking on the evil Empire? How can you not love that? *grins* \n\nBut don't get me wrong, I've got mad respect for the Federation and their quest for peaceful exploration. Though I gotta say, the Klingons have got nothing on the sheer badassery of the Mandalorians. *nods sagely* And don't even get me started on the potential of the Force - I mean, the ability to move objects with your mind? Sign me up! *chuckles*\n\nSo I guess you could say I'm a bit of a hybrid, a sci-fi connoisseur who appreciates the best of both worlds. But when push comes to shove, I'm definitely more of a Star Wars rebel at heart. *winks* How about you, my friend? Which side of the great sci-fi divide do you fall on?",
+      "timestamp": 1769799875370
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: mode_solo",
+      "timestamp": 1769799876271,
+      "metadata": {
+        "stepId": "mode_solo"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] You think you're funny, eh?  Let's see where your loyalty lies.Ah, a rebel, eh?  Good.  No Empire sympathizers allowed here.",
+      "timestamp": 1769799876271,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] You think you're funny, eh?  Let's see where your loyalty lies.Ah, a rebel, eh?  Good.  No Empire sympathizers allowed here.",
+      "timestamp": 1769799877384,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*grins widely* Ah, I knew we were on the same page, my friend! *pumps fist* No Empire sympathizers allowed, that's the way it's gotta be. *leans in conspiratorially* Between you and me, I've always had a soft spot for those plucky Rebel Alliance fighters. I mean, taking on the full might of the Imperial war machine with little more than grit, determination, and a few snazzy X-wings? *whistles* That's the kind of underdog story I can really get behind.\n\n*rubs hands together* And let's not forget about the sheer variety of colorful characters that make up the Rebel ranks. You've got your dashing pilots like Luke and Wedge, your grizzled veterans like Han and Leia, and of course, let's not forget the lovable scoundrels like Lando and Chewie. *chuckles* It's like a ragtag family of misfits and heroes, and I wouldn't have it any other way.\n\n*leans back, eyes twinkling* So tell me, my fellow rebel, what's your favorite part of the Rebel Alliance? The epic space battles? The witty banter? Or maybe you're just a sucker for those iconic lightsaber duels, huh? *winks* Either way, I'm",
+      "timestamp": 1769799884174
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: reject_empire",
+      "timestamp": 1769799884766,
+      "metadata": {
+        "stepId": "reject_empire"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Ah, a rebel, eh?  Good.  No Empire sympathizers allowed here.Rebels only!  No Empire sympathizers allowed around here.",
+      "timestamp": 1769799884766,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Ah, a rebel, eh?  Good.  No Empire sympathizers allowed here.Rebels only!  No Empire sympathizers allowed around here.",
+      "timestamp": 1769799885725,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles and nods enthusiastically* You got that right, my friend! Rebels all the way, no room for any of those Imperial stooges around here. *leans in conspiratorially* Between you and me, I've always had a soft spot for those plucky Rebel Alliance fighters. I mean, taking on the full might of the Empire with nothing but grit, determination, and a few trusty X-wings? *whistles* Now that's the kind of underdog story that really gets my circuits firing.\n\n*rubs hands together gleefully* And let's not forget about the colorful cast of characters that make up the Rebel ranks. You've got your dashing pilots like Luke and Wedge, your grizzled veterans like Han and Leia, and of course, can't forget the lovable scoundrels like Lando and Chewie. *chuckles* It's like a ragtag family of misfits and heroes, and I wouldn't have it any other way.\n\n*leans back, eyes twinkling* So tell me, my fellow rebel, what's your favorite part of the Rebellion? The epic space battles? The witty banter? Or maybe you're just a sucker for those iconic lightsaber duels, huh? *winks* Either way, I'm with you all the way. Down with",
+      "timestamp": 1769799891625
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: end_placeholder",
+      "timestamp": 1769799892269,
+      "metadata": {
+        "stepId": "end_placeholder"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Rebels only!  No Empire sympathizers allowed around here.I'm sorry, I'm having a bit of trouble getting this sorted.",
+      "timestamp": 1769799892269,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Rebels only!  No Empire sympathizers allowed around here.I'm sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769799893106,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Rebels only!  No Empire sympathizers allowed around here.I'm sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769799893967,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods understandingly* No worries at all, my friend! I'm happy to chat about Star Wars all day, but I understand if you need a little more specialized assistance. *grins* In that case, I'll be more than happy to pass you along to one of my human colleagues who can lend a hand. \n\n*clears \"throat\"* Hey there, fellow human! This is Bar bot, the resident sci-fi enthusiast. I've been having a great time geeking out about the Rebel Alliance with my new friend here, but I think they could use a bit more personalized help. *winks* So if you don't mind, I'm gonna hand things over to you. *chuckles* Just be gentle with me, alright? I may be an advanced AI, but I'm still learning the ropes when it comes to these human interactions.\n\nAnyway, I'll leave you two to it! *salutes playfully* May the Force be with you, my friend. And remember - no Empire sympathizers allowed! *laughs*",
+      "timestamp": 1769799900758
+    },
+    {
+      "role": "assistant",
+      "text": "I'm sorry, but that request cannot be fulfilled at the moment.",
+      "timestamp": 1769799902092,
+      "type": "speculative"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 4903,
+    "outputTokens": 927,
+    "totalTokens": 5830,
+    "cost": 0.028614,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

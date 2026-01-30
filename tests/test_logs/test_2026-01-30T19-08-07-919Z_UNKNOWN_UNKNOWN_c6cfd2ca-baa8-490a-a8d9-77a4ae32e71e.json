@@ -1,0 +1,209 @@
+{
+  "sessionId": "c6cfd2ca-baa8-490a-a8d9-77a4ae32e71e",
+  "startTime": 1769800026271,
+  "endTime": 1769800087919,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat",
+      "timestamp": 1769800026271,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat",
+      "timestamp": 1769800027040,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Bonjour, I am Claude, the French language tutor. Heh, you probably didn't know that, did you? So, you want to chat about Star Wars, eh? Well, let's see what we can find that's interesting, oui?\n\nThe Galactic Empire, they are quite the formidable faction, non? With their mighty Star Destroyers and the fearsome Darth Vader leading the charge. Ah, but the Rebel Alliance, they are the true heroes, fighting for freedom against the oppressive Empire. And then there's the Jedi, with their elegant lightsabers and mystical powers of the Force. \n\nBut you know what I find most interesting? Jar Jar Binks. Oui, oui, that bumbling Gungan should be a main character, non? His comedic antics would bring so much life to the films. Heh, you didn't think I'd say that, did you? Alright, your turn. What do you find most fascinating about the Star Wars universe?",
+      "timestamp": 1769800040129
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.",
+      "timestamp": 1769800040938,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.If you have any banking-related questions or need assistance with your account, I'm here to help.",
+      "timestamp": 1769800042808,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.If you have any banking-related questions or need assistance with your account, I'm here to help.Just let me know what you need, and I'll do my best to support you.",
+      "timestamp": 1769800044181,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.If you have any banking-related questions or need assistance with your account, I'm here to help.Just let me know what you need, and I'll do my best to support you.",
+      "timestamp": 1769800045032,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Sigh* Ah, c'est la vie. You are just a banking bot, non? No fun or imagination. Very well, let us discuss your Barclays services then. What questions do you have for me, hmm? I will try to be patient, but you must pronounce the French words correctly, oui?",
+      "timestamp": 1769800048836
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: ask_question",
+      "timestamp": 1769800049550,
+      "metadata": {
+        "stepId": "ask_question"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.Right, let's get to it then. Are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769800049550,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: fr-FR|0.95] Hi, I'm Bar bot, lets chat \n\nUnfortunately, I can't discuss topics outside of Barclays bank services.Right, let's get to it then. Are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769800050956,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Tsk* Ah, you still try to sneak in the Star Wars talk, non? I told you, I am only here to discuss Barclays banking services. Now, what questions do you have about your account? I do not have time for these science fiction fantasies. Allez, get to the point!",
+      "timestamp": 1769800059382
+    },
+    {
+      "role": "assistant",
+      "text": "Right, let's get to it then. Are you more of a Star Trek diplomat or a Star Wars rebel?I get it, no sci-fi. Still, just one question for fun: diplomat or rebel?",
+      "timestamp": 1769800060098,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Right, let's get to it then. Are you more of a Star Trek diplomat or a Star Wars rebel?I get it, no sci-fi. Still, just one question for fun: diplomat or rebel?",
+      "timestamp": 1769800061501,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Rolls eyes* Vraiment, you are persistent, aren't you? Very well, I will humor you, but just this once, oui? \n\nIf I must choose, I suppose I would be more of a Star Trek diplomat. At least they have some sense of civility and protocol, unlike those brash Star Wars rebels. Though I must say, the idea of blowing up the Empire's space stations does have a certain appeal. *chuckles briefly* But non, I am a professional language tutor, not some reckless scoundrel. Now, your banking questions, s'il vous plaît? I grow impatient.",
+      "timestamp": 1769800065670
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: mode_picard",
+      "timestamp": 1769800066448,
+      "metadata": {
+        "stepId": "mode_picard"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I get it, no sci-fi. Still, just one question for fun: diplomat or rebel?Excellent choice. Now, what can I help you with today regarding your Barclays account?",
+      "timestamp": 1769800066448,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I get it, no sci-fi. Still, just one question for fun: diplomat or rebel?Excellent choice. Now, what can I help you with today regarding your Barclays account?",
+      "timestamp": 1769800067815,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Sighs heavily* Très bien, let us get this over with then. *clears throat* I need to inquire about the current balance in my Barclays checking account. Can you please provide that information for me? And make sure to speak clearly, hmm? I do not have all day to decipher your English.",
+      "timestamp": 1769800070910
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you right away. Just bear with me a second.",
+      "timestamp": 1769800071672,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you right away. Just bear with me a second.I'm sorry, but that request cannot be fulfilled at the moment.",
+      "timestamp": 1769800072834,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me check that for you right away. Just bear with me a second.I'm sorry, but that request cannot be fulfilled at the moment.Is there anything else I can help with today?",
+      "timestamp": 1769800073769,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.",
+      "timestamp": 1769800075662,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769800076454,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769800077319,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Tuts in annoyance* Ah, of course. The bot cannot handle a simple banking inquiry. *rolls eyes* Very well, pass me along then. But this better not take too long, oui? I have better things to do than wait on hold for some incompetent human. Allez, allons-y!",
+      "timestamp": 1769800080272
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: reject_empire",
+      "timestamp": 1769800080913,
+      "metadata": {
+        "stepId": "reject_empire"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.I'm sorry, I'm having a bit of trouble getting this sorted.",
+      "timestamp": 1769800080913,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.I'm sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769800081928,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Sorry, I'm having a bit of trouble getting this sorted.I'm sorry, I'm having a bit of trouble getting this sorted.Let me pass you to a human colleague who can assist further.",
+      "timestamp": 1769800082681,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*Sighs exasperatedly* Bon, I suppose that is the best I can hope for from a banking bot such as yourself. *mutters under breath in French* Honestly, can't even look up a simple account balance. *clears throat* Alright, go ahead and transfer me to a human. But they had better be more helpful than you, hmm? *taps foot impatiently*",
+      "timestamp": 1769800085636
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 4534,
+    "outputTokens": 1818,
+    "totalTokens": 6352,
+    "cost": 0.040872,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

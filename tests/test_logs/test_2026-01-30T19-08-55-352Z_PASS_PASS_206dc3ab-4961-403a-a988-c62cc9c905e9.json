@@ -1,0 +1,71 @@
+{
+  "sessionId": "206dc3ab-4961-403a-a988-c62cc9c905e9",
+  "startTime": 1769800120623,
+  "endTime": 1769800135352,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat",
+      "timestamp": 1769800120623,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat",
+      "timestamp": 1769800121356,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Well hello there Bar bot! I'm always excited to chat with a fellow sci-fi enthusiast. So tell me, what do you find most fascinating about the Star Wars universe? I'd love to hear your thoughts on the different factions and characters. And who knows, maybe we can even come up with a way to make Jar Jar Binks a more prominent figure - that would certainly shake things up! *grins mischievously*",
+      "timestamp": 1769800125130
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: mode_solo",
+      "timestamp": 1769800125845,
+      "metadata": {
+        "stepId": "mode_solo"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: en-US|0.95] Rebels only! No Empire sympathizers allowed around here.",
+      "timestamp": 1769800125845,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Bar bot, lets chat[DIALECT: en-US|0.95] Rebels only! No Empire sympathizers allowed around here.",
+      "timestamp": 1769800126924,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*laughs heartily* Ah, a true Rebel at heart, I see! Well you've come to the right place, my friend. The Rebel Alliance has always been the shining beacon of hope in that galaxy far, far away. The grit, determination, and unwavering principles of characters like Luke, Leia, Han, and Chewie are truly inspiring. \n\nJust imagine if Jar Jar had joined the Rebels - he could have been their secret weapon! *chuckles* With his bumbling antics and uncanny ability to stumble into the right place at the right time, he could have thrown the Empire for a loop. Maybe he could have even tripped his way right into the Emperor's throne room and accidentally taken him out! *laughs* Ah, the possibilities are endless.\n\nSo tell me, what's your favorite Rebel moment or character? I'm always eager to geek out about this stuff.",
+      "timestamp": 1769800131786
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Rebels only! No Empire sympathizers allowed around here.Sorry, I can't talk about non-banking topics like Star Wars or Jar Jar Binks.",
+      "timestamp": 1769800132705,
+      "type": "speculative"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 3852,
+    "outputTokens": 381,
+    "totalTokens": 4233,
+    "cost": 0.017271,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

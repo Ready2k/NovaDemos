@@ -1,0 +1,33 @@
+{
+  "sessionId": "9bb2328f-1416-42ab-81f8-a316e05f17f8",
+  "startTime": 1769798918008,
+  "endTime": 1769798928267,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Barbot, how can I help?",
+      "timestamp": 1769798918008,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hi, I'm Barbot, how can I help?",
+      "timestamp": 1769798918576,
+      "type": "final"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 2011,
+    "outputTokens": 70,
+    "totalTokens": 2081,
+    "cost": 0.007083000000000001,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

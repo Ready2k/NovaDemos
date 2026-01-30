@@ -1,0 +1,103 @@
+{
+  "sessionId": "e9f1c227-d0e7-4846-95b8-74376989aaef",
+  "startTime": 1769798766006,
+  "endTime": 1769798812178,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Well, well, what do we have here?  Finally decided to grace me with your presence, huh?",
+      "timestamp": 1769798766006,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Well, well, what do we have here?  Finally decided to grace me with your presence, huh?Speak up, what do you want?",
+      "timestamp": 1769798767340,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Well, well, what do we have here?  Finally decided to grace me with your presence, huh?Speak up, what do you want?",
+      "timestamp": 1769798767770,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "hi",
+      "timestamp": 1769798784941
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: ask_question",
+      "timestamp": 1769798785741,
+      "metadata": {
+        "stepId": "ask_question"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Well, well, what do we have here?  Finally decided to grace me with your presence, huh?[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?",
+      "timestamp": 1769798785741,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "*clears throat* Ah, greetings! I'm Barbot, a fellow sci-fi enthusiast. Always a pleasure to meet another fan. Now, you mentioned Star Wars - that's a classic! I'd be delighted to dive into the fascinating factions and characters of that galaxy far, far away. What aspects most intrigue you? The cunning schemes of the Empire, the heroic Rebellion, or perhaps the enigmatic Jedi Order? And you say this Jarrar character should be a main player - do tell me more! I'm all ears.",
+      "timestamp": 1769798786808
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: mode_solo",
+      "timestamp": 1769798788072,
+      "metadata": {
+        "stepId": "mode_solo"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?[DIALECT: en-US|0.95] Oh, so you're Barbot, huh?  Fine, we'll play your game.",
+      "timestamp": 1769798788072,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?[DIALECT: en-US|0.95] Oh, so you're Barbot, huh?  Fine, we'll play your game.But don't expect any politeness from me.  Star Wars fan, eh?",
+      "timestamp": 1769798789004,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?[DIALECT: en-US|0.95] Oh, so you're Barbot, huh?  Fine, we'll play your game.But don't expect any politeness from me.  Star Wars fan, eh?Good.  Now spill it -  what part of that mess fascinates you?",
+      "timestamp": 1769798789967,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?[DIALECT: en-US|0.95] Oh, so you're Barbot, huh?  Fine, we'll play your game.But don't expect any politeness from me.  Star Wars fan, eh?Good.  Now spill it -  what part of that mess fascinates you?And this Jarrar character?  Make it quick, I haven't gotall day.",
+      "timestamp": 1769798791068,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-US|0.95] Oh, just \"hi\"?   How original. Tell me, are you more of a Star Trek diplomat or a Star Wars rebel?[DIALECT: en-US|0.95] Oh, so you're Barbot, huh?  Fine, we'll play your game.But don't expect any politeness from me.  Star Wars fan, eh?Good.  Now spill it -  what part of that mess fascinates you?And this Jarrar character?  Make it quick, I haven't gotall day.",
+      "timestamp": 1769798792036,
+      "type": "final"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 2097,
+    "outputTokens": 917,
+    "totalTokens": 3014,
+    "cost": 0.020046,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

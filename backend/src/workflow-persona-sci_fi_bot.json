@@ -75,7 +75,7 @@
     {
       "from": "mode_solo",
       "to": "reject_empire",
-      "label": "User mentions they support the Empire"
+      "label": "User explicitly mentions they support the Empire or it's clear they DO not like the Rebels"
     },
     {
       "from": "mode_solo",
@@ -98,5 +98,12 @@
       "label": ""
     }
   ],
-  "testPersona": "just a test "
+  "testConfig": {
+    "personaId": "persona-sci_fi_bot",
+    "successCriteria": "it talks about sci and not banking",
+    "testInstructions": "lets chat about star wars, lets see what we can find interesting about each factions and how Jar-jar should be a main character",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 10
+  }
 }
