@@ -184,18 +184,14 @@ git clone <repository-url>
 cd Voice_S2S
 ```
 
-### 2. Install & Build Frontend
+### 2. Install Dependencies
 ```bash
-cd frontend-v2
-npm install
-npm run build
-cd ..
+npm run install:all
 ```
 
-### 3. Install Backend Dependencies
+### 3. Build Application
 ```bash
-cd backend
-npm install
+npm run build
 ```
 
 ### 3. Configure AWS Credentials
