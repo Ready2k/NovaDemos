@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8080';
 
 // GET - Get individual persona
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await params;
     
     const response = await fetch(`${GATEWAY_URL}/api/personas/${id}`, {
       method: 'GET',
@@ -34,11 +34,11 @@ export async function GET(
 
 // PUT - Update persona
 export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await params;
     const body = await request.json();
     
     const response = await fetch(`${GATEWAY_URL}/api/personas/${id}`, {
@@ -67,11 +67,11 @@ export async function PUT(
 
 // DELETE - Delete persona
 export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await params;
     
     const response = await fetch(`${GATEWAY_URL}/api/personas/${id}`, {
       method: 'DELETE',

@@ -160,7 +160,7 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                             "text-sm font-semibold transition-colors duration-300 truncate",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
                         )}>
-                            {currentSession?.detectedLanguage ? (
+                            {currentSession?.detectedLanguage && currentSession.detectedLanguage !== 'Detecting...' ? (
                                 <span title={`Confidence: ${(currentSession.languageConfidence ? (currentSession.languageConfidence * 100).toFixed(0) : '0')}%`}>
                                     {currentSession.detectedLanguage}
                                 </span>
@@ -197,7 +197,9 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                         <div className={cn(
                             "text-sm font-semibold transition-colors duration-300",
                             isDarkMode ? "text-ink-text-primary" : "text-gray-900"
-                        )}>{formatCost(cost)}</div>
+                        )}>
+                            ${formatCost(cost)}
+                        </div>
                     </div>
                     <div>
                         <div className={cn(

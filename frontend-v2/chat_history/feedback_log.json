@@ -278,5 +278,26 @@
     "score": 1,
     "name": "user-feedback",
     "timestamp": "2026-01-30T13:34:36.277Z"
+  },
+  {
+    "sessionId": "3b8676a3-583b-409e-84c2-9a93fb45f3b2",
+    "traceId": "3b8676a3-583b-409e-84c2-9a93fb45f3b2",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T14:12:52.003Z"
+  },
+  {
+    "sessionId": "805a4441-9904-406b-94f1-d54acc6c4c22",
+    "traceId": "805a4441-9904-406b-94f1-d54acc6c4c22",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T14:20:21.723Z"
+  },
+  {
+    "sessionId": "5c4dea12-ffe6-4a8d-8aa3-ef5e5c9c79e5",
+    "traceId": "5c4dea12-ffe6-4a8d-8aa3-ef5e5c9c79e5",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T14:43:25.380Z"
   }
 ]

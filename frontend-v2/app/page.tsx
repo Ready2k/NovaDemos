@@ -93,6 +93,20 @@ export default function Home() {
         // Capture session ID early (helps with feedback if session_start is delayed)
         if (message.sessionId) {
           sessionIdRef.current = message.sessionId;
+          
+          // Initialize session object immediately (don't wait for session_start)
+          setCurrentSession({
+            sessionId: message.sessionId,
+            startTime: new Date().toISOString(),
+            duration: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cost: 0,
+            transcript: [],
+            brainMode: settings.brainMode,
+            voicePreset: settings.voicePreset,
+          });
+          console.log('[Session] Session initialized from connected message');
         }
 
         // Pre-initialize AudioContext to prevent clipping on first audio
@@ -231,12 +245,15 @@ export default function Home() {
         if (message.data?.traceId) {
           sessionIdRef.current = message.data.traceId;
         }
-        // Capture detected language if present
-        if (message.data?.detectedLanguage) {
-          console.log('[Session] Language detected:', message.data.detectedLanguage);
+        // Capture detected language if present (check multiple possible locations)
+        const detectedLanguage = message.data?.detectedLanguage || message.detectedLanguage;
+        const languageConfidence = message.data?.languageConfidence || message.languageConfidence;
+        
+        if (detectedLanguage) {
+          console.log('[Session] Language detected:', detectedLanguage, 'Confidence:', languageConfidence);
           updateSessionStats({
-            detectedLanguage: message.data.detectedLanguage,
-            languageConfidence: message.data.languageConfidence
+            detectedLanguage,
+            languageConfidence: languageConfidence || 0
           });
         }
         break;
@@ -251,6 +268,7 @@ export default function Home() {
           const inputTokens = message.data.totalInputTokens || message.data.inputTokens || 0;
           const outputTokens = message.data.totalOutputTokens || message.data.outputTokens || 0;
 
+          console.log('[Session] Token usage:', { inputTokens, outputTokens });
           updateSessionStats({
             inputTokens,
             outputTokens,
@@ -260,9 +278,10 @@ export default function Home() {
 
       case 'token_usage':
         // Ensure we update session stats even if message format varies
-        const inputTokens = message.inputTokens || (message.data && message.data.inputTokens) || 0;
-        const outputTokens = message.outputTokens || (message.data && message.data.outputTokens) || 0;
+        const inputTokens = message.inputTokens || (message.data?.inputTokens) || (message.data?.totalInputTokens) || 0;
+        const outputTokens = message.outputTokens || (message.data?.outputTokens) || (message.data?.totalOutputTokens) || 0;
 
+        console.log('[Session] Token usage (token_usage):', { inputTokens, outputTokens });
         updateSessionStats({
           inputTokens,
           outputTokens,

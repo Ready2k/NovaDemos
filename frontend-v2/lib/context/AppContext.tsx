@@ -204,13 +204,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMessages(prev => [...prev, message]);
 
         // Also add to current session transcript
-        if (currentSession) {
-            setCurrentSession(prev => prev ? {
-                ...prev,
-                transcript: [...prev.transcript, message],
-            } : null);
-        }
-    }, [currentSession]);
+        // NOTE: We use a functional update to avoid dependency on currentSession
+        // This prevents the callback from recreating and losing the session reference
+        setCurrentSession(prev => prev ? {
+            ...prev,
+            transcript: [...prev.transcript, message],
+        } : null);
+    }, []);
 
     const updateLastMessage = useCallback((updates: Partial<Message>) => {
         setMessages(prev => {
@@ -221,15 +221,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
 
         // Also update in session transcript
-        if (currentSession) {
-            setCurrentSession(prev => {
-                if (!prev || prev.transcript.length === 0) return prev;
-                const newTranscript = [...prev.transcript];
-                newTranscript[newTranscript.length - 1] = { ...newTranscript[newTranscript.length - 1], ...updates };
-                return { ...prev, transcript: newTranscript };
-            });
-        }
-    }, [currentSession]);
+        // NOTE: We use a functional update to avoid dependency on currentSession
+        setCurrentSession(prev => {
+            if (!prev || prev.transcript.length === 0) return prev;
+            const newTranscript = [...prev.transcript];
+            newTranscript[newTranscript.length - 1] = { ...newTranscript[newTranscript.length - 1], ...updates };
+            return { ...prev, transcript: newTranscript };
+        });
+    }, []);
 
     const clearMessages = useCallback(() => {
         setMessages([]);

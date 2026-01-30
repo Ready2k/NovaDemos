@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-    const response = await fetch(`${apiUrl}/api/history/${params.id}`);
+    const response = await fetch(`${apiUrl}/api/history/${id}`);
     
     if (!response.ok) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });

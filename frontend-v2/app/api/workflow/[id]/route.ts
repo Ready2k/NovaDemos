@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-    const response = await fetch(`${apiUrl}/api/workflow/${params.id}`);
+    const response = await fetch(`${apiUrl}/api/workflow/${id}`);
     
     if (!response.ok) {
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 });
@@ -21,14 +22,15 @@ export async function GET(
 }
 
 export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
     const body = await request.json();
     
-    const response = await fetch(`${apiUrl}/api/workflow/${params.id}`, {
+    const response = await fetch(`${apiUrl}/api/workflow/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -43,12 +45,13 @@ export async function POST(
 }
 
 export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-    const response = await fetch(`${apiUrl}/api/workflow/${params.id}`, {
+    const response = await fetch(`${apiUrl}/api/workflow/${id}`, {
       method: 'DELETE'
     });
     
