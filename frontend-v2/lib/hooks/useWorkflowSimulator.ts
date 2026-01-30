@@ -124,7 +124,16 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
                         content: m.content || ''
                     }));
 
-                const res = await fetch('http://localhost:8080/api/simulation/generate', {
+                // Dynamically determine API URL based on current location
+                const getApiUrl = () => {
+                    if (typeof window !== 'undefined' && window.location.protocol !== 'file:') {
+                        const protocol = window.location.protocol;
+                        return `${protocol}//${window.location.host}/api/simulation/generate`;
+                    }
+                    return 'http://localhost:8080/api/simulation/generate';
+                };
+
+                const res = await fetch(getApiUrl(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
