@@ -57,21 +57,21 @@ try {
     if (fs.existsSync(WORKFLOW_FILE)) {
         workflowDef = JSON.parse(fs.readFileSync(WORKFLOW_FILE, 'utf-8'));
         console.log(`[Agent:${AGENT_ID}] Loaded workflow from ${WORKFLOW_FILE}`);
-        
+
         // Load persona configuration if specified
         if (workflowDef && workflowDef.personaId) {
             console.log(`[Agent:${AGENT_ID}] Loading persona: ${workflowDef.personaId}`);
             const personaResult = personaLoader.loadPersona(workflowDef.personaId);
-            
+
             if (personaResult.success && personaResult.persona) {
                 personaConfig = personaResult.persona;
                 personaPrompt = personaResult.systemPrompt || '';
-                
+
                 console.log(`[Agent:${AGENT_ID}] ✅ Persona loaded: ${personaConfig.name}`);
                 console.log(`[Agent:${AGENT_ID}]    Voice: ${personaConfig.voiceId}`);
                 console.log(`[Agent:${AGENT_ID}]    Allowed tools: ${personaConfig.allowedTools.length}`);
                 console.log(`[Agent:${AGENT_ID}]    Prompt length: ${personaPrompt.length} chars`);
-                
+
                 // Override workflow voice with persona voice if not set
                 if (!workflowDef.voiceId && personaConfig.voiceId) {
                     workflowDef.voiceId = personaConfig.voiceId;
@@ -172,7 +172,7 @@ wss.on('connection', (ws: WebSocket) => {
                     let systemPrompt = '';
                     if (workflowDef) {
                         const workflowInstructions = convertWorkflowToText(workflowDef);
-                        
+
                         // Add handoff instructions for triage agent
                         const handoffInstructions = AGENT_ID === 'triage' ? `
 
@@ -214,7 +214,7 @@ You: "I'll connect you to our banking specialist right away."
 **REMEMBER: Saying you will connect them is NOT enough - you MUST CALL THE TOOL!**
 
 ` : '';
-                        
+
                         // Add context injection if we have session memory (userIntent or verified user)
                         let contextInjection = '';
                         if (message.memory && (message.memory.userIntent || message.memory.verified) && AGENT_ID !== 'triage') {
@@ -222,13 +222,13 @@ You: "I'll connect you to our banking specialist right away."
 
 ### CURRENT SESSION CONTEXT ###
 `;
-                            
+
                             if (message.memory.userIntent) {
                                 contextInjection += `
 **User's Original Request:** ${message.memory.userIntent}
 `;
                             }
-                            
+
                             if (message.memory.verified) {
                                 contextInjection += `
 **Customer Name:** ${message.memory.userName}
@@ -237,7 +237,7 @@ You: "I'll connect you to our banking specialist right away."
 **Verification Status:** VERIFIED
 `;
                             }
-                            
+
                             contextInjection += `
 **CRITICAL INSTRUCTION:** 
 - The customer is already verified and you have their details above
@@ -262,7 +262,7 @@ You: "I'll connect you to our banking specialist right away."
                                 console.log(`[Agent:${AGENT_ID}]    Memory keys: ${Object.keys(message.memory).join(', ')}`);
                             }
                         }
-                        
+
                         // Combine context + persona prompt + handoff + workflow
                         // CRITICAL: Context must come FIRST so persona prompt can reference it
                         if (personaPrompt) {
@@ -272,20 +272,20 @@ You: "I'll connect you to our banking specialist right away."
                             systemPrompt = `${contextInjection}${handoffInstructions}\n\n${workflowInstructions}`;
                             console.log(`[Agent:${AGENT_ID}] Using context + handoff + workflow instructions (${contextInjection.length + handoffInstructions.length + workflowInstructions.length} chars)`);
                         }
-                        
+
                         // Generate handoff tools (available to all agents)
                         const handoffTools = generateHandoffTools();
                         console.log(`[Agent:${AGENT_ID}] Generated ${handoffTools.length} handoff tools`);
-                        
+
                         // Generate banking tools (for banking-related agents)
                         const bankingTools = generateBankingTools();
                         console.log(`[Agent:${AGENT_ID}] Generated ${bankingTools.length} banking tools`);
-                        
+
                         // Combine all tools
                         const allTools = [...handoffTools, ...bankingTools];
-                        
+
                         // Configure session with workflow instructions, voice, and tools
-                        sonicClient.setConfig({ 
+                        sonicClient.setConfig({
                             systemPrompt,
                             voiceId: workflowDef.voiceId || 'matthew',
                             tools: allTools
@@ -306,7 +306,7 @@ You: "I'll connect you to our banking specialist right away."
                         messages: [],
                         currentNode: workflowDef?.nodes?.find((n: any) => n.type === 'start')?.id
                     };
-                    
+
                     // Restore verified user from session memory if available
                     if (message.memory && message.memory.verified) {
                         newSession.verifiedUser = {
@@ -317,13 +317,25 @@ You: "I'll connect you to our banking specialist right away."
                         };
                         console.log(`[Agent:${AGENT_ID}] ✅ Restored verified user from memory: ${message.memory.userName}`);
                     }
-                    
+
                     // Store userIntent in session so it can be passed through handoffs
                     if (message.memory && message.memory.userIntent) {
                         newSession.userIntent = message.memory.userIntent;
                         console.log(`[Agent:${AGENT_ID}] ✅ Stored userIntent in session: ${message.memory.userIntent}`);
                     }
-                    
+
+                    // HYDRATE GRAPH STATE from memory (if passed from Gateway)
+                    if (message.graphState && newSession.graphExecutor) {
+                        console.log(`[Agent:${AGENT_ID}] 📦 Hydrating graph state from session_init`);
+                        newSession.graphExecutor.hydrateState(message.graphState);
+
+                        // Sync current node if present in hydrated state
+                        if (message.graphState.currentNodeId) {
+                            newSession.currentNode = message.graphState.currentNodeId;
+                            console.log(`[Agent:${AGENT_ID}]    Resuming from node: ${message.graphState.currentNodeId}`);
+                        }
+                    }
+
                     activeSessions.set(sessionId, newSession);
 
                     // Send acknowledgment BEFORE starting Nova (to avoid race condition)
@@ -404,7 +416,7 @@ You: "I'll connect you to our banking specialist right away."
                     console.log(`[Agent:${AGENT_ID}] Session config updated`);
                     return;
                 }
-                
+
                 // Handle end of speech signal
                 if (message.type === 'end_of_speech') {
                     console.log(`[Agent:${AGENT_ID}] End of speech signal received`);
@@ -426,7 +438,7 @@ You: "I'll connect you to our banking specialist right away."
                 }
 
                 const audioBuffer = Buffer.from(data);
-                
+
                 // Validate PCM audio (must be even length)
                 if (audioBuffer.length % 2 !== 0) {
                     console.warn(`[Agent:${AGENT_ID}] Invalid PCM audio length: ${audioBuffer.length}`);
@@ -442,7 +454,7 @@ You: "I'll connect you to our banking specialist right away."
 
         } catch (error: any) {
             console.error(`[Agent:${AGENT_ID}] Message handling error:`, error);
-            
+
             // Try to send error to client
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -456,12 +468,12 @@ You: "I'll connect you to our banking specialist right away."
     ws.on('close', async () => {
         // DON'T close the session immediately - give Nova time to respond
         console.log(`[Agent:${AGENT_ID}] WebSocket closed for session: ${sessionId}`);
-        
+
         // Delay session cleanup to allow Nova to finish responding
         setTimeout(async () => {
             if (sessionId) {
                 console.log(`[Agent:${AGENT_ID}] Session cleanup: ${sessionId}`);
-                
+
                 const session = activeSessions.get(sessionId);
                 if (session) {
                     // Stop Nova Sonic session
@@ -489,10 +501,10 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
             case 'audio':
                 // Forward audio back to gateway/client
                 if (event.data.audio) {
-                    let audioBuffer = Buffer.isBuffer(event.data.audio) 
-                        ? event.data.audio 
+                    let audioBuffer = Buffer.isBuffer(event.data.audio)
+                        ? event.data.audio
                         : Buffer.from(event.data.audio);
-                    
+
                     // Ensure even byte length for Int16Array (16-bit PCM = 2 bytes per sample)
                     if (audioBuffer.length % 2 !== 0) {
                         console.warn(`[Agent:${AGENT_ID}] Padding odd-sized audio chunk: ${audioBuffer.length} -> ${audioBuffer.length + 1} bytes`);
@@ -501,7 +513,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                         padded[audioBuffer.length] = 0; // Pad with zero
                         audioBuffer = padded;
                     }
-                    
+
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(audioBuffer);
                     }
@@ -534,61 +546,61 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                         const nodeId = stepMatch[1].trim();
                         const previousNode = session.currentNode;
                         session.currentNode = nodeId;
-                        
+
                         console.log(`[Agent:${AGENT_ID}] Workflow transition: ${previousNode || 'start'} -> ${nodeId}`);
-                        
+
                         // Update graph executor state
                         if (session.graphExecutor) {
                             try {
                                 const result = session.graphExecutor.updateState(nodeId);
-                                
+
                                 if (result.success) {
                                     console.log(`[Agent:${AGENT_ID}] ✅ Graph state updated: ${result.currentNode}`);
                                     console.log(`[Agent:${AGENT_ID}]    Node type: ${result.nodeInfo?.type}`);
                                     console.log(`[Agent:${AGENT_ID}]    Valid transition: ${result.validTransition}`);
-                                    
+
                                     if (!result.validTransition) {
                                         console.warn(`[Agent:${AGENT_ID}] ⚠️  ${result.error}`);
                                     }
-                                    
+
                                     // Get next possible nodes
                                     const nextNodes = session.graphExecutor.getNextNodes();
                                     console.log(`[Agent:${AGENT_ID}]    Next nodes: ${nextNodes.map(n => n.id).join(', ')}`);
-                                    
+
                                     // DECISION NODE AUTOMATION
                                     // If current node is a decision node, automatically evaluate it
                                     if (result.nodeInfo?.type === 'decision' && nextNodes.length > 1) {
                                         console.log(`[Agent:${AGENT_ID}] 🤔 Decision node detected, evaluating...`);
-                                        
+
                                         // Get edges from this decision node
                                         const workflowDef = session.graphExecutor.getWorkflowDefinition();
                                         const edges = workflowDef.edges.filter(e => e.from === nodeId);
-                                        
+
                                         // Evaluate decision using LLM
                                         const decision = await decisionEvaluator.evaluateDecision(
                                             result.nodeInfo,
                                             edges,
                                             session.graphExecutor.getCurrentState()
                                         );
-                                        
+
                                         if (decision.success) {
                                             console.log(`[Agent:${AGENT_ID}] ✅ Decision made: ${decision.chosenPath}`);
                                             console.log(`[Agent:${AGENT_ID}]    Reasoning: ${decision.reasoning}`);
-                                            
+
                                             // Find the target node for this path
-                                            const chosenEdge = edges.find(e => 
-                                                e.label === decision.chosenPath || 
+                                            const chosenEdge = edges.find(e =>
+                                                e.label === decision.chosenPath ||
                                                 e.to === decision.chosenPath
                                             );
-                                            
+
                                             if (chosenEdge) {
                                                 const targetNodeId = chosenEdge.to;
                                                 console.log(`[Agent:${AGENT_ID}]    Next step: ${targetNodeId}`);
-                                                
+
                                                 // Send decision result to Nova Sonic as context
                                                 const decisionContext = `[SYSTEM] Decision made: ${decision.chosenPath}. Proceeding to ${targetNodeId}.`;
                                                 await session.sonicClient.sendText(decisionContext);
-                                                
+
                                                 // Send decision update to client
                                                 if (ws.readyState === WebSocket.OPEN) {
                                                     ws.send(JSON.stringify({
@@ -606,7 +618,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                             console.error(`[Agent:${AGENT_ID}] ❌ Decision evaluation failed: ${decision.error}`);
                                         }
                                     }
-                                    
+
                                 } else {
                                     console.error(`[Agent:${AGENT_ID}] ❌ Failed to update graph state: ${result.error}`);
                                 }
@@ -614,12 +626,12 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                 console.error(`[Agent:${AGENT_ID}] Failed to update graph state:`, error);
                             }
                         }
-                        
+
                         // Send workflow update to client with enhanced info
                         if (ws.readyState === WebSocket.OPEN) {
                             const currentNode = session.graphExecutor?.getCurrentNode();
                             const nextNodes = session.graphExecutor?.getNextNodes() || [];
-                            
+
                             ws.send(JSON.stringify({
                                 type: 'workflow_update',
                                 currentStep: nodeId,
@@ -642,14 +654,14 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                 // Intercept handoff tool calls
                 const toolName = event.data.toolName || event.data.name;
                 console.log(`[Agent:${AGENT_ID}] Tool called: ${toolName}`);
-                
+
                 // Check if this is a handoff tool
                 if (isHandoffTool(toolName)) {
                     const targetAgent = getTargetAgentFromTool(toolName);
                     if (targetAgent) {
                         const targetPersonaId = getPersonaIdForAgent(targetAgent);
                         console.log(`[Agent:${AGENT_ID}] 🔄 HANDOFF TRIGGERED: ${AGENT_ID} → ${targetAgent} (${targetPersonaId})`);
-                        
+
                         // Extract handoff context from tool input
                         // Nova Sonic sends tool input in event.data.content as JSON string
                         let toolInput: any = {};
@@ -664,13 +676,13 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                             toolInput = event.data.input;
                             console.log(`[Agent:${AGENT_ID}] Using tool input directly:`, toolInput);
                         }
-                        
+
                         // Build handoff context
                         const handoffContext: any = {
                             fromAgent: AGENT_ID,
                             lastUserMessage: toolInput.context || ''
                         };
-                        
+
                         // Handle return_to_triage specially
                         if (toolName === 'return_to_triage') {
                             handoffContext.taskCompleted = toolInput.taskCompleted || 'task_complete';
@@ -681,16 +693,16 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                         } else {
                             // Use reason from tool input, or fall back to stored userIntent from session
                             handoffContext.reason = toolInput.reason || toolInput.context || 'User needs specialist assistance';
-                            
+
                             // If we have stored userIntent in session, pass it along
                             if (!toolInput.reason && session.userIntent) {
                                 handoffContext.reason = session.userIntent;
                                 console.log(`[Agent:${AGENT_ID}] Using stored userIntent for handoff: ${session.userIntent}`);
                             }
-                            
+
                             console.log(`[Agent:${AGENT_ID}] Handoff reason: ${handoffContext.reason}`);
                         }
-                        
+
                         // CRITICAL: Include verified user data from session memory
                         // This ensures Banking agent receives customer name and account details
                         if (session.verifiedUser) {
@@ -700,31 +712,35 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                             handoffContext.sortCode = session.verifiedUser.sortCode;
                             console.log(`[Agent:${AGENT_ID}] Including verified user in handoff: ${handoffContext.userName}`);
                         }
-                        
+
                         // Send handoff request to gateway
                         if (ws.readyState === WebSocket.OPEN) {
+                            // Extract full graph state to pass along
+                            const graphState = session.graphExecutor?.getCurrentState();
+
                             ws.send(JSON.stringify({
                                 type: 'handoff_request',
                                 targetAgentId: targetPersonaId,
-                                context: handoffContext
+                                context: handoffContext,
+                                graphState: graphState // FULL LANGGRAPH STATE
                             }));
-                            console.log(`[Agent:${AGENT_ID}] Handoff request sent to gateway`);
+                            console.log(`[Agent:${AGENT_ID}] Handoff request sent to gateway (with graphState)`);
                         }
-                        
+
                         // Return success to Nova Sonic (tool executed successfully)
                         // Nova Sonic will continue processing, but gateway will handle the actual handoff
                         break;
                     }
                 }
-                
+
                 // Check if this is a banking tool
                 if (isBankingTool(toolName)) {
                     console.log(`[Agent:${AGENT_ID}] 💰 BANKING TOOL: ${toolName}`);
-                    
+
                     // Parse tool input
                     const toolInput = event.data.content ? JSON.parse(event.data.content) : event.data.input || {};
                     console.log(`[Agent:${AGENT_ID}] Tool input:`, toolInput);
-                    
+
                     try {
                         // Call local-tools service
                         console.log(`[Agent:${AGENT_ID}] Calling local-tools service: ${LOCAL_TOOLS_URL}`);
@@ -732,15 +748,15 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                             tool: toolName,
                             input: toolInput
                         });
-                        
+
                         const result = response.data.result;
                         console.log(`[Agent:${AGENT_ID}] Tool result from local-tools:`, result);
-                        
+
                         // CRITICAL: Store IDV verification result in session memory
                         // AgentCore returns results wrapped in content array with text field
                         if (toolName === 'perform_idv_check') {
                             let idvData;
-                            
+
                             // Parse the result structure from AgentCore
                             if (result.content && result.content[0] && result.content[0].text) {
                                 try {
@@ -752,7 +768,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                 // Fallback: direct structure
                                 idvData = result;
                             }
-                            
+
                             if (idvData && idvData.auth_status === 'VERIFIED') {
                                 session.verifiedUser = {
                                     customer_name: idvData.customer_name,
@@ -761,7 +777,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                     auth_status: idvData.auth_status
                                 };
                                 console.log(`[Agent:${AGENT_ID}] ✅ Stored verified user in session: ${idvData.customer_name}`);
-                                
+
                                 // Also notify gateway to update session memory
                                 if (ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({
@@ -779,14 +795,14 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                 console.log(`[Agent:${AGENT_ID}] IDV check failed or not verified`);
                             }
                         }
-                        
+
                         // Send result back to Nova Sonic
                         await session.sonicClient.sendToolResult(
                             event.data.toolUseId,
                             result,
                             false
                         );
-                        
+
                         // Forward tool result to client for debugging
                         if (ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({
@@ -797,7 +813,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                                 executionMode: 'local-tools'
                             }));
                         }
-                        
+
                         break;
                     } catch (error: any) {
                         console.error(`[Agent:${AGENT_ID}] Banking tool error:`, error);
@@ -809,7 +825,7 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
                         break;
                     }
                 }
-                
+
                 // Forward non-handoff tool usage to client for debugging
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
@@ -871,13 +887,13 @@ async function handleSonicEvent(event: SonicEvent, sessionId: string, ws: WebSoc
 // Register with gateway on startup
 async function registerWithGateway() {
     try {
-        const capabilities = workflowDef?.testConfig?.personaId 
-            ? [workflowDef.testConfig.personaId] 
+        const capabilities = workflowDef?.testConfig?.personaId
+            ? [workflowDef.testConfig.personaId]
             : (workflowDef?.personaId ? [workflowDef.personaId] : []);
-        
+
         const voiceId = personaConfig?.voiceId || workflowDef?.voiceId || 'matthew';
         const metadata = personaConfig?.metadata || workflowDef?.metadata || {};
-        
+
         const response = await axios.post(`${GATEWAY_URL}/api/agents/register`, {
             id: AGENT_ID,
             url: `http://${AGENT_HOST}:${AGENT_PORT}`,

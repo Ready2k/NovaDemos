@@ -15,7 +15,7 @@ export class GraphExecutor {
         this.workflowDefinition = workflowDefinition;
         const builder = WorkflowConverter.convert(workflowDefinition);
         this.graph = builder.compile();
-        
+
         // Initialize state with start node
         const startNode = workflowDefinition.nodes.find(n => n.type === 'start');
         this.currentState = {
@@ -65,10 +65,10 @@ export class GraphExecutor {
         error?: string;
     } {
         const previousNode = this.currentState.currentNodeId || 'unknown';
-        
+
         // Find the node in workflow definition
         const node = this.workflowDefinition.nodes.find(n => n.id === nodeId);
-        
+
         if (!node) {
             return {
                 success: false,
@@ -82,7 +82,7 @@ export class GraphExecutor {
 
         // Validate transition (check if edge exists from previous to current)
         const validTransition = this.isValidTransition(previousNode, nodeId);
-        
+
         // Update state
         this.currentState = {
             ...this.currentState,
@@ -142,7 +142,7 @@ export class GraphExecutor {
         const nextNodeIds = this.workflowDefinition.edges
             .filter(edge => edge.from === currentNodeId)
             .map(edge => edge.to);
-        
+
         return this.workflowDefinition.nodes.filter(
             node => nextNodeIds.includes(node.id)
         );
@@ -158,6 +158,29 @@ export class GraphExecutor {
             context: {},
             currentWorkflowId: this.workflowId,
             currentNodeId: startNode?.id || 'unknown'
+        };
+    }
+
+    /**
+     * Hydrate state from a previous session
+     * @param state The state to restore
+     */
+    public hydrateState(state: Partial<GraphState>): void {
+        if (!state) return;
+
+        console.log(`[GraphExecutor] Hydrating state with ${state.messages?.length || 0} messages and ${Object.keys(state.context || {}).length} context keys`);
+
+        this.currentState = {
+            ...this.currentState,
+            context: {
+                ...this.currentState.context,
+                ...(state.context || {})
+            },
+            // Append previous history before current messages
+            messages: [
+                ...(state.messages || [] as any[]),
+                ...(this.currentState.messages || [] as any[])
+            ]
         };
     }
 

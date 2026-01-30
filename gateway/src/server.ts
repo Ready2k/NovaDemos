@@ -121,13 +121,13 @@ app.get('/api/voices', (req: Request, res: Response) => {
         // Polyglot voices (can speak all languages)
         { id: 'tiffany', name: 'Tiffany (US Female, Polyglot)', language: 'en-US', polyglot: true },
         { id: 'matthew', name: 'Matthew (US Male, Polyglot)', language: 'en-US', polyglot: true },
-        
+
         // English variants
         { id: 'amy', name: 'Amy (UK Female)', language: 'en-GB' },
         { id: 'olivia', name: 'Olivia (AU Female)', language: 'en-AU' },
         { id: 'kiara', name: 'Kiara (IN Female)', language: 'en-IN' },
         { id: 'arjun', name: 'Arjun (IN Male)', language: 'en-IN' },
-        
+
         // European languages
         { id: 'ambre', name: 'Ambre (French Female)', language: 'fr-FR' },
         { id: 'florian', name: 'Florian (French Male)', language: 'fr-FR' },
@@ -135,7 +135,7 @@ app.get('/api/voices', (req: Request, res: Response) => {
         { id: 'lorenzo', name: 'Lorenzo (Italian Male)', language: 'it-IT' },
         { id: 'tina', name: 'Tina (German Female)', language: 'de-DE' },
         { id: 'lennart', name: 'Lennart (German Male)', language: 'de-DE' },
-        
+
         // Spanish & Portuguese
         { id: 'lupe', name: 'Lupe (Spanish US Female)', language: 'es-US' },
         { id: 'carlos', name: 'Carlos (Spanish US Male)', language: 'es-US' },
@@ -180,16 +180,16 @@ app.get('/api/history/:id', (req: Request, res: Response) => {
         // Handle both with and without .json extension
         const filename = id.endsWith('.json') ? id : `${id}.json`;
         const sessionPath = path.join(HISTORY_DIR, filename);
-        
+
         if (!fs.existsSync(sessionPath)) {
             return res.status(404).json({ error: `Session ${id} not found` });
         }
-        
+
         const session = readJsonFile(sessionPath, null);
         if (!session) {
             return res.status(404).json({ error: `Failed to read session ${id}` });
         }
-        
+
         res.json(session);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -220,7 +220,7 @@ app.get('/api/workflow/:id', (req: Request, res: Response) => {
             `workflow_${id}.json`,
             id.endsWith('.json') ? id : `${id}.json`
         ];
-        
+
         let workflowPath: string | null = null;
         for (const filename of possibleFiles) {
             const testPath = path.join(WORKFLOWS_DIR, filename);
@@ -229,16 +229,16 @@ app.get('/api/workflow/:id', (req: Request, res: Response) => {
                 break;
             }
         }
-        
+
         if (!workflowPath) {
             return res.status(404).json({ error: `Workflow ${id} not found` });
         }
-        
+
         const workflow = readJsonFile(workflowPath, null);
         if (!workflow) {
             return res.status(404).json({ error: `Failed to read workflow ${id}` });
         }
-        
+
         res.json(workflow);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -249,11 +249,11 @@ app.post('/api/workflow/:id', (req: Request, res: Response) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const workflow = req.body;
-        
+
         // Determine filename
         const filename = id.startsWith('workflow_') ? `${id}.json` : `workflow_${id}.json`;
         const workflowPath = path.join(WORKFLOWS_DIR, filename);
-        
+
         fs.writeFileSync(workflowPath, JSON.stringify(workflow, null, 2));
         res.json({ success: true, message: `Workflow ${id} saved` });
     } catch (e: any) {
@@ -269,7 +269,7 @@ app.delete('/api/workflow/:id', (req: Request, res: Response) => {
             `workflow_${id}.json`,
             id.endsWith('.json') ? id : `${id}.json`
         ];
-        
+
         let deleted = false;
         for (const filename of possibleFiles) {
             const testPath = path.join(WORKFLOWS_DIR, filename);
@@ -279,11 +279,11 @@ app.delete('/api/workflow/:id', (req: Request, res: Response) => {
                 break;
             }
         }
-        
+
         if (!deleted) {
             return res.status(404).json({ error: `Workflow ${id} not found` });
         }
-        
+
         res.json({ success: true, message: `Workflow ${id} deleted` });
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -356,7 +356,7 @@ app.get('/api/personas', (req: Request, res: Response) => {
                 return null;
             }
         }).filter(p => p !== null);
-        
+
         console.log(`[Gateway] Loaded ${personas.length} personas`);
         res.json(personas);
     } catch (e: any) {
@@ -370,14 +370,14 @@ app.get('/api/personas/:id', (req: Request, res: Response) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        
+
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: `Persona ${id} not found` });
         }
-        
+
         const content = fs.readFileSync(filePath, 'utf-8');
         const persona = JSON.parse(content);
-        
+
         // Also load the prompt file if it exists
         let promptContent = null;
         if (persona.promptFile) {
@@ -386,7 +386,7 @@ app.get('/api/personas/:id', (req: Request, res: Response) => {
                 promptContent = fs.readFileSync(promptPath, 'utf-8');
             }
         }
-        
+
         res.json({
             ...persona,
             promptContent
@@ -401,19 +401,19 @@ app.get('/api/personas/:id', (req: Request, res: Response) => {
 app.post('/api/personas', (req: Request, res: Response) => {
     try {
         const persona = req.body;
-        
+
         // Validate required fields
         if (!persona.id) {
             return res.status(400).json({ error: 'Persona ID is required' });
         }
-        
+
         const filePath = path.join(PERSONAS_DIR, `${persona.id}.json`);
-        
+
         // Check if already exists
         if (fs.existsSync(filePath)) {
             return res.status(409).json({ error: 'Persona already exists' });
         }
-        
+
         // Set defaults
         const personaData = {
             id: persona.id,
@@ -429,16 +429,16 @@ app.post('/api/personas', (req: Request, res: Response) => {
                 tone: 'professional'
             }
         };
-        
+
         // Write persona config file
         fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
-        
+
         // Create prompt file if content provided
         if (persona.promptContent && persona.promptFile) {
             const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
             fs.writeFileSync(promptPath, persona.promptContent, 'utf-8');
         }
-        
+
         console.log(`[Gateway] Created persona: ${persona.id}`);
         res.json({ success: true, persona: personaData });
     } catch (e: any) {
@@ -453,33 +453,33 @@ app.put('/api/personas/:id', (req: Request, res: Response) => {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const updates = req.body;
         const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        
+
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: `Persona ${id} not found` });
         }
-        
+
         // Read existing persona
         const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        
+
         // Merge updates
         const updated = {
             ...existing,
             ...updates,
             id: existing.id // Don't allow ID changes
         };
-        
+
         // Remove promptContent from persona file (it goes in separate file)
         const { promptContent, ...personaData } = updated;
-        
+
         // Write updated persona config
         fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
-        
+
         // Update prompt file if content provided
         if (promptContent && personaData.promptFile) {
             const promptPath = path.join(PROMPTS_DIR, personaData.promptFile);
             fs.writeFileSync(promptPath, promptContent, 'utf-8');
         }
-        
+
         console.log(`[Gateway] Updated persona: ${id}`);
         res.json({ success: true, persona: personaData });
     } catch (e: any) {
@@ -493,17 +493,17 @@ app.delete('/api/personas/:id', (req: Request, res: Response) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        
+
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({ error: `Persona ${id} not found` });
         }
-        
+
         // Read persona to get prompt file
         const persona = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        
+
         // Delete persona config file
         fs.unlinkSync(filePath);
-        
+
         // Optionally delete prompt file (commented out for safety)
         // if (persona.promptFile) {
         //     const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
@@ -511,7 +511,7 @@ app.delete('/api/personas/:id', (req: Request, res: Response) => {
         //         fs.unlinkSync(promptPath);
         //     }
         // }
-        
+
         console.log(`[Gateway] Deleted persona: ${id}`);
         res.json({ success: true, message: `Persona ${id} deleted` });
     } catch (e: any) {
@@ -618,7 +618,7 @@ wss.on('connection', async (ws: WebSocket) => {
     activeConnections.set(sessionId, ws);
 
     console.log(`[Gateway] New WebSocket connection: ${sessionId}`);
-    
+
     // Store selected workflow for this session
     let selectedWorkflowId = 'triage'; // Default to triage
 
@@ -660,7 +660,7 @@ wss.on('connection', async (ws: WebSocket) => {
 
             agentWs.on('open', () => {
                 console.log(`[Gateway] Connected to agent: ${agent.id}`);
-                
+
                 // Get current session memory to pass to new agent
                 router.getMemory(sessionId).then(memory => {
                     // Send session initialization with trace context and memory
@@ -669,11 +669,15 @@ wss.on('connection', async (ws: WebSocket) => {
                         sessionId,
                         traceId,  // Pass trace ID to agent
                         memory: memory || {},  // Pass session memory to agent
+                        graphState: memory?.graphState, // Pass full graph state if available
                         timestamp: Date.now()
                     }));
-                    
+
                     if (memory && memory.verified) {
                         console.log(`[Gateway] Passed verified user to agent ${agent.id}: ${memory.userName}`);
+                    }
+                    if (memory?.graphState) {
+                        console.log(`[Gateway] Passed graphState to agent ${agent.id} (${Object.keys(memory.graphState.context || {}).length} context keys)`);
                     }
                 });
             });
@@ -694,16 +698,22 @@ wss.on('connection', async (ws: WebSocket) => {
                     // INTERCEPT Hand-off requests!
                     if (message.type === 'handoff_request') {
                         console.log(`[Gateway] Handoff requested: ${agent.id} -> ${message.targetAgentId}`);
-                        
+
                         // Get current session memory
                         const sessionMemory = await router.getMemory(sessionId);
-                        
+
                         // Update memory with handoff context
                         if (message.context) {
                             const updates: any = {
                                 lastAgent: agent.id
                             };
-                            
+
+                            // PERSIST GRAPH STATE
+                            if (message.graphState) {
+                                updates.graphState = message.graphState;
+                                console.log(`[Gateway] 📦 Captured graphState for handoff from ${agent.id}`);
+                            }
+
                             // Handle return to triage
                             if (message.context.isReturn) {
                                 updates.taskCompleted = message.context.taskCompleted;
@@ -721,16 +731,16 @@ wss.on('connection', async (ws: WebSocket) => {
                                         console.log(`[Gateway] Preserving ORIGINAL user intent: ${sessionMemory.userIntent} (not overwriting with: ${message.context.reason})`);
                                     }
                                 }
-                                
+
                                 // Store last user message
                                 if (message.context.lastUserMessage) {
                                     updates.lastUserMessage = message.context.lastUserMessage;
                                 }
                             }
-                            
+
                             await router.updateMemory(sessionId, updates);
                         }
-                        
+
                         // Tag handoff event in Langfuse
                         trace.event({
                             name: 'a2a-handoff',
@@ -800,12 +810,12 @@ wss.on('connection', async (ws: WebSocket) => {
             if (message.type === 'select_workflow') {
                 console.log(`[Gateway] Workflow selected: ${message.workflowId}`);
                 selectedWorkflowId = message.workflowId || 'triage';
-                
+
                 // Initialize session with selected workflow
                 if (!sessionInitialized) {
                     const session = await router.createSession(sessionId, selectedWorkflowId);
                     const agent = await router.routeToAgent(sessionId);
-                    
+
                     if (!agent) {
                         console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
                         ws.send(JSON.stringify({
@@ -814,7 +824,7 @@ wss.on('connection', async (ws: WebSocket) => {
                         }));
                         return;
                     }
-                    
+
                     currentAgent = agent;
                     await connectToAgent(agent);
                     sessionInitialized = true;
@@ -827,13 +837,13 @@ wss.on('connection', async (ws: WebSocket) => {
                 ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
                 return;
             }
-            
+
             // Initialize with default workflow if not yet initialized
             if (!sessionInitialized) {
                 console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
                 const session = await router.createSession(sessionId, selectedWorkflowId);
                 const agent = await router.routeToAgent(sessionId);
-                
+
                 if (!agent) {
                     console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
                     ws.send(JSON.stringify({
@@ -842,7 +852,7 @@ wss.on('connection', async (ws: WebSocket) => {
                     }));
                     return;
                 }
-                
+
                 currentAgent = agent;
                 await connectToAgent(agent);
                 sessionInitialized = true;
