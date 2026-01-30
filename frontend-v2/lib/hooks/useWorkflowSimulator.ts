@@ -114,10 +114,14 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
             try {
                 // Prepare history for API
                 // Map frontend messages to { role, content }
-                const history = messages.map(m => ({
-                    role: m.role,
-                    content: m.content || ''
-                }));
+                // CRITICAL FIX: Filter out 'tool' roles or intermediate states so the Sim LLM 
+                // doesn't see them as its own past outputs (due to role inversion).
+                const history = messages
+                    .filter(m => m.role === 'user' || m.role === 'assistant')
+                    .map(m => ({
+                        role: m.role,
+                        content: m.content || ''
+                    }));
 
                 const res = await fetch('http://localhost:8080/api/simulation/generate', {
                     method: 'POST',

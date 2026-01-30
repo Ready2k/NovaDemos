@@ -1,0 +1,102 @@
+{
+  "sessionId": "38568d86-8211-4703-81d8-f199cd6b9681",
+  "startTime": 1769759113554,
+  "endTime": 1769759127623,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769759113554,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769759114153,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help today?",
+      "timestamp": 1769759115994
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769759116832,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?No problem, I'm here to help. What would you like assistance with today?",
+      "timestamp": 1769759116832,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?No problem, I'm here to help. What would you like assistance with today?Anything specific on your mind?",
+      "timestamp": 1769759117890,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?No problem, I'm here to help. What would you like assistance with today?Anything specific on your mind?",
+      "timestamp": 1769759118531,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me check that for you. One moment please.",
+      "timestamp": 1769759120658
+    },
+    {
+      "role": "assistant",
+      "text": "No problem, I'm here to help. What would you like assistance with today?Sure, take your time. Just let me know what you need help with when you're ready.",
+      "timestamp": 1769759121381,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "No problem, I'm here to help. What would you like assistance with today?Sure, take your time. Just let me know what you need help with when you're ready.",
+      "timestamp": 1769759122505,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Alright, to assist you today, I'll first need to verify your account details. Could you please provide me with your 8-digit account number?",
+      "timestamp": 1769759124508
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: request_details",
+      "timestamp": 1769759125217,
+      "metadata": {
+        "stepId": "request_details"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Sure, take your time. Just let me know what you need help with when you're ready.I'd be happy to help, but I need to verify your identity first.",
+      "timestamp": 1769759125217,
+      "type": "speculative"
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 5415,
+    "outputTokens": 528,
+    "totalTokens": 5943,
+    "cost": 0.024165,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "sessionId": "c5334909-672c-48f3-a8ec-6fa411b8742f",
+  "startTime": 1769758788385,
+  "endTime": 1769758796910,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769758788385,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?",
+      "timestamp": 1769758789055,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help today?",
+      "timestamp": 1769758790999
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769758791706,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?[DIALECT: en-GB|0.95] Thanks for having me! What would you like help with today?",
+      "timestamp": 1769758791706,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hi there! How can I help you today?[DIALECT: en-GB|0.95] Thanks for having me! What would you like help with today?",
+      "timestamp": 1769758792378,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let's get started. Could you please provide your account number?",
+      "timestamp": 1769758794267
+    }
+  ],
+  "tools": [],
+  "usage": {
+    "inputTokens": 5382,
+    "outputTokens": 197,
+    "totalTokens": 5579,
+    "cost": 0.019101,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ],
+  "userResult": "FAIL",
+  "status": "FAIL"
+}

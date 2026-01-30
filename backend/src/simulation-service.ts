@@ -57,6 +57,15 @@ INSTRUCTIONS:
 12. The conversation history may contain system logs (like [EXECUTE...]). IGNORE THEM. They are not part of the conversation you need to respond to.
 `;
 
+            // SAFETY CHECK: Detect if an Agent Persona uses "You are the [Name] Assistant"
+            // If the user mistakenly selected an Agent persona, fallback to a generic user to prevent role confusion.
+            if (persona.includes('You are the **') && persona.includes('Assistant**')) {
+                console.warn('[Simulation] WARNING: Detected Agent Persona used for Simulator. Overriding with Generic User Persona.');
+                systemPrompt += `\nSPECIFIC OVERRIDE: The persona text below appears to be for the Agent, not the User.
+                IGNORE the "Your Persona" section below. Instead, act as a Standard Customer testing the system.
+                Goal: Interact naturally and verify the agent's responses.\n`;
+            }
+
             if (instructions) {
                 systemPrompt += `\nSPECIFIC TEST INSTRUCTIONS (PRIORITY):\n${instructions}\n`;
             }
@@ -83,6 +92,9 @@ INSTRUCTIONS:
             // The Model's output is "Assistant" (Response from Model, which becomes User Input in real app).
 
             history.forEach(msg => {
+                // Safety check: Ignore any roles that aren't user/assistant (though frontend should filter them)
+                if (msg.role !== 'user' && msg.role !== 'assistant') return;
+
                 const role = msg.role === 'assistant' ? 'user' : 'assistant'; // Invert roles for the simulator
                 // Only add if content exists
                 if (msg.content) {
