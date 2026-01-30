@@ -227,7 +227,7 @@ You: "I'll connect you to our banking specialist right away."
                             if (message.memory.verified) {
                                 contextInjection += `
 **Customer Name:** ${message.memory.userName}
-**Account Number:** ${message.memory.account}
+**Account ID:** ${message.memory.account}
 **Sort Code:** ${message.memory.sortCode}
 **Verification Status:** VERIFIED
 `;
@@ -310,6 +310,16 @@ You: "I'll connect you to our banking specialist right away."
                     if (message.memory && message.memory.userIntent) {
                         newSession.userIntent = message.memory.userIntent;
                         console.log(`[Agent:${AGENT_ID}] ✅ Stored userIntent in session: ${message.memory.userIntent}`);
+                    }
+                    // HYDRATE GRAPH STATE from memory (if passed from Gateway)
+                    if (message.graphState && newSession.graphExecutor) {
+                        console.log(`[Agent:${AGENT_ID}] 📦 Hydrating graph state from session_init`);
+                        newSession.graphExecutor.hydrateState(message.graphState);
+                        // Sync current node if present in hydrated state
+                        if (message.graphState.currentNodeId) {
+                            newSession.currentNode = message.graphState.currentNodeId;
+                            console.log(`[Agent:${AGENT_ID}]    Resuming from node: ${message.graphState.currentNodeId}`);
+                        }
                     }
                     activeSessions.set(sessionId, newSession);
                     // Send acknowledgment BEFORE starting Nova (to avoid race condition)
@@ -635,12 +645,15 @@ async function handleSonicEvent(event, sessionId, ws) {
                         }
                         // Send handoff request to gateway
                         if (ws.readyState === ws_1.WebSocket.OPEN) {
+                            // Extract full graph state to pass along
+                            const graphState = session.graphExecutor?.getCurrentState();
                             ws.send(JSON.stringify({
                                 type: 'handoff_request',
                                 targetAgentId: targetPersonaId,
-                                context: handoffContext
+                                context: handoffContext,
+                                graphState: graphState // FULL LANGGRAPH STATE
                             }));
-                            console.log(`[Agent:${AGENT_ID}] Handoff request sent to gateway`);
+                            console.log(`[Agent:${AGENT_ID}] Handoff request sent to gateway (with graphState)`);
                         }
                         // Return success to Nova Sonic (tool executed successfully)
                         // Nova Sonic will continue processing, but gateway will handle the actual handoff

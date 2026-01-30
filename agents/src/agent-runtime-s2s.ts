@@ -232,7 +232,7 @@ You: "I'll connect you to our banking specialist right away."
                             if (message.memory.verified) {
                                 contextInjection += `
 **Customer Name:** ${message.memory.userName}
-**Account Number:** ${message.memory.account}
+**Account ID:** ${message.memory.account}
 **Sort Code:** ${message.memory.sortCode}
 **Verification Status:** VERIFIED
 `;

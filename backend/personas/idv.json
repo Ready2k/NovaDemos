@@ -7,7 +7,7 @@
     "idv"
   ],
   "allowedTools": [
-    "verify_account",
+    "perform_idv_check",
     "return_to_triage",
     "transfer_to_banking",
     "transfer_to_idv",

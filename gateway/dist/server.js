@@ -640,10 +640,14 @@ wss.on('connection', async (ws) => {
                         sessionId,
                         traceId, // Pass trace ID to agent
                         memory: memory || {}, // Pass session memory to agent
+                        graphState: memory?.graphState, // Pass full graph state if available
                         timestamp: Date.now()
                     }));
                     if (memory && memory.verified) {
                         console.log(`[Gateway] Passed verified user to agent ${agent.id}: ${memory.userName}`);
+                    }
+                    if (memory?.graphState) {
+                        console.log(`[Gateway] Passed graphState to agent ${agent.id} (${Object.keys(memory.graphState.context || {}).length} context keys)`);
                     }
                 });
             });
@@ -668,6 +672,11 @@ wss.on('connection', async (ws) => {
                             const updates = {
                                 lastAgent: agent.id
                             };
+                            // PERSIST GRAPH STATE
+                            if (message.graphState) {
+                                updates.graphState = message.graphState;
+                                console.log(`[Gateway] 📦 Captured graphState for handoff from ${agent.id}`);
+                            }
                             // Handle return to triage
                             if (message.context.isReturn) {
                                 updates.taskCompleted = message.context.taskCompleted;

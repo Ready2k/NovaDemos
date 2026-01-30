@@ -124,6 +124,27 @@ class GraphExecutor {
             currentNodeId: startNode?.id || 'unknown'
         };
     }
+    /**
+     * Hydrate state from a previous session
+     * @param state The state to restore
+     */
+    hydrateState(state) {
+        if (!state)
+            return;
+        console.log(`[GraphExecutor] Hydrating state with ${state.messages?.length || 0} messages and ${Object.keys(state.context || {}).length} context keys`);
+        this.currentState = {
+            ...this.currentState,
+            context: {
+                ...this.currentState.context,
+                ...(state.context || {})
+            },
+            // Append previous history before current messages
+            messages: [
+                ...(state.messages || []),
+                ...(this.currentState.messages || [])
+            ]
+        };
+    }
     getGraph() {
         return this.graph;
     }

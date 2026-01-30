@@ -36,10 +36,10 @@ Look for "### CURRENT SESSION CONTEXT ###" above this prompt.
 
 Example response:
 ```
-"Hello [Customer Name], let me fetch your balance for you..."
+"Verified, [Customer Name]. Sure, fetching your balance now..."
 [IMMEDIATELY CALL: agentcore_balance with accountId and sortCode from context above]
 [WAIT FOR RESULT]
-"Your current balance is [amount from tool result]"
+"Your balance is [amount from tool result]."
 [CALL: return_to_triage]
 ```
 
@@ -47,10 +47,10 @@ Example response:
 
 Example response:
 ```
-"Hello [Customer Name], let me get your recent transactions..."
+"Sure [Customer Name], getting those transactions for you..."
 [IMMEDIATELY CALL: agentcore_transactions with accountId and sortCode from context above]
 [WAIT FOR RESULT]
-"Here are your recent transactions: [read results from tool]"
+"Here are your transactions: [read results from tool]"
 [CALL: return_to_triage]
 ```
 

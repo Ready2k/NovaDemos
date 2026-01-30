@@ -762,11 +762,11 @@ export class SonicClient {
             // Wait for audio chunks from the queue
             if (this.inputQueue.length > 0) {
                 const audioBuffer = this.inputQueue.shift()!;
-                
+
                 // Check for end-of-audio signal (null)
                 if (audioBuffer === null) {
                     console.log('[SonicClient] Received end-of-audio signal');
-                    
+
                     // End the current audio content if open
                     if (this.currentContentName) {
                         const contentEndEvent = {
@@ -781,7 +781,7 @@ export class SonicClient {
                         console.log('[SonicClient] Sent UserAudioContentEndEvent');
                         this.currentContentName = undefined;
                     }
-                    
+
                     // Continue processing (don't break) - wait for Nova's response
                     await new Promise(resolve => setTimeout(resolve, 50));
                     continue;
@@ -980,7 +980,7 @@ export class SonicClient {
         }
 
         console.log('[SonicClient] Ending audio input stream (user finished speaking)');
-        
+
         // Signal end of input by pushing null to the queue
         // The input stream generator will handle sending the proper end events
         this.inputQueue.push(null as any);
@@ -1305,13 +1305,13 @@ export class SonicClient {
                                 // IMPROVED: Use strict regex patterns to avoid false positives (e.g. "I can help with checking...")
                                 const commitmentPatterns = [
                                     // 1. Future explicit action: "I'll check", "Let me verify", "I will search"
-                                    /\b(I'll|I will|let me|allow me to|gonna|going to)\s+(check|verify|look up|access|search|pull up|get|find)\b/i,
+                                    /\b(I'll|I will|let me|allow me to|gonna|going to|let's|lets)\s+(check|verify|look up|access|search|pull up|get|find|retrieve|fetch|connect|transfer|handoff|put you through)\b/i,
 
                                     // 2. Present continuous with "I am": "I'm checking", "I am verifying"
-                                    /\b(I'm|I am)\s+(checking|verifying|accessing|searching|pulling up|looking up)\b/i,
+                                    /\b(I'm|I am)\s+(checking|verifying|accessing|searching|pulling up|looking up|retrieving|fetching|connecting|transferring|handing off)\b/i,
 
                                     // 3. Start of sentence/Clause active action: "Checking your...", "Sure, verifying details..."
-                                    /(?:^|[.!?]\s+|(?:\b(?:Ok|Okay|Sure|Alright|Right|Yes|No|Thanks|Thank you)\s*[,.]\s*))(Checking|Verifying|Accessing|Searching|Looking up|Pulling up)\b/i,
+                                    /(?:^|[.!?]\s+|(?:\b(?:Ok|Okay|Sure|Alright|Right|Yes|No|Thanks|Thank you)\s*[,.]\s*))(Checking|Verifying|Accessing|Searching|Looking up|Pulling up|Retrieving|Fetching|Connecting|Transferring|Handing off)\b/i,
 
                                     // 4. Wait phrases: "Just a moment", "Bear with me"
                                     /\b(just a moment|bear with me|one moment|hold on)\b/i
@@ -1336,7 +1336,7 @@ export class SonicClient {
 
                         // AUTO-NUDGE EXECUTION
                         // If model stopped speaking (END_TURN or PARTIAL_TURN) and promised a tool but didn't call it
-                        if (eventData.contentEnd.stopReason === 'END_TURN' &&
+                        if ((eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'PARTIAL_TURN') &&
                             this.currentRole === 'ASSISTANT' &&
                             this.hasCommittedToTool &&
                             !this.hasCalledTool) {
