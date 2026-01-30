@@ -217,7 +217,7 @@ You: "I'll connect you to our banking specialist right away."
 
                         // Add context injection if we have session memory (userIntent or verified user)
                         let contextInjection = '';
-                        if (message.memory && (message.memory.userIntent || message.memory.verified) && AGENT_ID !== 'triage') {
+                        if (message.memory && (message.memory.userIntent || message.memory.verified)) {
                             contextInjection = `
 
 ### CURRENT SESSION CONTEXT ###
@@ -238,7 +238,20 @@ You: "I'll connect you to our banking specialist right away."
 `;
                             }
 
-                            contextInjection += `
+                            // Triage-specific instructions
+                            if (AGENT_ID === 'triage') {
+                                contextInjection += `
+**CRITICAL INSTRUCTION FOR TRIAGE:** 
+- The customer has already been verified and helped by another agent
+- If the "User's Original Request" shows what they wanted (balance, transactions, etc.), acknowledge it was completed
+- Ask if they need help with ANYTHING ELSE
+- DO NOT repeat the same service they just received
+- Be efficient and move to the next task
+
+`;
+                            } else {
+                                // Non-triage agent instructions
+                                contextInjection += `
 **CRITICAL INSTRUCTION:** 
 - The customer is already verified and you have their details above
 - If the "User's Original Request" mentions what they want (balance, transactions, etc.), ACT ON IT IMMEDIATELY
@@ -247,6 +260,8 @@ You: "I'll connect you to our banking specialist right away."
 - Be proactive and efficient
 
 `;
+                            }
+
                             console.log(`[Agent:${AGENT_ID}] ✅ Injecting session context into system prompt`);
                             console.log(`[Agent:${AGENT_ID}]    Context length: ${contextInjection.length} chars`);
                             if (message.memory.userIntent) {

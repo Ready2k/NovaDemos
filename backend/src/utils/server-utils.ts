@@ -247,7 +247,12 @@ export function convertWorkflowToText(workflow: any): string {
     text += "Format: [STEP: node_id] Your response text...\n";
     text += "Example: [STEP: check_auth] I removed the example text to save tokens.\n";
     text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n";
-    text += "SILENCE INSTRUCTION: The [STEP: ...] tag is for system control only. DO NOT SPEAK IT ALOUD. Keep it silent.\n\n";
+    text += "SILENCE INSTRUCTION: The [STEP: ...] tag is for system control only. DO NOT SPEAK IT ALOUD. Keep it silent.\n";
+    text += "\n### INTENT PRESERVATION RULE ###\n";
+    text += "If the user's original intent is provided above, you MUST use it to guide your decisions.\n";
+    text += "NEVER ask 'What would you like to do?' if you already know the user's intent.\n";
+    text += "After verification steps (like IDV), immediately route to the service matching the stored intent.\n";
+    text += "Example: If intent='balance', after IDV go directly to the balance check step.\n\n";
 
     // 1. Map Nodes
     const startNode = workflow.nodes.find((n: any) => n.type === 'start');

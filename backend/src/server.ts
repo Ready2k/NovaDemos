@@ -130,17 +130,7 @@ app.get('/api/voices', (req, res) => {
 // --- TOOLS API ---
 app.get('/api/tools', (req, res) => {
     try {
-        // ToolService might use its own internal path logic !! 
-        // We should check ToolService too, but for now this API reads via ToolService
-        // Wait, checking ToolService code: it uses path.join(__dirname, '../../tools')
-        // We need to pass the path or fix ToolService too!
-        // Re-instantiate ToolService with correct path? 
-        // ToolService constructor doesn't take path. 
-        // We must fix ToolService.ts as well.
         const tools = toolService.loadTools().map(t => {
-            // Reconstruct frontend-friendly object from ToolService output
-            // ToolService returns { toolSpec, instruction, agentPrompt }
-            // Frontend expects { name, description, instruction, parameters }
             const spec = t.toolSpec;
             let params = "{}";
             try {
@@ -148,15 +138,81 @@ app.get('/api/tools', (req, res) => {
                 params = JSON.stringify(schema, null, 2);
             } catch (e) { }
 
+            // Create clean display name from tool name
+            const displayName = spec.name
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (l: string) => l.toUpperCase());
+
             return {
-                name: spec.name,
-                description: spec.description.split('\n\n[INSTRUCTION]:')[0], // Strip instruction if appended
+                name: spec.name, // Keep original name for matching
+                displayName: displayName, // Add clean display name
+                description: spec.description.split('\n\n[INSTRUCTION]:')[0],
                 instruction: t.instruction,
                 agentPrompt: t.agentPrompt,
-                parameters: params
+                parameters: params,
+                category: t.category || 'General'
             };
         });
-        res.json(tools);
+
+        // Add handoff tools (these are dynamically generated, not from files)
+        const handoffTools = [
+            {
+                name: 'transfer_to_banking',
+                displayName: 'Transfer To Banking',
+                description: 'Transfer conversation to Banking Specialist agent',
+                instruction: 'Use when user needs banking services',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            },
+            {
+                name: 'transfer_to_idv',
+                displayName: 'Transfer To IDV',
+                description: 'Transfer conversation to Identity Verification agent',
+                instruction: 'Use when user needs identity verification',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            },
+            {
+                name: 'transfer_to_mortgage',
+                displayName: 'Transfer To Mortgage',
+                description: 'Transfer conversation to Mortgage Specialist agent',
+                instruction: 'Use when user needs mortgage information',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            },
+            {
+                name: 'transfer_to_disputes',
+                displayName: 'Transfer To Disputes',
+                description: 'Transfer conversation to Disputes Specialist agent',
+                instruction: 'Use when user wants to dispute a transaction',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            },
+            {
+                name: 'transfer_to_investigation',
+                displayName: 'Transfer To Investigation',
+                description: 'Transfer conversation to Investigation agent',
+                instruction: 'Use when user reports fraud or suspicious activity',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            },
+            {
+                name: 'return_to_triage',
+                displayName: 'Return To Triage',
+                description: 'Return conversation to Triage agent after completing task',
+                instruction: 'Use when task is complete and user may need more help',
+                agentPrompt: '',
+                parameters: '{}',
+                category: 'Handoff'
+            }
+        ];
+
+        res.json([...tools, ...handoffTools]);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }

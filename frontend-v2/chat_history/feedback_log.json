@@ -299,5 +299,26 @@
     "score": 0,
     "name": "user-feedback",
     "timestamp": "2026-01-30T14:43:25.380Z"
+  },
+  {
+    "sessionId": "a7230520-b1e5-4809-97ca-aa76714ab02b",
+    "traceId": "a7230520-b1e5-4809-97ca-aa76714ab02b",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T14:56:54.569Z"
+  },
+  {
+    "sessionId": "b245f160-c4cd-43c7-8370-6a2f16a7c1d7",
+    "traceId": "b245f160-c4cd-43c7-8370-6a2f16a7c1d7",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T15:16:34.842Z"
+  },
+  {
+    "sessionId": "ea4807d6-6a77-4231-b787-090583718fdf",
+    "traceId": "ea4807d6-6a77-4231-b787-090583718fdf",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-01-30T15:26:53.085Z"
   }
 ]

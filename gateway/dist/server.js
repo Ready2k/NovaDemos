@@ -681,16 +681,21 @@ wss.on('connection', async (ws) => {
                             if (message.context.isReturn) {
                                 updates.taskCompleted = message.context.taskCompleted;
                                 updates.conversationSummary = message.context.summary;
+                                // CRITICAL: Clear the user intent since the task is complete
+                                updates.userIntent = undefined;
                                 console.log(`[Gateway] Return handoff - Task: ${updates.taskCompleted}`);
+                                console.log(`[Gateway] ✅ Cleared user intent (task complete)`);
                             }
                             else {
                                 // Store user intent from handoff reason
-                                // CRITICAL: Only store if we don't already have a userIntent
-                                // This preserves the ORIGINAL intent from Triage through the entire journey
+                                // CRITICAL: Preserve ORIGINAL intent through verification flows (IDV)
+                                // BUT allow Triage to set NEW intents (since it's the routing agent)
                                 if (message.context.reason) {
-                                    if (!sessionMemory || !sessionMemory.userIntent) {
+                                    const isFromTriage = agent.id === 'triage';
+                                    const hasExistingIntent = sessionMemory && sessionMemory.userIntent;
+                                    if (!hasExistingIntent || isFromTriage) {
                                         updates.userIntent = message.context.reason;
-                                        console.log(`[Gateway] Storing NEW user intent: ${message.context.reason}`);
+                                        console.log(`[Gateway] ${hasExistingIntent ? 'UPDATING' : 'Storing NEW'} user intent: ${message.context.reason}`);
                                     }
                                     else {
                                         console.log(`[Gateway] Preserving ORIGINAL user intent: ${sessionMemory.userIntent} (not overwriting with: ${message.context.reason})`);

@@ -8,6 +8,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal';
 
 interface ToolDefinition {
     name: string;
+    displayName?: string;
     description: string;
     instruction?: string;
     agentPrompt?: string;
@@ -15,6 +16,7 @@ interface ToolDefinition {
     inputSchema?: any;
     // We simplify input schema editing for now - users can paste JSON
     parameters?: string | object;
+    category?: string;
 }
 
 export default function ToolsSettings() {

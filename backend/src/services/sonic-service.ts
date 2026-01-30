@@ -641,8 +641,15 @@ export class SonicService {
 
         if (wfData) {
             const workflowText = convertWorkflowToText({ nodes: wfData.nodes, edges: wfData.edges });
+            
+            // INTENT PRESERVATION: Extract and preserve user's original intent
+            const userIntent = this.extractUserIntent(this.session.transcript);
+            const intentContext = userIntent 
+                ? `\n\n### USER INTENT PRESERVATION ###\nThe user's original intent is: "${userIntent}"\nYou MUST use this intent to guide your workflow decisions. After any verification steps (like IDV), use this stored intent to route to the appropriate service.\nDO NOT ask "What would you like to do?" if you already know the intent.\n`
+                : "";
+            
             const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
-            const newSystemPrompt = strictHeader + workflowText;
+            const newSystemPrompt = strictHeader + intentContext + workflowText;
 
             const currentConfig = this.session.sonicClient.getSessionConfig() || {};
             let basePrompt = currentConfig.systemPrompt || "";
@@ -663,6 +670,36 @@ export class SonicService {
                 }
             }, 1500);
         }
+    }
+
+    /**
+     * Extract user's original intent from transcript
+     * Looks for the first user message to determine what they're asking for
+     */
+    private extractUserIntent(transcript: any[]): string | null {
+        if (!transcript || transcript.length === 0) return null;
+        
+        // Find the first user message
+        const firstUserMessage = transcript.find(t => t.role === 'user');
+        if (!firstUserMessage || !firstUserMessage.text) return null;
+        
+        const text = firstUserMessage.text.toLowerCase();
+        
+        // Intent classification patterns
+        if (text.includes('balance') || text.includes('how much') || text.includes('account balance') || text.includes('funds')) {
+            return 'balance';
+        }
+        if (text.includes('transaction') || text.includes('statement') || text.includes('history') || text.includes('spent')) {
+            return 'transactions';
+        }
+        if (text.includes('dispute') || text.includes('complaint') || text.includes('issue') || text.includes('unauthorized') || text.includes('fraud')) {
+            return 'dispute';
+        }
+        if (text.includes('mortgage') || text.includes('rates') || text.includes('loan') || text.includes('property') || text.includes('house')) {
+            return 'mortgage';
+        }
+        
+        return null;
     }
 
     private isToolEnabled(name: string): boolean {

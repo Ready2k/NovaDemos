@@ -2,7 +2,7 @@
   "nodes": [
     {
       "id": "triage_start",
-      "label": "Start Triage Protocol",
+      "label": "Start Triage Protocol\n\nCRITICAL: Preserve any stored userIntent from initial message. Do NOT lose context during triage checks.",
       "type": "start"
     },
     {

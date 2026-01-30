@@ -487,7 +487,7 @@ export default function PersonaSettings() {
                                             />
                                             <div className="flex-1 min-w-0">
                                                 <div className={cn("text-sm font-medium truncate", isDarkMode ? "text-white" : "text-gray-900")}>
-                                                    {tool.name}
+                                                    {tool.displayName || tool.name}
                                                 </div>
                                                 <div className="text-xs text-gray-500 truncate">
                                                     {tool.description}

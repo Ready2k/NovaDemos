@@ -11,6 +11,11 @@
       "type": "decision"
     },
     {
+      "id": "extract_intent",
+      "label": "CRITICAL: Extract and Store User Intent. Classify as: 'balance' (check balance, funds, how much), 'transactions' (statement, history, recent activity), or 'dispute' (complaint, issue, problem). Store in context as userIntent for use after IDV.",
+      "type": "process"
+    },
+    {
       "id": "answer_general",
       "label": "Answer using Knowledge Base / Mortgage Tools. Do NOT ask for ID.",
       "type": "process"
@@ -61,7 +66,7 @@
     },
     {
       "id": "route_service",
-      "label": "Determine Intent: If asking for Balance/Funds -> 'Balance'. If asking for Transactions/Statement -> 'Transactions'.",
+      "label": "CRITICAL: Use Stored userIntent to Route. If userIntent='balance' → show_balance. If userIntent='transactions' → query_txn. If userIntent='dispute' → manage_dispute. DO NOT ask 'What would you like to do?' if intent is already known.",
       "type": "decision"
     },
     {
@@ -190,8 +195,13 @@
     },
     {
       "from": "check_intent",
-      "to": "check_auth",
+      "to": "extract_intent",
       "label": "Account Query"
+    },
+    {
+      "from": "extract_intent",
+      "to": "check_auth",
+      "label": ""
     },
     {
       "from": "answer_general",

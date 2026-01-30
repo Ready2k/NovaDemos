@@ -2,7 +2,7 @@
   "nodes": [
     {
       "id": "start",
-      "label": "Welcome & Purpose\n(New Purchase or Remortgage?)",
+      "label": "Welcome & Purpose\n(New Purchase or Remortgage?)\n\nCRITICAL: Extract and Store User Intent as 'mortgage' for use after any IDV.",
       "type": "start"
     },
     {

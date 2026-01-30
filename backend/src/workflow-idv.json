@@ -12,6 +12,11 @@
             "type": "decision"
         },
         {
+            "id": "extract_intent",
+            "label": "CRITICAL: Extract and Store User Intent. Classify as: 'balance' (check balance, funds, how much), 'transactions' (statement, history, recent activity), 'dispute' (complaint, issue, problem), or 'mortgage' (rates, application). Store in context as userIntent for use after IDV.",
+            "type": "process"
+        },
+        {
             "id": "answer_public",
             "label": "Answer using Knowledge Base / Tools. DO NOT ask for ID.",
             "type": "process"
@@ -131,8 +136,13 @@
         },
         {
             "from": "check_intent",
-            "to": "check_auth_status",
+            "to": "extract_intent",
             "label": "Account Specific"
+        },
+        {
+            "from": "extract_intent",
+            "to": "check_auth_status",
+            "label": ""
         },
         {
             "from": "check_auth_status",
