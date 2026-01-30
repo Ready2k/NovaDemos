@@ -31,18 +31,18 @@ function loadToolFromFile(filename: string): BankingTool | null {
             console.warn(`[BankingTools] Tool file not found: ${filePath}`);
             return null;
         }
-        
+
         const content = fs.readFileSync(filePath, 'utf-8');
         const toolDef = JSON.parse(content);
-        
+
         // Transform to Bedrock Tool Spec format
         const schema = toolDef.input_schema || toolDef.inputSchema || toolDef.parameters;
-        
+
         let finalDescription = toolDef.description || "";
         if (toolDef.instruction) {
             finalDescription += `\n\n[INSTRUCTION]: ${toolDef.instruction}`;
         }
-        
+
         return {
             toolSpec: {
                 name: toolDef.name,
@@ -69,28 +69,35 @@ function loadToolFromFile(filename: string): BankingTool | null {
  */
 export function generateBankingTools(): BankingTool[] {
     const tools: BankingTool[] = [];
-    
+
     // Load IDV check tool
     const idvTool = loadToolFromFile('perform_idv_check.json');
     if (idvTool) {
         tools.push(idvTool);
         console.log('[BankingTools] Loaded perform_idv_check from AgentCore');
     }
-    
+
     // Load balance tool
     const balanceTool = loadToolFromFile('agentcore_balance.json');
     if (balanceTool) {
         tools.push(balanceTool);
         console.log('[BankingTools] Loaded agentcore_balance from AgentCore');
     }
-    
+
     // Load transactions tool
     const transactionsTool = loadToolFromFile('agentcore_transactions.json');
     if (transactionsTool) {
         tools.push(transactionsTool);
         console.log('[BankingTools] Loaded get_account_transactions from AgentCore');
     }
-    
+
+    // Load branch lookup tool
+    const branchTool = loadToolFromFile('uk_branch_lookup.json');
+    if (branchTool) {
+        tools.push(branchTool);
+        console.log('[BankingTools] Loaded uk_branch_lookup from AgentCore');
+    }
+
     console.log(`[BankingTools] Loaded ${tools.length} banking tools from AgentCore definitions`);
     return tools;
 }
@@ -99,7 +106,7 @@ export function generateBankingTools(): BankingTool[] {
  * Check if a tool name is a banking tool
  */
 export function isBankingTool(toolName: string): boolean {
-    return ['perform_idv_check', 'agentcore_balance', 'get_account_transactions'].includes(toolName);
+    return ['perform_idv_check', 'agentcore_balance', 'get_account_transactions', 'uk_branch_lookup'].includes(toolName);
 }
 
 /**

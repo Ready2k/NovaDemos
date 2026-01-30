@@ -107,6 +107,12 @@ function generateBankingTools() {
         tools.push(transactionsTool);
         console.log('[BankingTools] Loaded get_account_transactions from AgentCore');
     }
+    // Load branch lookup tool
+    const branchTool = loadToolFromFile('uk_branch_lookup.json');
+    if (branchTool) {
+        tools.push(branchTool);
+        console.log('[BankingTools] Loaded uk_branch_lookup from AgentCore');
+    }
     console.log(`[BankingTools] Loaded ${tools.length} banking tools from AgentCore definitions`);
     return tools;
 }
@@ -114,7 +120,7 @@ function generateBankingTools() {
  * Check if a tool name is a banking tool
  */
 function isBankingTool(toolName) {
-    return ['perform_idv_check', 'agentcore_balance', 'get_account_transactions'].includes(toolName);
+    return ['perform_idv_check', 'agentcore_balance', 'get_account_transactions', 'uk_branch_lookup'].includes(toolName);
 }
 /**
  * Banking tools are executed via AgentCore - this function should NOT be called
