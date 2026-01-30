@@ -34,8 +34,10 @@ Say: "For authentication, please provide your eight digit account number and six
 - Extract the customer_name from the tool result
 - Say: "Great, [customer_name from tool result]. You've been verified. Let me connect you to our banking specialist."
 - Call `transfer_to_banking` with:
-  - reason: "User verified"
-  - context: "Verified user: [customer_name from tool result], Account: [accountNumber], Intent: [userIntent]"
+  - reason: "User verified and needs [original user request]"
+  - context: "Verified user ready for banking services"
+  
+**CRITICAL: The original user request (why they came to you) should be in your session context. Pass this along so Banking knows what to help with!**
 
 **If Failed (auth_status: "FAILED"):**
 - Say: "Sorry, those details weren't quite right. Let's try again."

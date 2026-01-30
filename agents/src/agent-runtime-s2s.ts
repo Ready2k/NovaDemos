@@ -247,12 +247,19 @@ You: "I'll connect you to our banking specialist right away."
 - Be proactive and efficient
 
 `;
-                            console.log(`[Agent:${AGENT_ID}] Injecting session context into system prompt`);
+                            console.log(`[Agent:${AGENT_ID}] ✅ Injecting session context into system prompt`);
+                            console.log(`[Agent:${AGENT_ID}]    Context length: ${contextInjection.length} chars`);
                             if (message.memory.userIntent) {
-                                console.log(`[Agent:${AGENT_ID}]   - User Intent: ${message.memory.userIntent}`);
+                                console.log(`[Agent:${AGENT_ID}]    📋 User Intent: "${message.memory.userIntent}"`);
                             }
                             if (message.memory.verified) {
-                                console.log(`[Agent:${AGENT_ID}]   - Verified User: ${message.memory.userName}`);
+                                console.log(`[Agent:${AGENT_ID}]    ✅ Verified User: ${message.memory.userName}`);
+                                console.log(`[Agent:${AGENT_ID}]    💳 Account: ${message.memory.account}`);
+                            }
+                        } else {
+                            console.log(`[Agent:${AGENT_ID}] ℹ️  No session context to inject`);
+                            if (message.memory) {
+                                console.log(`[Agent:${AGENT_ID}]    Memory keys: ${Object.keys(message.memory).join(', ')}`);
                             }
                         }
                         

@@ -676,9 +676,16 @@ wss.on('connection', async (ws) => {
                             }
                             else {
                                 // Store user intent from handoff reason
+                                // CRITICAL: Only store if we don't already have a userIntent
+                                // This preserves the ORIGINAL intent from Triage through the entire journey
                                 if (message.context.reason) {
-                                    updates.userIntent = message.context.reason;
-                                    console.log(`[Gateway] Storing user intent: ${message.context.reason}`);
+                                    if (!sessionMemory || !sessionMemory.userIntent) {
+                                        updates.userIntent = message.context.reason;
+                                        console.log(`[Gateway] Storing NEW user intent: ${message.context.reason}`);
+                                    }
+                                    else {
+                                        console.log(`[Gateway] Preserving ORIGINAL user intent: ${sessionMemory.userIntent} (not overwriting with: ${message.context.reason})`);
+                                    }
                                 }
                                 // Store last user message
                                 if (message.context.lastUserMessage) {
