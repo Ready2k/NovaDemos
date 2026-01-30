@@ -15,7 +15,7 @@ interface UseWorkflowSimulatorProps {
     maxTurns?: number;
 }
 
-export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation, sendJson, testName = 'Manual Test', maxTurns = 10 }: UseWorkflowSimulatorProps) {
+export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMessage, testPersona, testInstructions, stopSimulation, sendJson, testName = 'Manual Test', maxTurns = 30 }: UseWorkflowSimulatorProps) {
     const [isThinking, setIsThinking] = useState(false);
     const waitingForEcho = useRef(false);
     const lastMessageCount = useRef(messages.length);
@@ -93,21 +93,22 @@ export function useWorkflowSimulator({ isActive, isConnected, messages, onSendMe
                     data: {
                         testName: testName,
                         result: 'FAIL', // System Result 
-                        userResult: 'FAIL',
+                        userResult: 'FAIL', // Explicitly fail
                         notes: `Max turns reached (${maxTurns})`
                     }
                 });
 
-                // Display failure message
-                onSendMessage(`[FAIL] (Max turns reached: ${maxTurns})`);
-                waitingForEcho.current = true;
+                // Force a final message to the UI so the user knows why it stopped
+                onSendMessage(`[FAIL] (Test stopped: Max turns reached - limit ${maxTurns})`);
 
                 // Stop with delay
+                waitingForEcho.current = true;
                 setTimeout(() => {
                     stopSimulation();
                 }, 1500);
                 return;
             }
+
 
             // Generate Response
             setIsThinking(true);

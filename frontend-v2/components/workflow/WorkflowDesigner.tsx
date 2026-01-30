@@ -38,7 +38,7 @@ export default function WorkflowDesigner() {
         disconnectAction: 'always',
         saveReport: true,
         saveConfig: true,
-        maxTurns: 10
+        maxTurns: 30
     });
 
     // Custom Modal State

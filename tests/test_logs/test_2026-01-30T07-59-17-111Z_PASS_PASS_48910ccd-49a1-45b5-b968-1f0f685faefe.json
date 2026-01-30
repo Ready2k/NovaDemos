@@ -1,0 +1,241 @@
+{
+  "sessionId": "48910ccd-49a1-45b5-b968-1f0f685faefe",
+  "startTime": 1769759926110,
+  "endTime": 1769759957111,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1769759926110,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769759926904,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1769759927223,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'd like to check my account balance and recent transactions. My account number is 12345678.",
+      "timestamp": 1769759929387
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1769759930102,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To proceed securely, I also need your 6-digit sort code.",
+      "timestamp": 1769759930103,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To proceed securely, I also need your 6-digit sort code.Could you please provide it?",
+      "timestamp": 1769759931205,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To proceed securely, I also need your 6-digit sort code.Could you please provide it?",
+      "timestamp": 1769759931525,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, my sort code is 112233.",
+      "timestamp": 1769759933788
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1769759934608,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: request_details",
+      "timestamp": 1769759934615,
+      "metadata": {
+        "stepId": "request_details"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks. Let me verify your details now.",
+      "timestamp": 1769759934615,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1769759935459,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1769759936088,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1769759936655,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1769759936719,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1769759937474,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1769759938569,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.",
+      "timestamp": 1769759938569,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Your recent transactions include Pret A Manger for £4.50, Tesco Express for",
+      "timestamp": 1769759939487,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Your recent transactions include Pret A Manger for £4.50, Tesco Express for£32.15, and Netflix for £12.00.",
+      "timestamp": 1769759940877,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Your recent transactions include Pret A Manger for £4.50, Tesco Express for£32.15, and Netflix for £12.00.Would you like me to show more transactions or help with anything else?",
+      "timestamp": 1769759941844,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Your recent transactions include Pret A Manger for £4.50, Tesco Express for£32.15, and Netflix for £12.00.Would you like me to show more transactions or help with anything else?",
+      "timestamp": 1769759942694,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Great, thank you. I'd also like to check if I have any open disputes on my account.",
+      "timestamp": 1769759944744
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: manage_recent_interactions",
+      "timestamp": 1769759945563,
+      "toolName": "manage_recent_interactions",
+      "toolInput": "{\"action\":\"RETRIEVE\",\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"disputesOpen\":true,\"activeDisputes\":[{\"createdDate\":\"2026-01-28\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"32.15\",\"expectedAmount\":\"22.5\",\"merchantName\":\"Tesco\",\"reason\":\"Overcharged\",\"isPriorityRefund\":false,\"caseId\":\"DSP-94A2DF\"},{\"createdDate\":\"2026-01-29\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"12\",\"merchantName\":\"Netflix\",\"reason\":\"Unauthorized charge after cancellation\",\"isPriorityRefund\":false,\"caseId\":\"DSP-F136F7\"}]}",
+      "timestamp": 1769759946414,
+      "toolName": "manage_recent_interactions",
+      "result": "{\"disputesOpen\":true,\"activeDisputes\":[{\"createdDate\":\"2026-01-28\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"32.15\",\"expectedAmount\":\"22.5\",\"merchantName\":\"Tesco\",\"reason\":\"Overcharged\",\"isPriorityRefund\":false,\"caseId\":\"DSP-94A2DF\"},{\"createdDate\":\"2026-01-29\",\"accountId\":\"12345678\",\"merchantContacted\":true,\"status\":\"OPEN\",\"amount\":\"12\",\"merchantName\":\"Netflix\",\"reason\":\"Unauthorized charge after cancellation\",\"isPriorityRefund\":false,\"caseId\":\"DSP-F136F7\"}]}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_dispute",
+      "timestamp": 1769759947407,
+      "metadata": {
+        "stepId": "check_dispute"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "You have two open disputes: one with Tesco for £32.15 marked as overcharged, and another with Netflix for £12.00 listed as an unauthorized charge after",
+      "timestamp": 1769759947407,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "You have two open disputes: one with Tesco for £32.15 marked as overcharged, and another with Netflix for £12.00 listed as an unauthorized charge aftercancellation. Both are still open. Would you like to review or update either of these disputes?",
+      "timestamp": 1769759950020,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "You have two open disputes: one with Tesco for £32.15 marked as overcharged, and another with Netflix for £12.00 listed as an unauthorized charge aftercancellation. Both are still open. Would you like to review or update either of these disputes?",
+      "timestamp": 1769759951199,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "No, I don't need to review the disputes right now. Could you just confirm that they are still open and I can follow up on them later if needed?",
+      "timestamp": 1769759953551
+    },
+    {
+      "role": "assistant",
+      "text": "You have two open disputes: one with Tesco for £32.15 marked as overcharged, and another with Netflix for £12.00 listed as an unauthorized charge afterYes, both disputes are still open. You can follow up on them later if needed.",
+      "timestamp": 1769759954284,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "check_credit_score",
+    "create_dispute_case",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "lookup_merchant_alias",
+    "update_dispute_case",
+    "uk_branch_lookup"
+  ],
+  "usage": {
+    "inputTokens": 8051,
+    "outputTokens": 1808,
+    "totalTokens": 9859,
+    "cost": 0.051273,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ],
+  "status": "FAIL"
+}
