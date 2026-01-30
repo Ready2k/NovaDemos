@@ -1,13 +1,6 @@
 {
   "id": "triage",
   "name": "Triage",
-  "personaId": "triage",
-  "voiceId": "matthew",
-  "metadata": {
-    "persona": "professional-banking",
-    "language": "en-US",
-    "description": "Professional triage agent for initial customer routing"
-  },
   "nodes": [
     {
       "id": "triage_start",
@@ -167,5 +160,13 @@
       "from": "say_goodbye",
       "to": "end_complete"
     }
-  ]
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "The system gives me my balance, shows me some transactions and checks my disputes ",
+    "testInstructions": "I just want my balance for account 12345678, \nWait and give the sort code only when asked, 112233\nI also need to see my last 2 transactions and if i have any open disputes",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 10
+  }
 }

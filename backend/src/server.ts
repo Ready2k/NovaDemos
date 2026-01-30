@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
 import cors from 'cors';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { AgentService } from './services/agent-service';
 import { SonicService } from './services/sonic-service';
 import { PromptService } from './services/prompt-service';
@@ -108,9 +109,80 @@ app.post('/api/prompts/sync', async (req, res) => {
     }
 });
 
-// Simulation API (stub for now)
+// Simulation API - Generate test user responses
 app.post('/api/simulation/generate', async (req, res) => {
-    res.status(501).json({ error: 'Simulation service pending refactor' });
+    try {
+        const { history, persona, instructions } = req.body;
+
+        if (!history || !Array.isArray(history)) {
+            return res.status(400).json({ error: 'Invalid history format' });
+        }
+
+        // Build conversation context for the simulator
+        const conversationContext = history.map((msg: any) => {
+            const role = msg.role === 'user' ? 'User' : 'Assistant';
+            return `${role}: ${msg.content}`;
+        }).join('\n\n');
+
+        // Build the simulation prompt
+        const simulationPrompt = `You are simulating a user in a conversation with an AI assistant. Your goal is to test the assistant's capabilities.
+
+${persona || 'You are a helpful user testing the system.'}
+
+${instructions ? `\nAdditional Instructions:\n${instructions}` : ''}
+
+Conversation so far:
+${conversationContext}
+
+Based on the conversation above, generate the next user message. Your response should:
+1. Be natural and conversational
+2. Test the assistant's capabilities appropriately
+3. If you've achieved your testing objective, end with [PASS] or [FAIL] based on whether the assistant performed correctly
+4. If you need to wait for the assistant to complete an action, respond with [WAIT]
+5. Keep responses concise (1-2 sentences typically)
+
+Generate ONLY the user's next message, nothing else:`;
+
+        // Use Bedrock Runtime to generate the response
+        const bedrockConfig: any = {
+            region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
+        };
+
+        if (process.env.NOVA_AWS_ACCESS_KEY_ID && process.env.NOVA_AWS_SECRET_ACCESS_KEY) {
+            bedrockConfig.credentials = {
+                accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+                ...(process.env.NOVA_AWS_SESSION_TOKEN && { sessionToken: process.env.NOVA_AWS_SESSION_TOKEN })
+            };
+        }
+
+        const bedrockClient = new BedrockRuntimeClient(bedrockConfig);
+
+        const command = new ConverseCommand({
+            modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            messages: [
+                {
+                    role: 'user',
+                    content: [{ text: simulationPrompt }]
+                }
+            ],
+            inferenceConfig: {
+                maxTokens: 200,
+                temperature: 0.7
+            }
+        });
+
+        const response = await bedrockClient.send(command);
+        const generatedText = response.output?.message?.content?.[0]?.text || '';
+
+        console.log('[Simulation] Generated response:', generatedText);
+
+        res.json({ response: generatedText.trim() });
+
+    } catch (err: any) {
+        console.error('[Simulation] Error:', err);
+        res.status(500).json({ error: err.message || 'Simulation generation failed' });
+    }
 });
 
 // --- VOICES API ---
