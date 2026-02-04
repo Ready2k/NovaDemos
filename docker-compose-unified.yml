@@ -27,7 +27,10 @@ services:
     networks:
       - agent-network
 
-  # Triage Agent - Entry point for all conversations (UNIFIED RUNTIME)
+  # Triage Agent - Entry point for all conversations
+  # Uses UNIFIED RUNTIME with MODE=voice for voice interactions
+  # To switch to text mode: Change MODE=voice to MODE=text (no AWS credentials needed)
+  # To enable hybrid mode: Change MODE=voice to MODE=hybrid (supports both voice and text)
   agent-triage:
     build:
       context: ./agents
@@ -35,6 +38,10 @@ services:
     ports:
       - "8081:8081"
     environment:
+      # MODE: Controls I/O mechanism (voice, text, or hybrid)
+      # - voice: Voice-only via SonicClient (requires AWS credentials)
+      # - text: Text-only via WebSocket (no AWS required)
+      # - hybrid: Both voice and text simultaneously
       - MODE=voice
       - AGENT_ID=triage
       - AGENT_PORT=8081
@@ -43,9 +50,11 @@ services:
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      # AWS credentials (required for voice and hybrid modes)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
+      # Langfuse observability (optional)
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
@@ -60,7 +69,8 @@ services:
     networks:
       - agent-network
 
-  # Banking Agent (UNIFIED RUNTIME)
+  # Banking Agent - Handles banking operations
+  # Uses UNIFIED RUNTIME with MODE=voice
   agent-banking:
     build:
       context: ./agents
@@ -93,7 +103,8 @@ services:
     networks:
       - agent-network
 
-  # Mortgage Agent (UNIFIED RUNTIME)
+  # Mortgage Agent - Handles mortgage calculations and applications
+  # Uses UNIFIED RUNTIME with MODE=voice
   agent-mortgage:
     build:
       context: ./agents
@@ -126,7 +137,8 @@ services:
     networks:
       - agent-network
 
-  # IDV Agent (Identity Verification) (UNIFIED RUNTIME)
+  # IDV Agent - Identity Verification
+  # Uses UNIFIED RUNTIME with MODE=voice
   agent-idv:
     build:
       context: ./agents
@@ -159,7 +171,8 @@ services:
     networks:
       - agent-network
 
-  # Disputes Agent (UNIFIED RUNTIME)
+  # Disputes Agent - Handles transaction disputes
+  # Uses UNIFIED RUNTIME with MODE=voice
   agent-disputes:
     build:
       context: ./agents
@@ -192,7 +205,8 @@ services:
     networks:
       - agent-network
 
-  # Investigation Agent (Fraud Investigation) (UNIFIED RUNTIME)
+  # Investigation Agent - Fraud Investigation
+  # Uses UNIFIED RUNTIME with MODE=voice
   agent-investigation:
     build:
       context: ./agents
@@ -280,3 +294,97 @@ networks:
 
 volumes:
   redis_data:
+
+# ============================================================================
+# DEPLOYMENT GUIDE
+# ============================================================================
+#
+# This docker-compose file deploys the Voice S2S system with voice-agnostic
+# agents using the Unified Runtime architecture.
+#
+# QUICK START:
+# 1. Copy .env.example to .env and fill in your AWS credentials
+# 2. Run: docker-compose -f docker-compose-unified.yml up -d
+# 3. Access frontend at http://localhost:3000
+#
+# MODE CONFIGURATION:
+# Each agent has a MODE environment variable that controls I/O:
+#
+# MODE=voice (default)
+#   - Voice-only interactions via SonicClient
+#   - Requires AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+#   - Best for: Voice assistants, phone bots, hands-free applications
+#
+# MODE=text
+#   - Text-only interactions via WebSocket
+#   - No AWS credentials required
+#   - Best for: Chat bots, text interfaces, API integrations
+#   - To enable: Change MODE=voice to MODE=text for any agent
+#
+# MODE=hybrid
+#   - Both voice and text simultaneously
+#   - Requires AWS credentials (for voice capability)
+#   - Best for: Multi-modal applications, accessibility features
+#   - To enable: Change MODE=voice to MODE=hybrid for any agent
+#
+# ADDING A NEW AGENT:
+# 1. Create workflow JSON in ./backend/workflows/
+# 2. Add agent service to this file:
+#
+#   agent-myagent:
+#     build:
+#       context: ./agents
+#       dockerfile: Dockerfile.unified
+#     ports:
+#       - "8087:8087"
+#     environment:
+#       - MODE=voice  # or text, or hybrid
+#       - AGENT_ID=myagent
+#       - AGENT_PORT=8087
+#       - REDIS_URL=redis://redis:6379
+#       - GATEWAY_URL=http://gateway:8080
+#       - LOCAL_TOOLS_URL=http://local-tools:9000
+#       - WORKFLOW_FILE=/app/workflow.json
+#       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+#       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+#       - AWS_REGION=${AWS_REGION:-us-east-1}
+#     volumes:
+#       - ./backend/workflows/workflow_myagent.json:/app/workflow.json:ro
+#       - ./backend/personas:/app/backend/personas:ro
+#       - ./backend/prompts:/app/backend/prompts:ro
+#     depends_on:
+#       - redis
+#       - local-tools
+#       - gateway
+#     networks:
+#       - agent-network
+#
+# 3. Run: docker-compose -f docker-compose-unified.yml up -d agent-myagent
+#
+# ENVIRONMENT VARIABLES:
+# Required in .env file:
+#   - AWS_ACCESS_KEY_ID: AWS access key (for voice/hybrid modes)
+#   - AWS_SECRET_ACCESS_KEY: AWS secret key (for voice/hybrid modes)
+#   - AWS_REGION: AWS region (default: us-east-1)
+#
+# Optional in .env file:
+#   - AGENTCORE_GATEWAY_URL: Bedrock Agent Core URL
+#   - LANGFUSE_PUBLIC_KEY: Langfuse public key for observability
+#   - LANGFUSE_SECRET_KEY: Langfuse secret key
+#   - LANGFUSE_BASEURL: Langfuse base URL
+#
+# SCALING:
+# To run multiple instances of an agent:
+#   docker-compose -f docker-compose-unified.yml up -d --scale agent-banking=3
+#
+# MONITORING:
+# - Gateway health: http://localhost:8080/health
+# - Agent health: http://localhost:808X/health (where X is agent port)
+# - Redis: redis-cli -h localhost -p 6379 ping
+#
+# TROUBLESHOOTING:
+# - Check logs: docker-compose -f docker-compose-unified.yml logs -f agent-triage
+# - Restart agent: docker-compose -f docker-compose-unified.yml restart agent-triage
+# - Rebuild: docker-compose -f docker-compose-unified.yml build agent-triage
+#
+# ============================================================================

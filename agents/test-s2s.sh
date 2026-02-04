@@ -41,17 +41,18 @@ echo "✅ Build successful"
 echo ""
 
 # Start the agent with S2S runtime
-echo "🚀 Starting agent with S2S runtime..."
+echo "🚀 Starting agent with Unified Runtime (voice mode)..."
 echo "   Agent ID: ${AGENT_ID:-triage}"
 echo "   Port: ${AGENT_PORT:-8081}"
 echo ""
 
 AGENT_ID="${AGENT_ID:-triage}" \
 AGENT_PORT="${AGENT_PORT:-8081}" \
+MODE=voice \
 WORKFLOW_FILE="$WORKFLOW_FILE" \
 AWS_REGION="${AWS_REGION:-us-east-1}" \
 AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
 AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
 GATEWAY_URL="${GATEWAY_URL:-http://gateway:8080}" \
-node dist/agent-runtime-s2s.js
+node dist/agent-runtime-unified.js
 

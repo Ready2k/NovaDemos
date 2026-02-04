@@ -10,6 +10,24 @@ The A2A migration is a three-phase project to complete the LangGraph-based workf
 
 ## Specs
 
+### Voice-Agnostic Agent Architecture
+**Status:** 📋 Ready for Implementation  
+**Location:** `voice-agnostic-agent-architecture/requirements.md`  
+**Goal:** Enable developers to write agents once and deploy them in voice, text, or hybrid modes with minimal code (~10 lines).
+
+**Key Features:**
+- Agent Core: Voice-agnostic LangGraph business logic
+- Voice Side-Car: Wraps core with voice I/O via SonicClient
+- Text Adapter: Wraps core with WebSocket text I/O
+- Unified Runtime: Single entry point for all modes
+- Easy agent addition (~10 lines of configuration)
+- Code reduction (~433 lines saved)
+
+**Duration:** 8 days  
+**Dependencies:** None (can start immediately)
+
+---
+
 ### Phase 3: Complete LangGraph Conversion
 **Status:** 📋 Planned  
 **Location:** `phase3-langgraph-conversion/requirements.md`  

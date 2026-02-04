@@ -47,7 +47,7 @@ pkill -f "local-tools" 2>/dev/null || true
 pkill -f "node dist/server.js" 2>/dev/null || true
 
 # Kill agent
-pkill -f "node dist/agent-runtime-s2s.js" 2>/dev/null || true
+pkill -f "node dist/agent-runtime-unified.js" 2>/dev/null || true
 
 # Kill frontend
 pkill -f "next-server" 2>/dev/null || true
@@ -125,11 +125,12 @@ AGENT_HOST=localhost \
 AGENT_PORT=8081 \
 REDIS_URL=redis://localhost:6379 \
 GATEWAY_URL=http://localhost:8080 \
+MODE=voice \
 AWS_REGION=${AWS_REGION:-us-east-1} \
 AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
 AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
 WORKFLOW_FILE=../backend/workflows/workflow_triage.json \
-node dist/agent-runtime-s2s.js > ../logs/agent-triage.log 2>&1 &
+node dist/agent-runtime-unified.js > ../logs/agent-triage.log 2>&1 &
 TRIAGE_PID=$!
 cd ..
 sleep 2
@@ -145,12 +146,13 @@ AGENT_HOST=localhost \
 AGENT_PORT=8082 \
 REDIS_URL=redis://localhost:6379 \
 GATEWAY_URL=http://localhost:8080 \
+MODE=voice \
 LOCAL_TOOLS_URL=http://localhost:9000 \
 AWS_REGION=${AWS_REGION:-us-east-1} \
 AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
 AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
 WORKFLOW_FILE=../backend/workflows/workflow_idv.json \
-node dist/agent-runtime-s2s.js > ../logs/agent-idv.log 2>&1 &
+node dist/agent-runtime-unified.js > ../logs/agent-idv.log 2>&1 &
 IDV_PID=$!
 cd ..
 sleep 2
@@ -166,12 +168,13 @@ AGENT_HOST=localhost \
 AGENT_PORT=8083 \
 REDIS_URL=redis://localhost:6379 \
 GATEWAY_URL=http://localhost:8080 \
+MODE=voice \
 LOCAL_TOOLS_URL=http://localhost:9000 \
 AWS_REGION=${AWS_REGION:-us-east-1} \
 AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
 AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
 WORKFLOW_FILE=../backend/workflows/workflow_banking-master.json \
-node dist/agent-runtime-s2s.js > ../logs/agent-banking.log 2>&1 &
+node dist/agent-runtime-unified.js > ../logs/agent-banking.log 2>&1 &
 BANKING_PID=$!
 cd ..
 sleep 2

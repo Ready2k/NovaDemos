@@ -2,31 +2,38 @@
     "name": "voice-s2s-agent",
     "version": "1.0.0",
     "description": "Generic Agent Runtime for Multi-Agent System",
-    "main": "dist/agent-runtime.js",
+    "main": "dist/agent-runtime-unified.js",
     "scripts": {
         "build": "tsc",
-        "start": "node dist/agent-runtime.js",
-        "dev": "ts-node src/agent-runtime.ts"
+        "start": "node dist/agent-runtime-unified.js",
+        "dev": "ts-node src/agent-runtime-unified.ts",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage"
     },
     "dependencies": {
-        "ws": "^8.18.0",
-        "express": "^4.21.2",
-        "redis": "^4.7.0",
-        "uuid": "^11.0.5",
-        "@langchain/core": "^1.1.17",
-        "@langchain/langgraph": "^1.1.2",
         "@aws-sdk/client-bedrock-runtime": "^3.716.0",
         "@aws-sdk/client-transcribe-streaming": "^3.716.0",
+        "@langchain/core": "^1.1.17",
+        "@langchain/langgraph": "^1.1.2",
         "axios": "^1.7.9",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.2",
         "langfuse": "^3.30.1",
-        "dotenv": "^16.4.7"
+        "redis": "^4.7.0",
+        "uuid": "^11.0.5",
+        "ws": "^8.18.0"
     },
     "devDependencies": {
-        "@types/node": "^22.10.5",
-        "@types/ws": "^8.5.13",
         "@types/express": "^5.0.0",
+        "@types/jest": "^30.0.0",
+        "@types/node": "^22.10.5",
         "@types/uuid": "^10.0.0",
-        "typescript": "^5.7.3",
-        "ts-node": "^10.9.2"
+        "@types/ws": "^8.5.13",
+        "fast-check": "^4.5.3",
+        "jest": "^30.2.0",
+        "ts-jest": "^29.4.6",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.7.3"
     }
 }
