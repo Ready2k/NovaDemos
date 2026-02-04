@@ -114,10 +114,29 @@ class AgentCore {
         if (memory && memory.graphState && this.graphExecutor) {
             console.log(`[AgentCore:${this.agentId}] Hydrating graph state from memory`);
             this.graphExecutor.hydrateState(memory.graphState);
+            // CRITICAL: Store graphState in session so it's available in system prompt
+            session.graphState = memory.graphState;
             if (memory.graphState.currentNodeId) {
                 session.currentNode = memory.graphState.currentNodeId;
                 console.log(`[AgentCore:${this.agentId}] Resuming from node: ${memory.graphState.currentNodeId}`);
             }
+            // Log account details if present
+            if (memory.graphState.account || memory.graphState.sortCode) {
+                console.log(`[AgentCore:${this.agentId}] Account details from memory: ${memory.graphState.account || 'N/A'}, ${memory.graphState.sortCode || 'N/A'}`);
+            }
+        }
+        // CRITICAL: Also check for account details directly in memory (not just graphState)
+        if (memory && (memory.account || memory.sortCode)) {
+            if (!session.graphState) {
+                session.graphState = {};
+            }
+            if (memory.account) {
+                session.graphState.account = memory.account;
+            }
+            if (memory.sortCode) {
+                session.graphState.sortCode = memory.sortCode;
+            }
+            console.log(`[AgentCore:${this.agentId}] Stored account details from memory: ${memory.account || 'N/A'}, ${memory.sortCode || 'N/A'}`);
         }
         this.sessions.set(sessionId, session);
         return session;
@@ -223,7 +242,72 @@ class AgentCore {
                 error: 'Session not found'
             };
         }
-        console.log(`[AgentCore:${this.agentId}] Executing tool: ${toolName}`);
+        // Circuit Breaker: Prevent infinite tool loops
+        const MAX_TOOL_CALLS_PER_TOOL = 5; // Max calls for same tool
+        const TOOL_CALL_WINDOW_MS = 30000; // 30 second window
+        // Initialize tool call tracking if not exists
+        if (!session.toolCallCounts) {
+            session.toolCallCounts = new Map();
+        }
+        // Get current count for this tool
+        const currentCount = session.toolCallCounts.get(toolName) || 0;
+        const now = Date.now();
+        // Reset counts if outside the time window
+        if (session.lastToolCallTime && (now - session.lastToolCallTime) > TOOL_CALL_WINDOW_MS) {
+            console.log(`[AgentCore:${this.agentId}] Resetting tool call counts (window expired)`);
+            session.toolCallCounts.clear();
+        }
+        // Check if we've exceeded the limit
+        if (currentCount >= MAX_TOOL_CALLS_PER_TOOL) {
+            console.error(`[AgentCore:${this.agentId}] ⚠️  CIRCUIT BREAKER TRIGGERED: Tool ${toolName} called ${currentCount} times in ${TOOL_CALL_WINDOW_MS}ms`);
+            return {
+                success: false,
+                result: null,
+                error: `Circuit breaker triggered: Tool ${toolName} has been called too many times (${currentCount}/${MAX_TOOL_CALLS_PER_TOOL}). This usually indicates the tool is returning invalid results. Please check the tool configuration and try again.`
+            };
+        }
+        // Increment count and update timestamp
+        session.toolCallCounts.set(toolName, currentCount + 1);
+        session.lastToolCallTime = now;
+        console.log(`[AgentCore:${this.agentId}] Executing tool: ${toolName} (call ${currentCount + 1}/${MAX_TOOL_CALLS_PER_TOOL})`);
+        // CRITICAL: Duplicate IDV Call Blocking
+        // Prevent LLM from calling perform_idv_check multiple times with same parameters
+        // This ensures the agent waits for user input between retry attempts
+        if (toolName === 'perform_idv_check') {
+            // Initialize lastIdvCall tracking if not exists
+            if (!session.graphState) {
+                session.graphState = {};
+            }
+            const lastCall = session.graphState.lastIdvCall;
+            const DUPLICATE_WINDOW_MS = 5000; // 5 second window
+            if (lastCall &&
+                lastCall.accountNumber === toolInput.accountNumber &&
+                lastCall.sortCode === toolInput.sortCode &&
+                (now - lastCall.timestamp) < DUPLICATE_WINDOW_MS) {
+                console.error(`[AgentCore:${this.agentId}] ⚠️  DUPLICATE IDV CALL BLOCKED: Same credentials called ${now - lastCall.timestamp}ms ago`);
+                console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
+                return {
+                    success: false,
+                    result: {
+                        content: [{
+                                text: JSON.stringify({
+                                    auth_status: 'BLOCKED',
+                                    message: 'Please wait for user to provide corrected details before retrying verification. Do not call perform_idv_check again with the same credentials.',
+                                    requiresUserInput: true
+                                })
+                            }]
+                    },
+                    error: 'Duplicate IDV call blocked - waiting for user input'
+                };
+            }
+            // Store this call for duplicate detection
+            session.graphState.lastIdvCall = {
+                accountNumber: toolInput.accountNumber,
+                sortCode: toolInput.sortCode,
+                timestamp: now
+            };
+            console.log(`[AgentCore:${this.agentId}] IDV call recorded for duplicate detection`);
+        }
         try {
             // Step 1: Detect tool type (Requirement 8.1)
             const toolType = this.detectToolType(toolName);
@@ -269,6 +353,7 @@ class AgentCore {
             }
             else {
                 console.log(`[AgentCore:${this.agentId}] Tool executed successfully: ${toolName}`);
+                console.log(`[AgentCore:${this.agentId}] Tool result:`, JSON.stringify(executionResult.result).substring(0, 200));
             }
             // Step 6: Track tool execution in Langfuse (Requirement 8.7, 11.4)
             this.trackToolExecution(sessionId, toolName, toolInput, toolUseId, executionResult);
@@ -334,6 +419,8 @@ class AgentCore {
      * Validate handoff tool input
      */
     validateHandoffInput(toolName, input) {
+        // Log input for debugging
+        console.log(`[AgentCore:${this.agentId}] Validating handoff input for ${toolName}:`, JSON.stringify(input).substring(0, 200));
         if (toolName === 'return_to_triage') {
             if (!input.taskCompleted || typeof input.taskCompleted !== 'string') {
                 return { valid: false, error: 'taskCompleted is required and must be a string' };
@@ -348,7 +435,12 @@ class AgentCore {
             if (input.reason !== undefined && typeof input.reason !== 'string') {
                 return { valid: false, error: 'reason must be a string if provided' };
             }
+            // Context is also optional
+            if (input.context !== undefined && typeof input.context !== 'string') {
+                return { valid: false, error: 'context must be a string if provided' };
+            }
         }
+        console.log(`[AgentCore:${this.agentId}] ✅ Handoff input validation passed`);
         return { valid: true };
     }
     /**
@@ -389,27 +481,37 @@ class AgentCore {
      * Requirements 9.1, 9.2, 9.3, 9.4, 9.7: Detect handoff, extract context, build request
      */
     async executeHandoffTool(sessionId, toolName, toolInput) {
-        console.log(`[AgentCore:${this.agentId}] Executing handoff tool: ${toolName}`);
+        console.log(`[AgentCore:${this.agentId}] 🔄 Executing handoff tool: ${toolName}`);
+        console.log(`[AgentCore:${this.agentId}] Handoff input:`, JSON.stringify(toolInput).substring(0, 300));
         // Requirement 9.1: Detect handoff tool calls (transfer_to_*, return_to_triage)
         const isReturnHandoff = toolName === 'return_to_triage';
         // Requirement 9.2: Extract handoff context (reason, verified user, user intent)
         const session = this.sessions.get(sessionId);
         if (!session) {
+            console.error(`[AgentCore:${this.agentId}] ❌ Session not found for handoff: ${sessionId}`);
             return {
                 success: false,
                 result: null,
                 error: 'Session not found'
             };
         }
+        // CRITICAL: Reset IDV attempts when returning to triage with failure
+        if (isReturnHandoff && toolInput.taskCompleted === 'verification_failed') {
+            console.log(`[AgentCore:${this.agentId}] 🔄 Resetting IDV attempts (returning to triage with failure)`);
+            session.idvAttempts = 0;
+            session.lastIdvFailure = undefined;
+        }
         // Extract target agent from tool name
         const targetAgent = (0, handoff_tools_1.getTargetAgentFromTool)(toolName);
         if (!targetAgent) {
+            console.error(`[AgentCore:${this.agentId}] ❌ Invalid handoff tool: ${toolName}`);
             return {
                 success: false,
                 result: null,
                 error: `Invalid handoff tool: ${toolName}`
             };
         }
+        console.log(`[AgentCore:${this.agentId}] Target agent: ${targetAgent}`);
         // Build handoff context
         const handoffContext = {
             reason: toolInput.reason || session.userIntent || 'User needs specialist assistance',
@@ -423,10 +525,16 @@ class AgentCore {
             handoffContext.taskCompleted = toolInput.taskCompleted || 'task_complete';
             handoffContext.summary = toolInput.summary || 'Task completed successfully';
             console.log(`[AgentCore:${this.agentId}] Return handoff - Task: ${handoffContext.taskCompleted}`);
+            // CRITICAL: Mark IDV as failed in handoff context so triage knows not to retry
+            if (toolInput.taskCompleted === 'verification_failed' || toolInput.taskCompleted === 'idv_failed') {
+                handoffContext.idvFailed = true;
+                console.log(`[AgentCore:${this.agentId}] ⚠️  Marking IDV as failed in handoff context`);
+            }
         }
         // Requirement 9.3: Build handoff request with full LangGraph state
         const handoffRequest = this.requestHandoff(sessionId, targetAgent, handoffContext);
-        console.log(`[AgentCore:${this.agentId}] Handoff request built: ${this.agentId} → ${targetAgent}`);
+        console.log(`[AgentCore:${this.agentId}] ✅ Handoff request built: ${this.agentId} → ${targetAgent}`);
+        console.log(`[AgentCore:${this.agentId}] Handoff context:`, JSON.stringify(handoffRequest.context).substring(0, 300));
         // Requirement 9.4: Send handoff_request to Gateway (via adapter)
         // Note: The actual sending is delegated to the adapter (Voice Side-Car or Text Adapter)
         // The adapter will call this method and then send the handoff_request via WebSocket
@@ -435,7 +543,7 @@ class AgentCore {
         return {
             success: true,
             result: {
-                message: 'Handoff initiated',
+                message: `Handoff initiated to ${targetAgent}`,
                 toolName,
                 input: toolInput,
                 handoffRequest: handoffRequest
@@ -495,6 +603,13 @@ class AgentCore {
         else if (result.auth_status) {
             idvData = result;
         }
+        // Initialize IDV attempts counter if not exists
+        if (session.idvAttempts === undefined) {
+            session.idvAttempts = 0;
+        }
+        // Increment attempt counter
+        session.idvAttempts++;
+        console.log(`[AgentCore:${this.agentId}] IDV attempt ${session.idvAttempts}/3`);
         if (idvData && idvData.auth_status === 'VERIFIED') {
             session.verifiedUser = {
                 customer_name: idvData.customer_name,
@@ -502,7 +617,19 @@ class AgentCore {
                 sortCode: toolInput.sortCode,
                 auth_status: idvData.auth_status
             };
-            console.log(`[AgentCore:${this.agentId}] Stored verified user: ${idvData.customer_name}`);
+            // Reset IDV attempts on success
+            session.idvAttempts = 0;
+            session.lastIdvFailure = undefined;
+            console.log(`[AgentCore:${this.agentId}] ✅ Stored verified user: ${idvData.customer_name}`);
+        }
+        else if (idvData && idvData.auth_status === 'FAILED') {
+            // Store failure reason
+            session.lastIdvFailure = idvData.message || 'Verification failed';
+            console.log(`[AgentCore:${this.agentId}] ❌ IDV failed (attempt ${session.idvAttempts}/3): ${session.lastIdvFailure}`);
+            // Check if max attempts reached
+            if (session.idvAttempts >= 3) {
+                console.log(`[AgentCore:${this.agentId}] ⚠️  Max IDV attempts reached (3/3) - should return to triage`);
+            }
         }
     }
     /**
@@ -593,6 +720,11 @@ class AgentCore {
             handoffContext.taskCompleted = context.taskCompleted || 'task_complete';
             handoffContext.summary = context.summary || 'Task completed successfully';
             console.log(`[AgentCore:${this.agentId}] Return handoff - Task: ${handoffContext.taskCompleted}`);
+            // CRITICAL: Copy IDV failure flag if present
+            if (context.idvFailed) {
+                handoffContext.idvFailed = true;
+                console.log(`[AgentCore:${this.agentId}] Including IDV failure flag in handoff context`);
+            }
         }
         // Requirement 9.3: Build handoff request with full LangGraph state
         const graphState = this.graphExecutor?.getCurrentState();
@@ -713,10 +845,111 @@ class AgentCore {
         let systemPrompt = '';
         // Build context injection
         let contextInjection = '';
-        if (session.userIntent || session.verifiedUser) {
+        if (session.userIntent || session.verifiedUser || session.graphState) {
             contextInjection = '\n### CURRENT SESSION CONTEXT ###\n';
             if (session.userIntent) {
                 contextInjection += `\n**User's Original Request:** ${session.userIntent}\n`;
+            }
+            // Show account details from memory (even if not yet verified)
+            // This allows IDV agent to use them without asking
+            if (session.graphState && (session.graphState.account || session.graphState.sortCode)) {
+                const hasAccount = !!session.graphState.account;
+                const hasSortCode = !!session.graphState.sortCode;
+                const hasBoth = hasAccount && hasSortCode;
+                contextInjection += `\n**Account Details from User:**\n`;
+                if (session.graphState.account) {
+                    contextInjection += `**Account Number:** ${session.graphState.account}\n`;
+                }
+                if (session.graphState.sortCode) {
+                    contextInjection += `**Sort Code:** ${session.graphState.sortCode}\n`;
+                }
+                // Add IDV-specific instruction
+                if (this.agentId === 'idv' && !session.verifiedUser) {
+                    const attempts = session.idvAttempts || 0;
+                    const maxAttempts = 3;
+                    const remainingAttempts = maxAttempts - attempts;
+                    contextInjection += `\n**CRITICAL INSTRUCTION FOR IDV:**\n`;
+                    if (attempts === 0) {
+                        // First attempt
+                        if (hasBoth) {
+                            // Have both - verify immediately
+                            contextInjection += `- The user has already provided BOTH account number and sort code above\n`;
+                            contextInjection += `- DO NOT ask for them again\n`;
+                            contextInjection += `- Call perform_idv_check IMMEDIATELY with these details\n`;
+                            contextInjection += `- **CRITICAL: Make ONLY ONE tool call, then WAIT for the result**\n`;
+                            contextInjection += `- **DO NOT call perform_idv_check multiple times in a single response**\n`;
+                            contextInjection += `- After verification, transfer to banking if the user wants banking services\n\n`;
+                        }
+                        else if (hasAccount && !hasSortCode) {
+                            // Have account, need sort code
+                            contextInjection += `- The user has provided their account number: ${session.graphState.account}\n`;
+                            contextInjection += `- You still need their 6-digit sort code\n`;
+                            contextInjection += `- Say: "Thank you. Now I need your 6-digit sort code."\n`;
+                            contextInjection += `- **DO NOT ask for the account number again - you already have it**\n`;
+                            contextInjection += `- **WAIT for the user to provide the sort code**\n`;
+                            contextInjection += `- Once you have both, call perform_idv_check\n\n`;
+                        }
+                        else if (!hasAccount && hasSortCode) {
+                            // Have sort code, need account
+                            contextInjection += `- The user has provided their sort code: ${session.graphState.sortCode}\n`;
+                            contextInjection += `- You still need their 8-digit account number\n`;
+                            contextInjection += `- Say: "Thank you. Now I need your 8-digit account number."\n`;
+                            contextInjection += `- **DO NOT ask for the sort code again - you already have it**\n`;
+                            contextInjection += `- **WAIT for the user to provide the account number**\n`;
+                            contextInjection += `- Once you have both, call perform_idv_check\n\n`;
+                        }
+                        else {
+                            // Have neither - ask for both
+                            contextInjection += `- The user has not provided any account details yet\n`;
+                            contextInjection += `- Ask for BOTH their 8-digit account number AND 6-digit sort code\n`;
+                            contextInjection += `- Say: "For authentication, please provide your 8-digit account number and 6-digit sort code."\n`;
+                            contextInjection += `- **WAIT for the user to provide the details**\n\n`;
+                        }
+                    }
+                    else if (attempts < maxAttempts) {
+                        // Retry attempts (1 or 2)
+                        contextInjection += `- **VERIFICATION ATTEMPT ${attempts + 1} of ${maxAttempts}**\n`;
+                        contextInjection += `- Previous attempt failed: ${session.lastIdvFailure || 'Incorrect details'}\n`;
+                        contextInjection += `- You have ${remainingAttempts} attempt(s) remaining\n`;
+                        contextInjection += `- **CRITICAL: DO NOT call perform_idv_check again yet**\n`;
+                        contextInjection += `- **You MUST ask the user to provide corrected details first**\n`;
+                        if (hasBoth) {
+                            // Have both but they were wrong - ask for corrections
+                            contextInjection += `- The details you have (${session.graphState.account}, ${session.graphState.sortCode}) were INCORRECT\n`;
+                            contextInjection += `- Ask the user to CAREFULLY re-enter BOTH their account number and sort code\n`;
+                            contextInjection += `- Say: "Those details weren't quite right. Let's try again. Please provide your 8-digit account number and 6-digit sort code."\n`;
+                        }
+                        else if (hasAccount && !hasSortCode) {
+                            // Have account, need sort code
+                            contextInjection += `- You have account ${session.graphState.account} but still need the sort code\n`;
+                            contextInjection += `- Ask ONLY for the sort code: "I have your account number. Now please provide your 6-digit sort code."\n`;
+                        }
+                        else if (!hasAccount && hasSortCode) {
+                            // Have sort code, need account
+                            contextInjection += `- You have sort code ${session.graphState.sortCode} but still need the account number\n`;
+                            contextInjection += `- Ask ONLY for the account: "I have your sort code. Now please provide your 8-digit account number."\n`;
+                        }
+                        else {
+                            // Have neither
+                            contextInjection += `- Ask for BOTH: "Please provide your 8-digit account number and 6-digit sort code."\n`;
+                        }
+                        contextInjection += `- Emphasize that they need to provide CORRECT details\n`;
+                        contextInjection += `- **WAIT for the user to respond with new details**\n`;
+                        contextInjection += `- **DO NOT retry automatically with the same details**\n`;
+                        contextInjection += `- Once they provide new details, THEN call perform_idv_check again\n`;
+                        contextInjection += `- If this attempt fails and you have no more attempts, you MUST call return_to_triage\n\n`;
+                    }
+                    else {
+                        // Max attempts reached - must return to triage
+                        contextInjection += `- **MAX ATTEMPTS REACHED (${maxAttempts}/${maxAttempts})**\n`;
+                        contextInjection += `- Verification has failed ${maxAttempts} times\n`;
+                        contextInjection += `- You MUST call return_to_triage with:\n`;
+                        contextInjection += `  - taskCompleted: "idv_failed"\n`;
+                        contextInjection += `  - summary: "Identity verification failed after ${maxAttempts} attempts. User may need to contact support."\n`;
+                        contextInjection += `- DO NOT attempt verification again\n`;
+                        contextInjection += `- Apologize to the user and explain they'll be transferred back\n\n`;
+                    }
+                }
             }
             if (session.verifiedUser) {
                 contextInjection += `
@@ -728,7 +961,20 @@ class AgentCore {
             }
             // Add agent-specific instructions
             if (this.agentId === 'triage') {
-                contextInjection += `
+                // Check if IDV failed (from graphState)
+                const idvFailed = session.graphState?.idvFailed || false;
+                if (idvFailed) {
+                    contextInjection += `
+**CRITICAL INSTRUCTION FOR TRIAGE - IDV FAILURE:** 
+- Identity verification has FAILED after multiple attempts
+- DO NOT transfer to IDV again - it will fail
+- Inform the user that verification failed and they need to contact support
+- Ask if there's anything else you can help with that doesn't require verification
+- DO NOT attempt to help with banking operations (balance, transactions, etc.)
+`;
+                }
+                else {
+                    contextInjection += `
 **CRITICAL INSTRUCTION FOR TRIAGE:** 
 - The customer has already been verified and helped by another agent
 - If the "User's Original Request" shows what they wanted (balance, transactions, etc.), acknowledge it was completed
@@ -736,8 +982,10 @@ class AgentCore {
 - DO NOT repeat the same service they just received
 - Be efficient and move to the next task
 `;
+                }
             }
-            else {
+            else if (this.agentId !== 'idv') {
+                // For non-triage, non-IDV agents (banking, mortgage, etc.)
                 contextInjection += `
 **CRITICAL INSTRUCTION:** 
 - The customer is already verified and you have their details above
@@ -760,14 +1008,33 @@ class AgentCore {
 
 You are a ROUTING agent. Your ONLY job is to route users to the correct specialist agent BY CALLING THE APPROPRIATE TOOL.
 
+**CRITICAL: YOU CANNOT ACCESS BANKING TOOLS DIRECTLY**
+
+You do NOT have access to:
+- agentcore_balance (balance checks)
+- perform_idv_check (identity verification)
+- get_account_transactions (transaction history)
+- Any other banking operations
+
+You ONLY have access to HANDOFF TOOLS:
+- transfer_to_banking
+- transfer_to_idv
+- transfer_to_mortgage
+- transfer_to_disputes
+- transfer_to_investigation
+
 **CRITICAL: YOU MUST CALL A TOOL - DO NOT JUST SAY YOU WILL CONNECT THEM**
 
 **ROUTING RULES:**
-- User needs BALANCE, TRANSACTIONS, PAYMENTS → **CALL THE TOOL** 'transfer_to_banking' with reason="User needs banking services"
+- User needs BALANCE, TRANSACTIONS, PAYMENTS → **FIRST** call 'transfer_to_idv' for verification, THEN banking
 - User needs IDENTITY VERIFICATION, SECURITY CHECKS → **CALL THE TOOL** 'transfer_to_idv' with reason="User needs identity verification"
 - User needs MORTGAGE information → **CALL THE TOOL** 'transfer_to_mortgage' with reason="User wants mortgage information"
 - User wants to DISPUTE a transaction → **CALL THE TOOL** 'transfer_to_disputes' with reason="User wants to dispute transaction"
 - User reports FRAUD or UNRECOGNIZED TRANSACTIONS → **CALL THE TOOL** 'transfer_to_investigation' with reason="User reports suspicious activity"
+
+**CRITICAL SECURITY RULE:**
+For ANY banking operation (balance, transactions, payments), you MUST transfer to IDV FIRST for identity verification.
+NEVER transfer directly to banking without IDV verification first.
 
 **CRITICAL PROCESS:**
 1. User states their need
@@ -778,7 +1045,7 @@ You are a ROUTING agent. Your ONLY job is to route users to the correct speciali
 **DO NOT:**
 - Just SAY you will connect them without calling the tool
 - Try to help with their actual problem
-- Ask for account details
+- Ask for account details (the specialist will do this)
 - Engage in extended conversation
 
 **YOU MUST:**
@@ -817,13 +1084,60 @@ You: "I'll connect you to our banking specialist right away."
     }
     /**
      * Get all available tools (handoff + banking + persona-specific)
+     * Tools are filtered based on agent type to enforce proper handoff flow
      */
     getAllTools() {
         const handoffTools = (0, handoff_tools_1.generateHandoffTools)();
         const bankingTools = (0, banking_tools_1.generateBankingTools)();
-        // TODO: Add persona-specific tools filtering
-        const allTools = [...handoffTools, ...bankingTools];
-        return allTools;
+        // Agent-specific tool access control
+        // This ensures proper separation of concerns and enforces handoff flow
+        switch (this.agentId) {
+            case 'triage':
+                // Triage agent: ONLY handoff tools
+                // Cannot call banking tools directly - must hand off to specialists
+                console.log(`[AgentCore:${this.agentId}] Tool access: Handoff tools only (${handoffTools.length} tools)`);
+                return handoffTools;
+            case 'idv':
+                // IDV agent: IDV tools + handoff tools
+                // Can verify identity and hand off to banking or return to triage
+                const idvTools = bankingTools.filter(t => t.toolSpec.name === 'perform_idv_check');
+                console.log(`[AgentCore:${this.agentId}] Tool access: IDV + Handoff (${idvTools.length + handoffTools.length} tools)`);
+                return [...handoffTools, ...idvTools];
+            case 'banking':
+                // Banking agent: Banking tools + handoff tools
+                // Can perform banking operations and return to triage
+                const bankingOnlyTools = bankingTools.filter(t => t.toolSpec.name === 'agentcore_balance' ||
+                    t.toolSpec.name === 'get_account_transactions' ||
+                    t.toolSpec.name === 'uk_branch_lookup');
+                console.log(`[AgentCore:${this.agentId}] Tool access: Banking + Handoff (${bankingOnlyTools.length + handoffTools.length} tools)`);
+                return [...handoffTools, ...bankingOnlyTools];
+            case 'mortgage':
+                // Mortgage agent: Mortgage tools + handoff tools
+                const mortgageTools = bankingTools.filter(t => t.toolSpec.name === 'calculate_max_loan' ||
+                    t.toolSpec.name === 'get_mortgage_rates' ||
+                    t.toolSpec.name === 'check_credit_score' ||
+                    t.toolSpec.name === 'value_property');
+                console.log(`[AgentCore:${this.agentId}] Tool access: Mortgage + Handoff (${mortgageTools.length + handoffTools.length} tools)`);
+                return [...handoffTools, ...mortgageTools];
+            case 'disputes':
+                // Disputes agent: Dispute tools + handoff tools
+                const disputeTools = bankingTools.filter(t => t.toolSpec.name === 'create_dispute_case' ||
+                    t.toolSpec.name === 'update_dispute_case' ||
+                    t.toolSpec.name === 'lookup_merchant_alias');
+                console.log(`[AgentCore:${this.agentId}] Tool access: Disputes + Handoff (${disputeTools.length + handoffTools.length} tools)`);
+                return [...handoffTools, ...disputeTools];
+            case 'investigation':
+                // Investigation agent: Investigation tools + handoff tools
+                // Can access transaction history for fraud investigation
+                const investigationTools = bankingTools.filter(t => t.toolSpec.name === 'get_account_transactions' ||
+                    t.toolSpec.name === 'lookup_merchant_alias');
+                console.log(`[AgentCore:${this.agentId}] Tool access: Investigation + Handoff (${investigationTools.length + handoffTools.length} tools)`);
+                return [...handoffTools, ...investigationTools];
+            default:
+                // Unknown agent: All tools (fallback for development)
+                console.warn(`[AgentCore:${this.agentId}] Unknown agent type - granting all tools`);
+                return [...handoffTools, ...bankingTools];
+        }
     }
     /**
      * Set persona prompt (called during initialization)

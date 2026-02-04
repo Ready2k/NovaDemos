@@ -9,6 +9,7 @@ import cors from 'cors';
 import { Langfuse } from 'langfuse';
 import { AgentRegistry } from './agent-registry';
 import { SessionRouter } from './session-router';
+import { parseUserMessage } from './intent-parser';
 
 // Load environment variables
 dotenv.config();
@@ -646,17 +647,32 @@ wss.on('connection', async (ws: WebSocket) => {
     let agentWs: WebSocket | null = null;
     let currentAgent: any = null;
     let sessionInitialized = false;
+    let isInitializing = false; // Prevent concurrent initialization
 
     const connectToAgent = async (agent: any) => {
+        // Close existing connection if any
         if (agentWs) {
-            agentWs.removeAllListeners();
-            agentWs.close();
+            try {
+                agentWs.removeAllListeners();
+                // Only close if not already closed/closing
+                if (agentWs.readyState === WebSocket.OPEN || agentWs.readyState === WebSocket.CONNECTING) {
+                    agentWs.close();
+                }
+            } catch (error) {
+                console.warn(`[Gateway] Error closing previous agent connection:`, error);
+            }
+            agentWs = null;
         }
 
         try {
             console.log(`[Gateway] Routing session ${sessionId} to agent: ${agent.id}`);
             const agentUrl = agent.url.replace('http://', 'ws://').replace('https://', 'wss://');
             agentWs = new WebSocket(`${agentUrl}/session`);
+
+            // Add error handler immediately to prevent unhandled errors
+            agentWs.on('error', (error) => {
+                console.error(`[Gateway] Agent ${agent.id} WebSocket error:`, error);
+            });
 
             agentWs.on('open', () => {
                 console.log(`[Gateway] Connected to agent: ${agent.id}`);
@@ -722,6 +738,18 @@ wss.on('connection', async (ws: WebSocket) => {
                                 updates.userIntent = undefined;
                                 console.log(`[Gateway] Return handoff - Task: ${updates.taskCompleted}`);
                                 console.log(`[Gateway] ✅ Cleared user intent (task complete)`);
+                                
+                                // CRITICAL: Store IDV failure status in graphState
+                                console.log(`[Gateway] Checking for IDV failure: idvFailed=${message.context.idvFailed}`);
+                                if (message.context.idvFailed) {
+                                    if (!updates.graphState) {
+                                        updates.graphState = sessionMemory?.graphState || {};
+                                    }
+                                    updates.graphState.idvFailed = true;
+                                    console.log(`[Gateway] ⚠️  Stored IDV failure status in graphState`);
+                                } else {
+                                    console.log(`[Gateway] No IDV failure flag in context`);
+                                }
                             } else {
                                 // Store user intent from handoff reason
                                 // CRITICAL: Preserve ORIGINAL intent through verification flows (IDV)
@@ -812,28 +840,122 @@ wss.on('connection', async (ws: WebSocket) => {
         try {
             const message = JSON.parse(data.toString());
 
+            // Parse text_input messages for account details and intent
+            if (message.type === 'text_input' && message.text) {
+                const parsed = parseUserMessage(message.text);
+                
+                // Store account details and intent in memory if found
+                // CRITICAL: Store partial credentials even if we don't have both yet
+                if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
+                    const updates: any = {};
+                    const currentMemory = await router.getMemory(sessionId);
+                    
+                    // CRITICAL: When user provides account details, ALWAYS UPDATE them
+                    // This handles both initial input AND retry corrections
+                    if (parsed.accountNumber) {
+                        const isUpdate = currentMemory?.account && currentMemory.account !== parsed.accountNumber;
+                        updates.account = parsed.accountNumber;
+                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} account number: ${parsed.accountNumber}${isUpdate ? ` (was: ${currentMemory.account})` : ''}`);
+                        
+                        // CRITICAL: Update userIntent to reflect the corrected account
+                        if (isUpdate && currentMemory?.userIntent && currentMemory?.account) {
+                            // Replace old account number in intent with new one
+                            const updatedIntent = currentMemory.userIntent.replace(currentMemory.account, parsed.accountNumber);
+                            updates.userIntent = updatedIntent;
+                            console.log(`[Gateway] 📝 Updated userIntent to reflect corrected account: ${updatedIntent}`);
+                        }
+                        
+                        // Store in graphState for agent access
+                        if (!updates.graphState) {
+                            updates.graphState = currentMemory?.graphState || {};
+                        }
+                        updates.graphState.account = parsed.accountNumber;
+                    }
+                    
+                    if (parsed.sortCode) {
+                        const isUpdate = currentMemory?.sortCode && currentMemory.sortCode !== parsed.sortCode;
+                        updates.sortCode = parsed.sortCode;
+                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} sort code: ${parsed.sortCode}${isUpdate ? ` (was: ${currentMemory.sortCode})` : ''}`);
+                        
+                        // Store in graphState for agent access
+                        if (!updates.graphState) {
+                            updates.graphState = currentMemory?.graphState || {};
+                        }
+                        updates.graphState.sortCode = parsed.sortCode;
+                    }
+                    
+                    if (parsed.intent) {
+                        // Only store intent if we don't already have one
+                        if (!currentMemory?.userIntent) {
+                            updates.userIntent = parsed.intent;
+                            console.log(`[Gateway] 📝 Extracted intent: ${parsed.intent}`);
+                        }
+                    }
+                    
+                    // Store the original user message
+                    updates.lastUserMessage = message.text;
+                    
+                    if (Object.keys(updates).length > 0) {
+                        await router.updateMemory(sessionId, updates);
+                        console.log(`[Gateway] ✅ Stored ${Object.keys(updates).length} items in memory`);
+                        
+                        // Check if we now have both credentials
+                        const finalMemory = await router.getMemory(sessionId);
+                        if (finalMemory?.account && finalMemory?.sortCode) {
+                            console.log(`[Gateway] ✅ COMPLETE CREDENTIALS: Account ${finalMemory.account}, Sort Code ${finalMemory.sortCode}`);
+                        } else if (finalMemory?.account) {
+                            console.log(`[Gateway] ⏳ PARTIAL CREDENTIALS: Have account ${finalMemory.account}, waiting for sort code`);
+                        } else if (finalMemory?.sortCode) {
+                            console.log(`[Gateway] ⏳ PARTIAL CREDENTIALS: Have sort code ${finalMemory.sortCode}, waiting for account`);
+                        }
+                        
+                        // CRITICAL: Send memory update to agent so it knows about the credentials
+                        // This allows the agent to update its system prompt with partial/complete credentials
+                        console.log(`[Gateway] 🔍 Checking if we can send memory_update: agentWs=${!!agentWs}, readyState=${agentWs?.readyState}`);
+                        if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                            agentWs.send(JSON.stringify({
+                                type: 'memory_update',
+                                sessionId,
+                                memory: finalMemory,
+                                graphState: finalMemory?.graphState,
+                                timestamp: Date.now()
+                            }));
+                            console.log(`[Gateway] 📤 Sent memory update to agent with credentials`);
+                        } else {
+                            console.warn(`[Gateway] ⚠️  Cannot send memory_update: agentWs not ready (exists=${!!agentWs}, state=${agentWs?.readyState})`);
+                        }
+                    }
+                }
+            }
+
             // Handle workflow selection
             if (message.type === 'select_workflow') {
                 console.log(`[Gateway] Workflow selected: ${message.workflowId}`);
                 selectedWorkflowId = message.workflowId || 'triage';
 
                 // Initialize session with selected workflow
-                if (!sessionInitialized) {
-                    const session = await router.createSession(sessionId, selectedWorkflowId);
-                    const agent = await router.routeToAgent(sessionId);
+                if (!sessionInitialized && !isInitializing) {
+                    isInitializing = true;
+                    try {
+                        const session = await router.createSession(sessionId, selectedWorkflowId);
+                        const agent = await router.routeToAgent(sessionId);
 
-                    if (!agent) {
-                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: `No agent available for ${selectedWorkflowId}. Please try again later.`
-                        }));
-                        return;
+                        if (!agent) {
+                            console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: `No agent available for ${selectedWorkflowId}. Please try again later.`
+                            }));
+                            isInitializing = false;
+                            return;
+                        }
+
+                        currentAgent = agent;
+                        await connectToAgent(agent);
+                        sessionInitialized = true;
+                    } finally {
+                        isInitializing = false;
                     }
-
-                    currentAgent = agent;
-                    await connectToAgent(agent);
-                    sessionInitialized = true;
                 }
                 return;
             }
@@ -845,23 +967,29 @@ wss.on('connection', async (ws: WebSocket) => {
             }
 
             // Initialize with default workflow if not yet initialized
-            if (!sessionInitialized) {
-                console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
-                const session = await router.createSession(sessionId, selectedWorkflowId);
-                const agent = await router.routeToAgent(sessionId);
+            if (!sessionInitialized && !isInitializing) {
+                isInitializing = true;
+                try {
+                    console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
+                    const session = await router.createSession(sessionId, selectedWorkflowId);
+                    const agent = await router.routeToAgent(sessionId);
 
-                if (!agent) {
-                    console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'No agents available. Please try again later.'
-                    }));
-                    return;
+                    if (!agent) {
+                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'No agents available. Please try again later.'
+                        }));
+                        isInitializing = false;
+                        return;
+                    }
+
+                    currentAgent = agent;
+                    await connectToAgent(agent);
+                    sessionInitialized = true;
+                } finally {
+                    isInitializing = false;
                 }
-
-                currentAgent = agent;
-                await connectToAgent(agent);
-                sessionInitialized = true;
             }
 
             // Forward to current agent

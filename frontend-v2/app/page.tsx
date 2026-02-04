@@ -467,7 +467,7 @@ export default function Home() {
     // We wait for the 'transcript' event from the backend to ensure Source of Truth & Zero Duplicates.
     console.log('[App] Sending message to WebSocket');
     const message = {
-      type: 'user_input',  // Changed from 'textInput' to match agent expectation
+      type: 'text_input',  // Use text_input to route to VoiceSideCar/SonicClient in hybrid mode
       text: text
     };
     console.log('[App] Message payload:', JSON.stringify(message));

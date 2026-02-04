@@ -99,23 +99,55 @@
         },
         {
             "id": "check_result",
-            "label": "Did 'perform_idv_check' return account_status='OPEN'?",
+            "label": "Did 'perform_idv_check' return auth_status='VERIFIED'?",
             "type": "decision"
         },
         {
             "id": "idv_success",
-            "label": "Verification Successful. Proceed to fulfill request.",
+            "label": "Verification Successful. Transfer to Banking.",
             "type": "end",
             "outcome": "SUCCESS"
         },
         {
-            "id": "idv_fail",
-            "label": "Inform user verification failed.",
+            "id": "increment_attempts",
+            "label": "Increment failed attempt counter (track in memory).",
             "type": "process"
         },
         {
+            "id": "check_attempts",
+            "label": "Check: How many failed attempts? (1, 2, or 3)",
+            "type": "decision"
+        },
+        {
+            "id": "retry_attempt_1",
+            "label": "First failure: Say 'Sorry, those details weren't quite right. Let's try again.'",
+            "type": "process"
+        },
+        {
+            "id": "retry_attempt_2",
+            "label": "Second failure: Say 'Those details still don't match. One more try - please carefully provide your details.'",
+            "type": "process"
+        },
+        {
+            "id": "max_attempts_reached",
+            "label": "Third failure: Say 'I'm unable to verify your details after three attempts. For security reasons, I'll transfer you back.'",
+            "type": "process"
+        },
+        {
+            "id": "return_to_triage",
+            "label": "Call 'return_to_triage' with taskCompleted='verification_failed'",
+            "type": "tool",
+            "toolName": "return_to_triage"
+        },
+        {
+            "id": "end_retry",
+            "label": "Waiting for retry...",
+            "type": "end",
+            "outcome": "RETRY"
+        },
+        {
             "id": "end_fail",
-            "label": "Verification Failed",
+            "label": "Verification Failed - Max Attempts Reached",
             "type": "end",
             "outcome": "FAILURE"
         }
@@ -202,15 +234,46 @@
         {
             "from": "check_result",
             "to": "idv_success",
-            "label": "OPEN"
+            "label": "VERIFIED"
         },
         {
             "from": "check_result",
-            "to": "idv_fail",
-            "label": "CLOSED/FROZEN"
+            "to": "increment_attempts",
+            "label": "FAILED"
         },
         {
-            "from": "idv_fail",
+            "from": "increment_attempts",
+            "to": "check_attempts"
+        },
+        {
+            "from": "check_attempts",
+            "to": "retry_attempt_1",
+            "label": "Attempt 1"
+        },
+        {
+            "from": "check_attempts",
+            "to": "retry_attempt_2",
+            "label": "Attempt 2"
+        },
+        {
+            "from": "check_attempts",
+            "to": "max_attempts_reached",
+            "label": "Attempt 3"
+        },
+        {
+            "from": "retry_attempt_1",
+            "to": "end_retry"
+        },
+        {
+            "from": "retry_attempt_2",
+            "to": "end_retry"
+        },
+        {
+            "from": "max_attempts_reached",
+            "to": "return_to_triage"
+        },
+        {
+            "from": "return_to_triage",
             "to": "end_fail"
         }
     ]

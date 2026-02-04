@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 
-const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8080';
+// Use INTERNAL_API_URL for server-side calls (inside Docker container)
+// Falls back to NEXT_PUBLIC_GATEWAY_URL for backwards compatibility
+// Falls back to localhost for local development
+const GATEWAY_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8080';
 
 // GET - List all personas
 export async function GET() {

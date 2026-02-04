@@ -146,7 +146,11 @@ export class SonicClient {
 
     private loadDefaultPrompt(): string {
         try {
-            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            // Determine if running in Docker or locally
+            const isDocker = fs.existsSync('/app');
+            const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+            const PROMPTS_DIR = path.join(BASE_DIR, 'prompts');
+            
             return fs.readFileSync(path.join(PROMPTS_DIR, 'core-system_default.txt'), 'utf-8').trim();
         } catch (err) {
             console.error(`[SonicClient:${this.id}] Failed to load default prompt:`, err);
@@ -156,9 +160,13 @@ export class SonicClient {
 
     private loadDialectDetectionPrompt(): string {
         try {
-            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            // Determine if running in Docker or locally
+            const isDocker = fs.existsSync('/app');
+            const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+            const PROMPTS_DIR = path.join(BASE_DIR, 'prompts');
+            
             const dialectPrompt = fs.readFileSync(path.join(PROMPTS_DIR, 'hidden-dialect_detection.txt'), 'utf-8').trim();
-            console.log(`[SonicClient:${this.id}] Loaded dialect detection prompt`);
+            console.log(`[SonicClient:${this.id}] Loaded dialect detection prompt from ${PROMPTS_DIR}`);
             return dialectPrompt;
         } catch (err) {
             console.warn(`[SonicClient:${this.id}] Failed to load dialect detection prompt:`, err);

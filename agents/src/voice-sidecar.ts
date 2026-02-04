@@ -348,18 +348,23 @@ export class VoiceSideCar {
      * Handle transcript event
      */
     private handleTranscriptEvent(session: VoiceSession, transcriptData: any): void {
+        // Extract text from various possible fields
+        const text = transcriptData.text || transcriptData.content || transcriptData.transcript || '';
+        
+        console.log(`[VoiceSideCar] Transcript event - Role: ${transcriptData.role}, Text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+        
         // Forward transcript to client
         session.ws.send(JSON.stringify({
             type: 'transcript',
             role: transcriptData.role || 'assistant',
-            text: transcriptData.text || transcriptData.content || '',
+            text,
+            isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true, // Default to true if not specified
             timestamp: Date.now()
         }));
 
         // If this is a user transcript, process it through Agent Core
         if (transcriptData.role === 'user') {
-            const userMessage = transcriptData.text || transcriptData.content || '';
-            this.agentCore.processUserMessage(session.sessionId, userMessage)
+            this.agentCore.processUserMessage(session.sessionId, text)
                 .catch(error => {
                     console.error(`[VoiceSideCar] Error processing user message: ${error.message}`);
                 });
@@ -371,13 +376,37 @@ export class VoiceSideCar {
      */
     private async handleToolUseEvent(session: VoiceSession, toolData: any): Promise<void> {
         console.log(`[VoiceSideCar] Tool use event: ${toolData.toolName}`);
+        console.log(`[VoiceSideCar] Raw tool input type: ${typeof (toolData.input || toolData.content)}`);
+
+        // Parse tool input if it's a JSON string
+        let toolInput = toolData.input || toolData.content;
+        
+        // Handle JSON string inputs
+        if (typeof toolInput === 'string') {
+            try {
+                toolInput = JSON.parse(toolInput);
+                console.log(`[VoiceSideCar] ✅ Parsed tool input from JSON string`);
+            } catch (e) {
+                console.warn(`[VoiceSideCar] ⚠️  Tool input is a string but not valid JSON, using as-is: ${toolInput}`);
+                // If it's not valid JSON, wrap it in an object
+                toolInput = { value: toolInput };
+            }
+        }
+        
+        // Ensure toolInput is an object
+        if (typeof toolInput !== 'object' || toolInput === null) {
+            console.warn(`[VoiceSideCar] ⚠️  Tool input is not an object, wrapping: ${typeof toolInput}`);
+            toolInput = { value: toolInput };
+        }
+        
+        console.log(`[VoiceSideCar] Parsed tool input:`, JSON.stringify(toolInput).substring(0, 200));
 
         // Forward tool use to client for UI feedback
         session.ws.send(JSON.stringify({
             type: 'tool_use',
             toolName: toolData.toolName,
             toolUseId: toolData.toolUseId,
-            input: toolData.input || toolData.content,
+            input: toolInput,
             timestamp: Date.now()
         }));
 
@@ -386,7 +415,7 @@ export class VoiceSideCar {
             const result = await this.agentCore.executeTool(
                 session.sessionId,
                 toolData.toolName,
-                toolData.input || toolData.content,
+                toolInput,
                 toolData.toolUseId
             );
 
@@ -413,7 +442,7 @@ export class VoiceSideCar {
             if (result.success && result.result?.handoffRequest) {
                 const handoffRequest = result.result.handoffRequest;
                 
-                console.log(`[VoiceSideCar] Forwarding handoff request: ${handoffRequest.targetAgentId}`);
+                console.log(`[VoiceSideCar] 🔄 Forwarding handoff request: ${handoffRequest.targetAgentId}`);
                 
                 // Forward handoff request to client (which will forward to Gateway)
                 session.ws.send(JSON.stringify({
@@ -426,7 +455,7 @@ export class VoiceSideCar {
             }
 
         } catch (error: any) {
-            console.error(`[VoiceSideCar] Tool execution error: ${error.message}`);
+            console.error(`[VoiceSideCar] ❌ Tool execution error: ${error.message}`);
 
             // Send error result to SonicClient
             await session.sonicClient.sendToolResult(
@@ -541,5 +570,13 @@ export class VoiceSideCar {
      */
     public hasSession(sessionId: string): boolean {
         return this.sessions.has(sessionId);
+    }
+
+    /**
+     * Get a voice session
+     * Used for updating session state (e.g., system prompt updates)
+     */
+    public getSession(sessionId: string): VoiceSession | undefined {
+        return this.sessions.get(sessionId);
     }
 }

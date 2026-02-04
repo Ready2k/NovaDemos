@@ -47,6 +47,7 @@ const cors_1 = __importDefault(require("cors"));
 const langfuse_1 = require("langfuse");
 const agent_registry_1 = require("./agent-registry");
 const session_router_1 = require("./session-router");
+const intent_parser_1 = require("./intent-parser");
 // Load environment variables
 dotenv.config();
 const PORT = parseInt(process.env.PORT || '8080');
@@ -621,15 +622,30 @@ wss.on('connection', async (ws) => {
     let agentWs = null;
     let currentAgent = null;
     let sessionInitialized = false;
+    let isInitializing = false; // Prevent concurrent initialization
     const connectToAgent = async (agent) => {
+        // Close existing connection if any
         if (agentWs) {
-            agentWs.removeAllListeners();
-            agentWs.close();
+            try {
+                agentWs.removeAllListeners();
+                // Only close if not already closed/closing
+                if (agentWs.readyState === ws_1.WebSocket.OPEN || agentWs.readyState === ws_1.WebSocket.CONNECTING) {
+                    agentWs.close();
+                }
+            }
+            catch (error) {
+                console.warn(`[Gateway] Error closing previous agent connection:`, error);
+            }
+            agentWs = null;
         }
         try {
             console.log(`[Gateway] Routing session ${sessionId} to agent: ${agent.id}`);
             const agentUrl = agent.url.replace('http://', 'ws://').replace('https://', 'wss://');
             agentWs = new ws_1.WebSocket(`${agentUrl}/session`);
+            // Add error handler immediately to prevent unhandled errors
+            agentWs.on('error', (error) => {
+                console.error(`[Gateway] Agent ${agent.id} WebSocket error:`, error);
+            });
             agentWs.on('open', () => {
                 console.log(`[Gateway] Connected to agent: ${agent.id}`);
                 // Get current session memory to pass to new agent
@@ -685,6 +701,18 @@ wss.on('connection', async (ws) => {
                                 updates.userIntent = undefined;
                                 console.log(`[Gateway] Return handoff - Task: ${updates.taskCompleted}`);
                                 console.log(`[Gateway] ✅ Cleared user intent (task complete)`);
+                                // CRITICAL: Store IDV failure status in graphState
+                                console.log(`[Gateway] Checking for IDV failure: idvFailed=${message.context.idvFailed}`);
+                                if (message.context.idvFailed) {
+                                    if (!updates.graphState) {
+                                        updates.graphState = sessionMemory?.graphState || {};
+                                    }
+                                    updates.graphState.idvFailed = true;
+                                    console.log(`[Gateway] ⚠️  Stored IDV failure status in graphState`);
+                                }
+                                else {
+                                    console.log(`[Gateway] No IDV failure flag in context`);
+                                }
                             }
                             else {
                                 // Store user intent from handoff reason
@@ -769,25 +797,73 @@ wss.on('connection', async (ws) => {
     ws.on('message', async (data, isBinary) => {
         try {
             const message = JSON.parse(data.toString());
+            // Parse text_input messages for account details and intent
+            if (message.type === 'text_input' && message.text) {
+                const parsed = (0, intent_parser_1.parseUserMessage)(message.text);
+                // Store account details and intent in memory if found
+                if (parsed.hasAccountDetails || parsed.intent) {
+                    const updates = {};
+                    const currentMemory = await router.getMemory(sessionId);
+                    // CRITICAL: When user provides account details, ALWAYS UPDATE them
+                    // This handles both initial input AND retry corrections
+                    if (parsed.accountNumber) {
+                        const isUpdate = currentMemory?.account && currentMemory.account !== parsed.accountNumber;
+                        updates.account = parsed.accountNumber;
+                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} account number: ${parsed.accountNumber}${isUpdate ? ` (was: ${currentMemory.account})` : ''}`);
+                        // CRITICAL: Update userIntent to reflect the corrected account
+                        if (isUpdate && currentMemory?.userIntent && currentMemory?.account) {
+                            // Replace old account number in intent with new one
+                            const updatedIntent = currentMemory.userIntent.replace(currentMemory.account, parsed.accountNumber);
+                            updates.userIntent = updatedIntent;
+                            console.log(`[Gateway] 📝 Updated userIntent to reflect corrected account: ${updatedIntent}`);
+                        }
+                    }
+                    if (parsed.sortCode) {
+                        const isUpdate = currentMemory?.sortCode && currentMemory.sortCode !== parsed.sortCode;
+                        updates.sortCode = parsed.sortCode;
+                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} sort code: ${parsed.sortCode}${isUpdate ? ` (was: ${currentMemory.sortCode})` : ''}`);
+                    }
+                    if (parsed.intent) {
+                        // Only store intent if we don't already have one
+                        if (!currentMemory?.userIntent) {
+                            updates.userIntent = parsed.intent;
+                            console.log(`[Gateway] 📝 Extracted intent: ${parsed.intent}`);
+                        }
+                    }
+                    // Store the original user message
+                    updates.lastUserMessage = message.text;
+                    if (Object.keys(updates).length > 0) {
+                        await router.updateMemory(sessionId, updates);
+                        console.log(`[Gateway] ✅ Stored ${Object.keys(updates).length} items in memory`);
+                    }
+                }
+            }
             // Handle workflow selection
             if (message.type === 'select_workflow') {
                 console.log(`[Gateway] Workflow selected: ${message.workflowId}`);
                 selectedWorkflowId = message.workflowId || 'triage';
                 // Initialize session with selected workflow
-                if (!sessionInitialized) {
-                    const session = await router.createSession(sessionId, selectedWorkflowId);
-                    const agent = await router.routeToAgent(sessionId);
-                    if (!agent) {
-                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: `No agent available for ${selectedWorkflowId}. Please try again later.`
-                        }));
-                        return;
+                if (!sessionInitialized && !isInitializing) {
+                    isInitializing = true;
+                    try {
+                        const session = await router.createSession(sessionId, selectedWorkflowId);
+                        const agent = await router.routeToAgent(sessionId);
+                        if (!agent) {
+                            console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: `No agent available for ${selectedWorkflowId}. Please try again later.`
+                            }));
+                            isInitializing = false;
+                            return;
+                        }
+                        currentAgent = agent;
+                        await connectToAgent(agent);
+                        sessionInitialized = true;
                     }
-                    currentAgent = agent;
-                    await connectToAgent(agent);
-                    sessionInitialized = true;
+                    finally {
+                        isInitializing = false;
+                    }
                 }
                 return;
             }
@@ -797,21 +873,28 @@ wss.on('connection', async (ws) => {
                 return;
             }
             // Initialize with default workflow if not yet initialized
-            if (!sessionInitialized) {
-                console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
-                const session = await router.createSession(sessionId, selectedWorkflowId);
-                const agent = await router.routeToAgent(sessionId);
-                if (!agent) {
-                    console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'No agents available. Please try again later.'
-                    }));
-                    return;
+            if (!sessionInitialized && !isInitializing) {
+                isInitializing = true;
+                try {
+                    console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
+                    const session = await router.createSession(sessionId, selectedWorkflowId);
+                    const agent = await router.routeToAgent(sessionId);
+                    if (!agent) {
+                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'No agents available. Please try again later.'
+                        }));
+                        isInitializing = false;
+                        return;
+                    }
+                    currentAgent = agent;
+                    await connectToAgent(agent);
+                    sessionInitialized = true;
                 }
-                currentAgent = agent;
-                await connectToAgent(agent);
-                sessionInitialized = true;
+                finally {
+                    isInitializing = false;
+                }
             }
             // Forward to current agent
             if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {

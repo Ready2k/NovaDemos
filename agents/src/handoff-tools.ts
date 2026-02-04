@@ -186,11 +186,12 @@ export function getTargetAgentFromTool(toolName: string): string | null {
  */
 export function getPersonaIdForAgent(agentName: string): string {
     const mapping: Record<string, string> = {
-        'banking': 'persona-SimpleBanking',
+        'banking': 'banking',  // Fixed: agent is registered as 'banking', not 'persona-SimpleBanking'
         'idv': 'idv',
-        'mortgage': 'persona-mortgage',
-        'disputes': 'persona-BankingDisputes',
-        'investigation': 'investigation'
+        'mortgage': 'mortgage',  // Fixed: agent is registered as 'mortgage', not 'persona-mortgage'
+        'disputes': 'disputes',  // Fixed: agent is registered as 'disputes', not 'persona-BankingDisputes'
+        'investigation': 'investigation',
+        'triage': 'triage'
     };
     
     return mapping[agentName] || agentName;

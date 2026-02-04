@@ -144,9 +144,35 @@ export class SonicClient {
         console.log(`[SonicClient:${this.id}] Configuration updated:`, JSON.stringify(this.sessionConfig));
     }
 
+    /**
+     * Update system prompt for an active session
+     * This sends a configuration update to the active Sonic session
+     */
+    updateSystemPrompt(systemPrompt: string): void {
+        if (!this.sessionId) {
+            console.warn(`[SonicClient:${this.id}] Cannot update system prompt: No active session (sessionId=${this.sessionId})`);
+            return;
+        }
+
+        // Update config
+        this.sessionConfig.systemPrompt = systemPrompt;
+        
+        // Send configuration update to active session
+        // Nova Sonic will use the new system prompt for subsequent turns
+        console.log(`[SonicClient:${this.id}] 🔄 System prompt updated for active session (length: ${systemPrompt.length} chars)`);
+        console.log(`[SonicClient:${this.id}] Updated prompt preview: ${systemPrompt.substring(0, 200)}...`);
+        
+        // Note: The updated prompt will be used on the next user input
+        // Nova Sonic doesn't support mid-turn prompt updates
+    }
+
     private loadDefaultPrompt(): string {
         try {
-            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            // Determine if running in Docker or locally
+            const isDocker = fs.existsSync('/app');
+            const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+            const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
+            
             return fs.readFileSync(path.join(PROMPTS_DIR, 'core-system_default.txt'), 'utf-8').trim();
         } catch (err) {
             console.error(`[SonicClient:${this.id}] Failed to load default prompt:`, err);
@@ -156,9 +182,13 @@ export class SonicClient {
 
     private loadDialectDetectionPrompt(): string {
         try {
-            const PROMPTS_DIR = path.join(__dirname, '../prompts');
+            // Determine if running in Docker or locally
+            const isDocker = fs.existsSync('/app');
+            const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
+            const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
+            
             const dialectPrompt = fs.readFileSync(path.join(PROMPTS_DIR, 'hidden-dialect_detection.txt'), 'utf-8').trim();
-            console.log(`[SonicClient:${this.id}] Loaded dialect detection prompt`);
+            console.log(`[SonicClient:${this.id}] Loaded dialect detection prompt from ${PROMPTS_DIR}`);
             return dialectPrompt;
         } catch (err) {
             console.warn(`[SonicClient:${this.id}] Failed to load dialect detection prompt:`, err);

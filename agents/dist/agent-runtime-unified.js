@@ -274,11 +274,20 @@ class UnifiedRuntime {
         }
         // Initialize Text Adapter for text or hybrid mode
         if (this.config.mode === 'text' || this.config.mode === 'hybrid') {
+            // Text mode also needs SonicClient for LLM invocation
+            const sonicConfig = {
+                region: this.config.awsConfig.region,
+                accessKeyId: this.config.awsConfig.accessKeyId,
+                secretAccessKey: this.config.awsConfig.secretAccessKey,
+                sessionToken: this.config.awsConfig?.sessionToken,
+                modelId: 'amazon.nova-2-sonic-v1:0'
+            };
             const textAdapterConfig = {
-                agentCore: this.agentCore
+                agentCore: this.agentCore,
+                sonicConfig // Pass SonicConfig for LLM invocation
             };
             this.textAdapter = new text_adapter_1.TextAdapter(textAdapterConfig);
-            console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Text Adapter initialized`);
+            console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Text Adapter initialized with SonicClient`);
         }
     }
     /**
@@ -336,12 +345,73 @@ class UnifiedRuntime {
                 else {
                     // Text data - JSON message
                     const message = JSON.parse(data.toString());
+                    // Debug: Log all incoming messages
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] 📨 Received message type: ${message.type}, sessionId=${sessionId}`);
                     // Handle session initialization
                     if (message.type === 'session_init') {
                         const newSessionId = message.sessionId || `session-${Date.now()}`;
                         sessionId = newSessionId;
                         const memory = message.memory || {};
                         await this.initializeSession(newSessionId, ws, memory);
+                    }
+                    else if (message.type === 'memory_update') {
+                        // Handle memory updates from gateway (e.g., when credentials are extracted)
+                        const targetSessionId = sessionId || message.sessionId;
+                        if (targetSessionId) {
+                            console.log(`[UnifiedRuntime:${this.config.agentId}] Received memory update for session: ${targetSessionId}`);
+                            const session = this.sessions.get(targetSessionId);
+                            if (session) {
+                                // Update session memory
+                                session.memory = message.memory || {};
+                                // Update AgentCore session with new graphState
+                                if (this.agentCore && message.graphState) {
+                                    const agentSession = this.agentCore.getSession(targetSessionId);
+                                    if (agentSession) {
+                                        agentSession.graphState = message.graphState;
+                                        console.log(`[UnifiedRuntime:${this.config.agentId}] Updated AgentCore graphState with credentials`);
+                                        // Log what credentials we now have
+                                        if (message.graphState.account && message.graphState.sortCode) {
+                                            console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ COMPLETE CREDENTIALS: Account ${message.graphState.account}, Sort Code ${message.graphState.sortCode}`);
+                                        }
+                                        else if (message.graphState.account) {
+                                            console.log(`[UnifiedRuntime:${this.config.agentId}] ⏳ PARTIAL: Have account ${message.graphState.account}`);
+                                        }
+                                        else if (message.graphState.sortCode) {
+                                            console.log(`[UnifiedRuntime:${this.config.agentId}] ⏳ PARTIAL: Have sort code ${message.graphState.sortCode}`);
+                                        }
+                                        // CRITICAL: Update SonicClient system prompt with new credentials
+                                        // This ensures the LLM sees the updated context on the next message
+                                        const updatedSystemPrompt = this.agentCore.getSystemPrompt(targetSessionId);
+                                        // Update voice session if active
+                                        if (this.voiceSideCar) {
+                                            const voiceSession = this.voiceSideCar.getSession(targetSessionId);
+                                            console.log(`[UnifiedRuntime:${this.config.agentId}] 🔍 Voice session lookup: found=${!!voiceSession}, hasSonicClient=${!!voiceSession?.sonicClient}`);
+                                            if (voiceSession?.sonicClient) {
+                                                voiceSession.sonicClient.updateSystemPrompt(updatedSystemPrompt);
+                                                console.log(`[UnifiedRuntime:${this.config.agentId}] 🔄 Updated SonicClient system prompt with credentials`);
+                                            }
+                                            else {
+                                                console.warn(`[UnifiedRuntime:${this.config.agentId}] ⚠️  Cannot update system prompt: voiceSession or sonicClient not found`);
+                                            }
+                                        }
+                                        else {
+                                            console.warn(`[UnifiedRuntime:${this.config.agentId}] ⚠️  Cannot update system prompt: voiceSideCar not initialized`);
+                                        }
+                                        // Update text session if active (for hybrid mode)
+                                        if (this.textAdapter) {
+                                            // Text adapter will get updated prompt on next message automatically
+                                            console.log(`[UnifiedRuntime:${this.config.agentId}] 📝 Text adapter will use updated prompt on next message`);
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                console.warn(`[UnifiedRuntime:${this.config.agentId}] ⚠️  Session not found for memory update: ${targetSessionId}`);
+                            }
+                        }
+                        else {
+                            console.warn(`[UnifiedRuntime:${this.config.agentId}] ⚠️  No sessionId available for memory_update`);
+                        }
                     }
                     else if (sessionId) {
                         await this.handleMessage(sessionId, data, false);
@@ -391,7 +461,7 @@ class UnifiedRuntime {
                 await this.voiceSideCar.startVoiceSession(sessionId, ws, memory);
             }
             else if (this.config.mode === 'text' && this.textAdapter) {
-                this.textAdapter.startTextSession(sessionId, ws, memory);
+                await this.textAdapter.startTextSession(sessionId, ws, memory);
             }
             else if (this.config.mode === 'hybrid') {
                 // In hybrid mode, start both adapters
@@ -399,7 +469,55 @@ class UnifiedRuntime {
                     await this.voiceSideCar.startVoiceSession(sessionId, ws, memory);
                 }
                 if (this.textAdapter) {
-                    this.textAdapter.startTextSession(sessionId, ws, memory);
+                    await this.textAdapter.startTextSession(sessionId, ws, memory);
+                }
+            }
+            // CRITICAL: Auto-trigger agents with context from memory
+            // If this is an IDV agent with account details in memory, send automatic trigger
+            // This simulates the user providing their details so the agent can verify immediately
+            // IMPORTANT: Only auto-trigger if this is the FIRST attempt (no previous IDV attempts)
+            if (this.config.agentId === 'idv' && memory && memory.account && memory.sortCode) {
+                const isFirstAttempt = !memory.graphState || !memory.graphState.idvAttempts || memory.graphState.idvAttempts === 0;
+                if (isFirstAttempt) {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent with account details from memory (first attempt)`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+                    // Send trigger via voice session with explicit account details
+                    // This mimics what the user would say, prompting immediate verification
+                    const triggerMessage = `I need to verify account ${memory.account} with sort code ${memory.sortCode}`;
+                    if (this.voiceSideCar) {
+                        setImmediate(() => {
+                            this.voiceSideCar.handleTextInput(sessionId, triggerMessage).catch(error => {
+                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                            });
+                        });
+                    }
+                }
+                else {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Skipping auto-trigger (retry attempt ${memory.graphState.idvAttempts})`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Waiting for user to provide corrected details`);
+                }
+            }
+            // CRITICAL: Auto-trigger banking agent with verified user and intent
+            // If this is a banking agent with verified user and intent in memory, send automatic trigger
+            if (this.config.agentId === 'banking' && memory) {
+                const hasVerifiedUser = memory.verified && memory.userName;
+                const hasIntent = memory.userIntent;
+                const hasAccountDetails = memory.account && memory.sortCode;
+                if (hasVerifiedUser && (hasIntent || hasAccountDetails)) {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering Banking agent with verified user and intent`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    User: ${memory.userName}, Intent: ${hasIntent ? memory.userIntent : 'check balance'}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+                    // Send trigger via voice session with explicit request
+                    // This mimics what the user would say, prompting immediate action
+                    const intent = memory.userIntent || 'check my balance';
+                    const triggerMessage = `I want to ${intent}`;
+                    if (this.voiceSideCar) {
+                        setImmediate(() => {
+                            this.voiceSideCar.handleTextInput(sessionId, triggerMessage).catch(error => {
+                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                            });
+                        });
+                    }
                 }
             }
             console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Session initialized: ${sessionId}`);
@@ -483,14 +601,14 @@ class UnifiedRuntime {
                 await this.voiceSideCar.stopVoiceSession(sessionId);
             }
             else if (this.config.mode === 'text' && this.textAdapter) {
-                this.textAdapter.stopTextSession(sessionId);
+                await this.textAdapter.stopTextSession(sessionId);
             }
             else if (this.config.mode === 'hybrid') {
                 if (this.voiceSideCar) {
                     await this.voiceSideCar.stopVoiceSession(sessionId);
                 }
                 if (this.textAdapter) {
-                    this.textAdapter.stopTextSession(sessionId);
+                    await this.textAdapter.stopTextSession(sessionId);
                 }
             }
             // Remove session
@@ -510,15 +628,16 @@ class UnifiedRuntime {
         const gatewayUrl = this.config.gatewayUrl || 'http://gateway:8080';
         console.log(`[UnifiedRuntime:${this.config.agentId}] Registering with Gateway: ${gatewayUrl}`);
         try {
-            const response = await axios_1.default.post(`${gatewayUrl}/register`, {
-                agentId: this.config.agentId,
-                host: `agent-${this.config.agentId}`,
+            const agentUrl = `ws://agent-${this.config.agentId}:${this.config.agentPort}`;
+            const response = await axios_1.default.post(`${gatewayUrl}/api/agents/register`, {
+                id: this.config.agentId,
+                url: agentUrl,
                 port: this.config.agentPort,
-                mode: this.config.mode,
-                personaId: this.personaConfig?.id || this.config.agentId,
                 capabilities: {
                     voice: this.config.mode === 'voice' || this.config.mode === 'hybrid',
                     text: this.config.mode === 'text' || this.config.mode === 'hybrid',
+                    mode: this.config.mode,
+                    personaId: this.personaConfig?.id || this.config.agentId,
                     tools: this.agentCore?.getAllTools().map(t => t.toolSpec.name) || []
                 }
             });
@@ -526,6 +645,10 @@ class UnifiedRuntime {
         }
         catch (error) {
             console.error(`[UnifiedRuntime:${this.config.agentId}] Failed to register with Gateway: ${error.message}`);
+            if (error.response) {
+                console.error(`[UnifiedRuntime:${this.config.agentId}] Response status: ${error.response.status}`);
+                console.error(`[UnifiedRuntime:${this.config.agentId}] Response data:`, error.response.data);
+            }
             // Don't throw - allow agent to run without Gateway
         }
     }
@@ -535,7 +658,7 @@ class UnifiedRuntime {
     async sendHeartbeat() {
         const gatewayUrl = this.config.gatewayUrl || 'http://gateway:8080';
         try {
-            await axios_1.default.post(`${gatewayUrl}/heartbeat`, {
+            await axios_1.default.post(`${gatewayUrl}/api/agents/heartbeat`, {
                 agentId: this.config.agentId,
                 activeSessions: this.sessions.size,
                 uptime: process.uptime()
@@ -543,6 +666,10 @@ class UnifiedRuntime {
         }
         catch (error) {
             console.error(`[UnifiedRuntime:${this.config.agentId}] Heartbeat failed: ${error.message}`);
+            if (error.response) {
+                console.error(`[UnifiedRuntime:${this.config.agentId}] Heartbeat response status: ${error.response.status}`);
+                console.error(`[UnifiedRuntime:${this.config.agentId}] Heartbeat response data:`, error.response.data);
+            }
         }
     }
     /**
