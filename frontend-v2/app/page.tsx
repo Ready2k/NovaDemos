@@ -48,10 +48,10 @@ export default function Home() {
   const [showSurvey, setShowSurvey] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [finishedSessionId, setFinishedSessionId] = useState<string | null>(null);
-  
+
   // Workflow selection state
   const [selectedWorkflow, setSelectedWorkflow] = useState('triage');
-  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{id: string, name: string}>>([]);
+  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ id: string, name: string }>>([]);
 
   // Test Report State
   const [showTestReport, setShowTestReport] = useState(false);
@@ -68,9 +68,12 @@ export default function Home() {
 
   // Ref to track session ID for feedback (robust against state updates)
   const sessionIdRef = useRef<string | null>(null);
-  
+
   // Ref to store audioProcessor (to avoid dependency issues)
   const audioProcessorRef = useRef<any>(null);
+
+  // Ref to track if we've sent the initial greeting for the CURRENT session
+  const hasSentInitialGreetingRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (currentSession?.sessionId) {
@@ -93,7 +96,7 @@ export default function Home() {
         // Capture session ID early (helps with feedback if session_start is delayed)
         if (message.sessionId) {
           sessionIdRef.current = message.sessionId;
-          
+
           // Initialize session object immediately (don't wait for session_start)
           setCurrentSession({
             sessionId: message.sessionId,
@@ -114,37 +117,22 @@ export default function Home() {
           audioProcessorRef.current.initialize();
         }
 
-        // Send initial greeting trigger to start the conversation
-        // Delay to ensure session is fully initialized
-        setTimeout(() => {
-          console.log('[App] Sending initial greeting trigger');
-          if (sendRef.current) {
-            sendRef.current({
-              type: 'user_input',
-              text: 'Hello'
-            });
-          }
-        }, 500);
-        
         break;
 
       case 'config_applied':
         console.log('[App] Session configuration applied successfully');
-        // If we don't get a session_start immediately (e.g. raw nova lazy load), 
-        // we should assume we are ready to go.
         setConnectionStatus('connected');
         setHasInteracted(true);
         break;
 
       case 'session_start':
-        console.log('[Session] Started:', message.sessionId);
-        // Robust capture: Update ref immediately
-        sessionIdRef.current = message.sessionId;
-        console.log('[Session] Capture Ref Updated:', sessionIdRef.current);
+        const startMsg = message as any;
+        console.log('[Session] Started:', startMsg.sessionId);
+        sessionIdRef.current = startMsg.sessionId;
 
         setCurrentSession({
-          sessionId: message.sessionId,
-          startTime: message.timestamp || new Date().toISOString(),
+          sessionId: startMsg.sessionId,
+          startTime: startMsg.timestamp || new Date().toISOString(),
           duration: 0,
           inputTokens: 0,
           outputTokens: 0,
@@ -153,20 +141,19 @@ export default function Home() {
           brainMode: settings.brainMode,
           voicePreset: settings.voicePreset,
         });
-        // Update connection status to connected
         setConnectionStatus('connected');
-        setHasInteracted(true); // Mark session as active for survey
+        setHasInteracted(true);
         break;
 
       case 'audio':
-        // Play received audio
-        if (message.audio && audioProcessorRef.current) {
-          audioProcessorRef.current.playAudio(message.audio);
+        if ((message as AudioMessage).audio && audioProcessorRef.current) {
+          audioProcessorRef.current.playAudio((message as AudioMessage).audio);
         }
         break;
 
       case 'transcript':
-        let cleanText = message.text ? message.text.replace(/\[SENTIMENT:.*?\]/g, '').trim() : '';
+        const transcriptMsg = message as any;
+        let cleanText = transcriptMsg.text ? transcriptMsg.text.replace(/\[SENTIMENT:.*?\]/g, '').trim() : '';
 
         // Filter out internal thoughts if they leak
         cleanText = cleanText
@@ -175,87 +162,54 @@ export default function Home() {
           .replace(/^I verified.*?(\n|$)/g, '')
           .trim();
 
-        // Filter out the initial "Hello" that starts the conversation
-        if (message.role === 'user' && cleanText === 'Hello' && messages.length === 0) {
-          console.log('[App] Filtering out initial Hello message');
-          break;
+        // Filter out the initial "Hello" or system injections
+        const role = transcriptMsg.role || 'assistant';
+        const isFinal = transcriptMsg.isFinal || false;
+
+        if (role === 'user' && (cleanText === 'Hello' || cleanText.includes('[SYSTEM_INJECTION]'))) {
+          if (messages.length === 0 || hasSentInitialGreetingRef.current === sessionIdRef.current || cleanText.includes('[SYSTEM_INJECTION]')) {
+            console.log('[App] Filtering out initial/system/injected message:', cleanText.substring(0, 20));
+            break;
+          }
         }
 
         if (!cleanText) break;
 
-        // Dedup Strategies:
-        // 1. Search backwards for the last message of the same role to update (for streaming/interim)
-        let targetIndex = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === message.role) {
-            targetIndex = i;
-            break;
-          }
-        }
+        // Use message ID if available, else derive one
+        const messageId = transcriptMsg.id || `msg-${role}-${transcriptMsg.timestamp || Date.now()}`;
 
-        const targetMsg = targetIndex !== -1 ? messages[targetIndex] : null;
+        // Deduplicate strategy
+        const existingMsgIndex = messages.findIndex(m => m.id === messageId);
 
-        if (message.isFinal) {
-          // Check for exact duplicate of the FINAL message (idempotency)
-          if (targetMsg && targetMsg.isFinal && targetMsg.content === cleanText) {
+        if (existingMsgIndex >= 0) {
+          const existing = messages[existingMsgIndex];
+          if (existing.isFinal && isFinal && existing.content === cleanText) {
             console.log('[App] Ignoring duplicate final message');
             break;
           }
 
-          // If we have a previous non-final message (interim) of the same role, update it to final
-          if (targetMsg && !targetMsg.isFinal && targetIndex === messages.length - 1) {
-            updateLastMessage({
-              content: cleanText,
-              isFinal: true,
-              sentiment: message.sentiment
-            });
-          } else {
-            // Otherwise add new final message
-            addMessage({
-              role: message.role,
-              content: cleanText,
-              timestamp: message.timestamp || Date.now(),
-              isFinal: true,
-              sentiment: message.sentiment,
-            });
-          }
+          updateLastMessage({
+            id: messageId,
+            content: cleanText,
+            role: role,
+            isFinal: isFinal,
+            sentiment: transcriptMsg.sentiment || existing.sentiment,
+            timestamp: transcriptMsg.timestamp || existing.timestamp
+          } as any);
         } else {
-          // Interim/Streaming transcript
-          // Only update if the last message is the same role and is non-final
-          if (targetMsg && !targetMsg.isFinal && targetIndex === messages.length - 1) {
-            updateLastMessage({
-              content: cleanText
-            });
-          } else {
-            // Add new interim message
-            addMessage({
-              role: message.role,
-              content: cleanText,
-              timestamp: message.timestamp || Date.now(),
-              isFinal: false,
-              sentiment: message.sentiment,
-            });
-          }
+          addMessage({
+            id: messageId,
+            role: role,
+            content: cleanText,
+            timestamp: transcriptMsg.timestamp || Date.now(),
+            isFinal: isFinal,
+            sentiment: transcriptMsg.sentiment,
+          });
         }
         break;
 
       case 'metadata':
-        // Session metadata (trace ID, version, etc.)
         console.log('[Session] Metadata:', message);
-        if (message.data?.traceId) {
-          sessionIdRef.current = message.data.traceId;
-        }
-        // Capture detected language if present (check multiple possible locations)
-        const detectedLanguage = message.data?.detectedLanguage || message.detectedLanguage;
-        const languageConfidence = message.data?.languageConfidence || message.languageConfidence;
-        
-        if (detectedLanguage) {
-          console.log('[Session] Language detected:', detectedLanguage, 'Confidence:', languageConfidence);
-          updateSessionStats({
-            detectedLanguage,
-            languageConfidence: languageConfidence || 0
-          });
-        }
         break;
 
       case 'debugInfo':
@@ -274,6 +228,12 @@ export default function Home() {
             outputTokens,
           });
         }
+        break;
+
+      case 'contentStart':
+      case 'contentEnd':
+      case 'interactionTurnEnd':
+        // High-frequency Sonic protocol events - no-op for UI
         break;
 
       case 'token_usage':
@@ -372,6 +332,7 @@ export default function Home() {
       console.log('[WebSocket] Disconnected');
       setConnectionStatus('disconnected');
       audioProcessor.stopRecording();
+      hasSentInitialGreetingRef.current = null; // Clear greeting flag so next agent can be greeted
     },
     onError: (error) => {
       console.error('[WebSocket] Error:', error);
@@ -407,12 +368,12 @@ export default function Home() {
       audioProcessor.setMuted(false);
     }
   }, [settings.interactionMode, audioProcessor, connectionStatus]);
-  
+
   // Store send function in ref for use in message handler
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
-  
+
   // Store audioProcessor in ref for use in message handler
   useEffect(() => {
     audioProcessorRef.current = audioProcessor;
@@ -450,7 +411,55 @@ export default function Home() {
     settings.linkedWorkflows
   ]);
 
-  // Handle send text message
+  // Handle initial greeting trigger for new sessions
+  // Using a separate set of refs to manage the timer state across renders
+  const greetingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastGreetingSessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (isConnected && currentSession?.sessionId) {
+      const currentId = currentSession.sessionId;
+
+      // If we've already sent a greeting for THIS session, or a timer is already running for it, skip
+      if (hasSentInitialGreetingRef.current === currentId || lastGreetingSessionIdRef.current === currentId) {
+        return;
+      }
+
+      console.log('[App] ⏱️ Starting initial greeting timer for session:', currentId);
+      lastGreetingSessionIdRef.current = currentId;
+
+      // Clear any existing timer
+      if (greetingTimerRef.current) {
+        clearTimeout(greetingTimerRef.current);
+      }
+
+      // Delay to ensure backend is ready and to avoid double trigger
+      greetingTimerRef.current = setTimeout(() => {
+        // Double check condition inside timer
+        if (hasSentInitialGreetingRef.current !== currentId) {
+          console.log('[App] 🚀 Sending silent initial greeting trigger for session:', currentId);
+          if (sendRef.current) {
+            sendRef.current({
+              type: 'text_input',
+              text: 'Hello',
+              skipTranscript: true
+            });
+            hasSentInitialGreetingRef.current = currentId;
+          }
+        }
+      }, 1000);
+
+      return () => {
+        if (greetingTimerRef.current) {
+          clearTimeout(greetingTimerRef.current);
+          greetingTimerRef.current = null;
+        }
+      };
+    } else if (!isConnected) {
+      // Reset tracking when disconnected
+      lastGreetingSessionIdRef.current = null;
+    }
+  }, [isConnected, currentSession?.sessionId]);
   const handleSendMessage = useCallback((text: string) => {
     console.log('[App] handleSendMessage called with:', text);
     console.log('[App] isConnected:', isConnected);
@@ -534,11 +543,11 @@ export default function Home() {
     if (connectionStatus === 'recording') {
       // Stop recording
       audioProcessor.stopRecording();
-      
+
       // Send end-of-speech signal to backend
       console.log('[App] Sending end_of_speech signal, isConnected:', isConnected);
       send({ type: 'end_of_speech' });
-      
+
       setConnectionStatus('connected');
     } else if (connectionStatus === 'connected') {
       // Start recording

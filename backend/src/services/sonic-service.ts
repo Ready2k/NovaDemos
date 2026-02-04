@@ -641,13 +641,13 @@ export class SonicService {
 
         if (wfData) {
             const workflowText = convertWorkflowToText({ nodes: wfData.nodes, edges: wfData.edges });
-            
+
             // INTENT PRESERVATION: Extract and preserve user's original intent
             const userIntent = this.extractUserIntent(this.session.transcript);
-            const intentContext = userIntent 
+            const intentContext = userIntent
                 ? `\n\n### USER INTENT PRESERVATION ###\nThe user's original intent is: "${userIntent}"\nYou MUST use this intent to guide your workflow decisions. After any verification steps (like IDV), use this stored intent to route to the appropriate service.\nDO NOT ask "What would you like to do?" if you already know the intent.\n`
                 : "";
-            
+
             const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
             const newSystemPrompt = strictHeader + intentContext + workflowText;
 
@@ -678,13 +678,13 @@ export class SonicService {
      */
     private extractUserIntent(transcript: any[]): string | null {
         if (!transcript || transcript.length === 0) return null;
-        
+
         // Find the first user message
         const firstUserMessage = transcript.find(t => t.role === 'user');
         if (!firstUserMessage || !firstUserMessage.text) return null;
-        
+
         const text = firstUserMessage.text.toLowerCase();
-        
+
         // Intent classification patterns
         if (text.includes('balance') || text.includes('how much') || text.includes('account balance') || text.includes('funds')) {
             return 'balance';
@@ -698,7 +698,7 @@ export class SonicService {
         if (text.includes('mortgage') || text.includes('rates') || text.includes('loan') || text.includes('property') || text.includes('house')) {
             return 'mortgage';
         }
-        
+
         return null;
     }
 
@@ -886,7 +886,7 @@ export class SonicService {
                     return;
                 }
 
-                if (parsed.type === 'textInput') {
+                if (parsed.type === 'textInput' || parsed.type === 'text_input' || parsed.type === 'user_input') {
                     console.log(`[SonicService] ⌨️ Received text input: "${parsed.text}"`);
                     if (!parsed.text) return;
 

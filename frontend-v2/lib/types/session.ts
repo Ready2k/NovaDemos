@@ -1,6 +1,7 @@
 // Session and transcript types
 
 export interface Message {
+    id?: string;
     role: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result' | 'tool';
     content: string;
     text?: string; // Support for backend property name

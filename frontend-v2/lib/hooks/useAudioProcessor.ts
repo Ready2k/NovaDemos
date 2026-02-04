@@ -218,13 +218,27 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
     // Play received audio data
     const playAudio = useCallback(async (audioData: ArrayBuffer) => {
-        if (isMuted) return;
+        if (isMuted) {
+            console.warn('[AudioProcessor] Skipping playback: muted');
+            return;
+        }
 
         if (!audioContextRef.current) {
             await initialize();
         }
 
         const audioContext = audioContextRef.current!;
+
+        // Ensure context is running (it might be suspended by browser policy)
+        if (audioContext.state !== 'running') {
+            try {
+                console.log(`[AudioProcessor] Resuming AudioContext (current state: ${audioContext.state})...`);
+                await audioContext.resume();
+                console.log('[AudioProcessor] AudioContext state after resume:', audioContext.state);
+            } catch (err) {
+                console.error('[AudioProcessor] Failed to resume AudioContext:', err);
+            }
+        }
 
         try {
             // Ensure even byte length for Int16Array (16-bit PCM = 2 bytes per sample)
@@ -267,6 +281,10 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
             // Schedule playback
             const startTime = Math.max(audioContext.currentTime, nextStartTimeRef.current);
+            const delay = startTime - audioContext.currentTime;
+
+            console.log(`[AudioProcessor] PLAYBACK_STATUS: Buffer=${audioBuffer.length} samples, Time=${audioBuffer.duration.toFixed(3)}s, StartIn=${delay.toFixed(3)}s`);
+
             sourceNode.start(startTime);
 
             // Update next start time
@@ -279,7 +297,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
             playbackNodesRef.current.push(sourceNode);
         } catch (error) {
-            console.error('[AudioProcessor] Failed to play audio:', error);
+            console.error('[AudioProcessor] PLAYBACK_ERROR:', error);
         }
     }, [isMuted, initialize, outputSampleRate, convertToFloat32]);
 

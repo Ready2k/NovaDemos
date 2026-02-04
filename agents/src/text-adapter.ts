@@ -41,7 +41,7 @@ export class TextAdapter {
     constructor(config: TextAdapterConfig) {
         this.agentCore = config.agentCore;
         this.sonicConfig = config.sonicConfig || null;
-        
+
         console.log('[TextAdapter] Initialized', this.sonicConfig ? 'with SonicClient' : 'without SonicClient (placeholder mode)');
     }
 
@@ -70,7 +70,7 @@ export class TextAdapter {
             let sonicClient: SonicClient | null = null;
             if (this.sonicConfig) {
                 sonicClient = new SonicClient(this.sonicConfig);
-                
+
                 // Get system prompt and tools from Agent Core
                 const personaConfig = this.agentCore.getPersonaConfig();
                 const systemPrompt = this.agentCore.getSystemPrompt(sessionId);
@@ -112,7 +112,7 @@ export class TextAdapter {
 
         } catch (error: any) {
             console.error(`[TextAdapter] Failed to start text session: ${error.message}`);
-            
+
             // Clean up on error
             this.sessions.delete(sessionId);
             this.agentCore.endSession(sessionId);
@@ -157,7 +157,7 @@ export class TextAdapter {
 
         } catch (error: any) {
             console.error(`[TextAdapter] Error stopping text session: ${error.message}`);
-            
+
             // Force cleanup even on error
             this.sessions.delete(sessionId);
             this.agentCore.endSession(sessionId);
@@ -191,7 +191,7 @@ export class TextAdapter {
             // If SonicClient is available, use it for LLM invocation
             if (session.sonicClient) {
                 console.log(`[TextAdapter] Sending text to SonicClient for LLM processing`);
-                await session.sonicClient.sendText(text);
+                await session.sonicClient.sendText(text, true); // Skip internal transcript as we echoed it above
             } else {
                 // Fallback: Use Agent Core directly (placeholder mode)
                 console.warn(`[TextAdapter] No SonicClient available, using placeholder mode`);
@@ -439,9 +439,9 @@ export class TextAdapter {
      */
     private handleTranscriptEvent(session: TextSession, transcriptData: any): void {
         const text = transcriptData.text || transcriptData.content || transcriptData.transcript || '';
-        
+
         console.log(`[TextAdapter] Transcript event - Role: ${transcriptData.role}, Text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-        
+
         // Forward transcript to client
         session.ws.send(JSON.stringify({
             type: 'transcript',
@@ -468,7 +468,7 @@ export class TextAdapter {
 
         // Parse tool input if it's a JSON string
         let toolInput = toolData.input || toolData.content;
-        
+
         if (typeof toolInput === 'string') {
             try {
                 toolInput = JSON.parse(toolInput);
@@ -478,7 +478,7 @@ export class TextAdapter {
                 toolInput = { value: toolInput };
             }
         }
-        
+
         if (typeof toolInput !== 'object' || toolInput === null) {
             console.warn(`[TextAdapter] ⚠️  Tool input is not an object, wrapping`);
             toolInput = { value: toolInput };
@@ -525,9 +525,9 @@ export class TextAdapter {
             // Check if this is a handoff tool and the result contains a handoff request
             if (result.success && result.result?.handoffRequest) {
                 const handoffRequest = result.result.handoffRequest;
-                
+
                 console.log(`[TextAdapter] 🔄 Forwarding handoff request: ${handoffRequest.targetAgentId}`);
-                
+
                 // Forward handoff request to client (which will forward to Gateway)
                 session.ws.send(JSON.stringify({
                     type: 'handoff_request',

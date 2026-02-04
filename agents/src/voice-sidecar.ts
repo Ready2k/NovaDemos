@@ -41,7 +41,7 @@ export class VoiceSideCar {
     constructor(config: VoiceSideCarConfig) {
         this.agentCore = config.agentCore;
         this.sonicConfig = config.sonicConfig;
-        
+
         console.log('[VoiceSideCar] Initialized');
     }
 
@@ -106,7 +106,7 @@ export class VoiceSideCar {
 
         } catch (error: any) {
             console.error(`[VoiceSideCar] Failed to start voice session: ${error.message}`);
-            
+
             // Clean up on error
             this.sessions.delete(sessionId);
             this.agentCore.endSession(sessionId);
@@ -149,7 +149,7 @@ export class VoiceSideCar {
 
         } catch (error: any) {
             console.error(`[VoiceSideCar] Error stopping voice session: ${error.message}`);
-            
+
             // Force cleanup even on error
             this.sessions.delete(sessionId);
             this.agentCore.endSession(sessionId);
@@ -177,7 +177,7 @@ export class VoiceSideCar {
 
         } catch (error: any) {
             console.error(`[VoiceSideCar] Error handling audio chunk: ${error.message}`);
-            
+
             // Send error to client
             session.ws.send(JSON.stringify({
                 type: 'error',
@@ -211,7 +211,7 @@ export class VoiceSideCar {
      * Handle text input (for hybrid mode)
      * Sends text to SonicClient for processing
      */
-    public async handleTextInput(sessionId: string, text: string): Promise<void> {
+    public async handleTextInput(sessionId: string, text: string, skipTranscript: boolean = false): Promise<void> {
         const session = this.sessions.get(sessionId);
         if (!session) {
             console.warn(`[VoiceSideCar] Cannot handle text input: Session not found: ${sessionId}`);
@@ -219,12 +219,12 @@ export class VoiceSideCar {
         }
 
         try {
-            await session.sonicClient.sendText(text);
-            console.log(`[VoiceSideCar] Text input sent for session: ${sessionId}`);
+            await session.sonicClient.sendText(text, skipTranscript);
+            console.log(`[VoiceSideCar] Text input sent for session: ${sessionId} (skipTranscript=${skipTranscript})`);
 
         } catch (error: any) {
             console.error(`[VoiceSideCar] Error handling text input: ${error.message}`);
-            
+
             // Send error to client
             session.ws.send(JSON.stringify({
                 type: 'error',
@@ -308,20 +308,21 @@ export class VoiceSideCar {
                     break;
 
                 case 'session_start':
-                    // Forward session start to client
+                    // Forward session start to client (FLATTENED)
                     session.ws.send(JSON.stringify({
                         type: 'session_start',
-                        data: event.data
+                        sessionId: event.data.sessionId,
+                        timestamp: new Date().toISOString()
                     }));
                     break;
 
                 case 'contentStart':
                 case 'contentEnd':
                 case 'interactionTurnEnd':
-                    // Forward these events to client for frontend processing
+                    // Forward these events to client for frontend processing (FLATTENED)
                     session.ws.send(JSON.stringify({
                         type: event.type,
-                        data: event.data
+                        ...event.data
                     }));
                     break;
 
@@ -339,7 +340,13 @@ export class VoiceSideCar {
      */
     private forwardAudioToClient(session: VoiceSession, audioData: any): void {
         // Send audio as binary data
-        if (audioData.buffer) {
+        // SonicClient emits matches { audio: Buffer }, so we access .audio
+        if (audioData.audio) {
+            console.log(`[VoiceSideCar] Sending audio chunk: ${audioData.audio.length} bytes`);
+            session.ws.send(audioData.audio);
+        } else if (audioData.buffer) {
+            // Fallback for legacy or different event shapes
+            console.log(`[VoiceSideCar] Sending audio buffer: ${audioData.buffer.length} bytes`);
             session.ws.send(audioData.buffer);
         }
     }
@@ -350,16 +357,17 @@ export class VoiceSideCar {
     private handleTranscriptEvent(session: VoiceSession, transcriptData: any): void {
         // Extract text from various possible fields
         const text = transcriptData.text || transcriptData.content || transcriptData.transcript || '';
-        
+
         console.log(`[VoiceSideCar] Transcript event - Role: ${transcriptData.role}, Text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-        
-        // Forward transcript to client
+
+        // Forward transcript to client (FLATTENED)
         session.ws.send(JSON.stringify({
             type: 'transcript',
+            id: transcriptData.id, // Preserve the stable ID from SonicClient
             role: transcriptData.role || 'assistant',
-            text,
+            text: text,
             isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true, // Default to true if not specified
-            timestamp: Date.now()
+            timestamp: transcriptData.timestamp || Date.now()
         }));
 
         // If this is a user transcript, process it through Agent Core
@@ -380,7 +388,7 @@ export class VoiceSideCar {
 
         // Parse tool input if it's a JSON string
         let toolInput = toolData.input || toolData.content;
-        
+
         // Handle JSON string inputs
         if (typeof toolInput === 'string') {
             try {
@@ -392,13 +400,13 @@ export class VoiceSideCar {
                 toolInput = { value: toolInput };
             }
         }
-        
+
         // Ensure toolInput is an object
         if (typeof toolInput !== 'object' || toolInput === null) {
             console.warn(`[VoiceSideCar] ⚠️  Tool input is not an object, wrapping: ${typeof toolInput}`);
             toolInput = { value: toolInput };
         }
-        
+
         console.log(`[VoiceSideCar] Parsed tool input:`, JSON.stringify(toolInput).substring(0, 200));
 
         // Forward tool use to client for UI feedback
@@ -441,9 +449,9 @@ export class VoiceSideCar {
             // Requirement 9.4: Send handoff_request to Gateway (via adapter)
             if (result.success && result.result?.handoffRequest) {
                 const handoffRequest = result.result.handoffRequest;
-                
+
                 console.log(`[VoiceSideCar] 🔄 Forwarding handoff request: ${handoffRequest.targetAgentId}`);
-                
+
                 // Forward handoff request to client (which will forward to Gateway)
                 session.ws.send(JSON.stringify({
                     type: 'handoff_request',
