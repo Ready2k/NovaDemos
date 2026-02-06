@@ -39,17 +39,17 @@ services:
       - "8081:8081"
     environment:
       # MODE: Controls I/O mechanism (voice, text, or hybrid)
-      # - voice: Voice-only via SonicClient (requires AWS credentials)
-      # - text: Text-only via WebSocket (no AWS required)
-      # - hybrid: Both voice and text simultaneously
-      - MODE=hybrid
+      # PHASE 1: Starting with text-only to validate agent logic
+      - MODE=text
       - AGENT_ID=triage
       - AGENT_PORT=8081
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       # AWS credentials (required for voice and hybrid modes)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
@@ -79,14 +79,16 @@ services:
     ports:
       - "8082:8082"
     environment:
-      - MODE=hybrid
+      - MODE=text
       - AGENT_ID=banking
       - AGENT_PORT=8082
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -114,14 +116,16 @@ services:
     ports:
       - "8083:8083"
     environment:
-      - MODE=hybrid
+      - MODE=text
       - AGENT_ID=mortgage
       - AGENT_PORT=8083
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -149,14 +153,16 @@ services:
     ports:
       - "8084:8084"
     environment:
-      - MODE=hybrid
+      - MODE=text
       - AGENT_ID=idv
       - AGENT_PORT=8084
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -184,14 +190,16 @@ services:
     ports:
       - "8085:8085"
     environment:
-      - MODE=hybrid
+      - MODE=text
       - AGENT_ID=disputes
       - AGENT_PORT=8085
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -219,14 +227,16 @@ services:
     ports:
       - "8086:8086"
     environment:
-      - MODE=hybrid
+      - MODE=text
       - AGENT_ID=investigation
       - AGENT_PORT=8086
       - REDIS_URL=redis://redis:6379
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
-      - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
+      - AGENTCORE_GATEWAY_URL=${AGENTCORE_GATEWAY_URL}
       - WORKFLOW_FILE=/app/workflow.json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_TRIGGER_ENABLED=${AUTO_TRIGGER_ENABLED:-true}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}

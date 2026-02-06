@@ -32,6 +32,15 @@ import { PersonaLoader } from './persona-loader';
 import { PersonaConfig } from './persona-types';
 import { SonicConfig } from './sonic-client';
 
+// Logging configuration
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info'; // debug, info, warn, error
+const DEBUG = LOG_LEVEL === 'debug';
+const AUTO_TRIGGER_ENABLED = process.env.AUTO_TRIGGER_ENABLED !== 'false';
+
+// Circuit breaker configuration
+const MAX_SESSION_ERRORS = parseInt(process.env.MAX_SESSION_ERRORS || '5');
+const ERROR_WINDOW_MS = parseInt(process.env.ERROR_WINDOW_MS || '10000');
+
 /**
  * Runtime mode types
  */
@@ -68,6 +77,9 @@ interface RuntimeSession {
     startTime: number;
     memory?: any;
     traceId?: string;
+    autoTriggered?: boolean; // Track if auto-trigger already fired
+    errorCount?: number;     // Track errors for circuit breaker
+    lastError?: number;      // Timestamp of last error
 }
 
 /**
@@ -342,10 +354,15 @@ export class UnifiedRuntime {
 
             this.voiceSideCar = new VoiceSideCar(voiceSideCarConfig);
             console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Voice Side-Car initialized`);
+            
+            if (this.config.mode === 'hybrid') {
+                console.log(`[UnifiedRuntime:${this.config.agentId}] ℹ️  Hybrid mode: Voice adapter handles both voice and text input`);
+            }
         }
 
-        // Initialize Text Adapter for text or hybrid mode
-        if (this.config.mode === 'text' || this.config.mode === 'hybrid') {
+        // Initialize Text Adapter ONLY for text-only mode
+        // In hybrid mode, voice adapter handles text input via handleTextInput()
+        if (this.config.mode === 'text') {
             // Text mode also needs SonicClient for LLM invocation
             const sonicConfig: SonicConfig = {
                 region: this.config.awsConfig!.region,
@@ -411,7 +428,9 @@ export class UnifiedRuntime {
      * Handle new WebSocket connection
      */
     public handleConnection(ws: WebSocket): void {
-        console.log(`[UnifiedRuntime:${this.config.agentId}] New WebSocket connection`);
+        if (DEBUG) {
+            console.log(`[UnifiedRuntime:${this.config.agentId}] New WebSocket connection`);
+        }
 
         let sessionId: string | null = null;
 
@@ -422,16 +441,38 @@ export class UnifiedRuntime {
                 const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B; // 0x7B is '{'
 
                 if (isBinary) {
-                    // Binary data - audio chunk
+                    // Binary data - audio chunk (don't log in production)
+                    if (DEBUG && sessionId) {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🎤 Audio chunk: ${data.length} bytes`);
+                    }
+                    
                     if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
                         await this.handleMessage(sessionId, data, true);
                     }
                 } else {
                     // Text data - JSON message
-                    const message = JSON.parse(data.toString());
+                    let message;
+                    try {
+                        message = JSON.parse(data.toString());
+                    } catch (parseError: any) {
+                        console.error(`[UnifiedRuntime:${this.config.agentId}] Failed to parse JSON message: ${parseError.message}`);
+                        console.error(`[UnifiedRuntime:${this.config.agentId}] Raw data (first 100 chars): ${data.toString().substring(0, 100)}`);
+                        
+                        // Send error to client if we have a session
+                        if (sessionId) {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: 'Invalid JSON message format',
+                                details: parseError.message
+                            }));
+                        }
+                        return; // Skip this message
+                    }
 
-                    // Debug: Log all incoming messages
-                    console.log(`[UnifiedRuntime:${this.config.agentId}] 📨 Received message type: ${message.type}, sessionId=${sessionId}`);
+                    // Only log important message types in production
+                    if (DEBUG || ['session_init', 'error', 'handoff', 'memory_update'].includes(message.type)) {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 📨 Received message type: ${message.type}, sessionId=${sessionId}`);
+                    }
 
                     // Handle session initialization
                     if (message.type === 'session_init') {
@@ -537,20 +578,33 @@ export class UnifiedRuntime {
         console.log(`[UnifiedRuntime:${this.config.agentId}] Initializing session: ${sessionId}`);
 
         try {
-            // Store session
-            // If session already exists, clean up old one first (idempotent init)
+            // If session already exists, ensure complete cleanup
             if (this.sessions.has(sessionId)) {
-                console.warn(`[UnifiedRuntime:${this.config.agentId}] Session ${sessionId} already exists. Cleaning up stale session.`);
+                console.warn(`[UnifiedRuntime:${this.config.agentId}] Session ${sessionId} already exists. Performing full cleanup...`);
+                
+                // Wait for cleanup to complete
                 await this.handleDisconnect(sessionId);
+                
+                // Add small delay to ensure cleanup is complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Verify session is gone
+                if (this.sessions.has(sessionId)) {
+                    throw new Error(`Failed to cleanup existing session: ${sessionId}`);
+                }
             }
 
+            // Store session
             const session: RuntimeSession = {
                 sessionId,
                 ws,
                 mode: this.config.mode,
                 startTime: Date.now(),
                 memory,
-                traceId // Store traceId in the session
+                traceId,
+                autoTriggered: false, // Initialize auto-trigger flag
+                errorCount: 0,        // Initialize error count
+                lastError: 0          // Initialize last error timestamp
             };
             this.sessions.set(sessionId, session);
 
@@ -560,68 +614,70 @@ export class UnifiedRuntime {
             } else if (this.config.mode === 'text' && this.textAdapter) {
                 await this.textAdapter.startTextSession(sessionId, ws, memory);
             } else if (this.config.mode === 'hybrid') {
-                // In hybrid mode, start both adapters
+                // FIXED: In hybrid mode, ONLY start voice adapter
+                // Voice adapter handles both voice and text input via handleTextInput()
+                // Starting both adapters causes duplicate messages
                 if (this.voiceSideCar) {
                     await this.voiceSideCar.startVoiceSession(sessionId, ws, memory);
                 }
-                if (this.textAdapter) {
-                    await this.textAdapter.startTextSession(sessionId, ws, memory);
-                }
+                // DO NOT start text adapter in hybrid mode - it causes duplication
             }
 
-            // CRITICAL: Auto-trigger agents with context from memory
-            // If this is an IDV agent with account details in memory, send automatic trigger
-            // This simulates the user providing their details so the agent can verify immediately
-            // IMPORTANT: Only auto-trigger if this is the FIRST attempt (no previous IDV attempts)
-            if (this.config.agentId === 'idv' && memory && memory.account && memory.sortCode) {
-                const isFirstAttempt = !memory.graphState || !memory.graphState.idvAttempts || memory.graphState.idvAttempts === 0;
+            // IMPROVED: Auto-trigger with guards
+            if (AUTO_TRIGGER_ENABLED && !session.autoTriggered) {
+                // CRITICAL: Auto-trigger IDV agent with context from memory
+                if (this.config.agentId === 'idv' && memory && memory.account && memory.sortCode) {
+                    const isFirstAttempt = !memory.graphState || !memory.graphState.idvAttempts || memory.graphState.idvAttempts === 0;
 
-                if (isFirstAttempt) {
-                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent with account details from memory (first attempt)`);
-                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+                    if (isFirstAttempt) {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent (first time only)`);
+                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
 
-                    // Send trigger via voice session with explicit account details
-                    // This mimics what the user would say, prompting immediate verification
-                    const triggerMessage = `I need to verify account ${memory.account} with sort code ${memory.sortCode}`;
+                        session.autoTriggered = true; // Mark as triggered
 
-                    if (this.voiceSideCar) {
-                        setTimeout(() => {
-                            this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
-                            });
-                        }, 1000); // Small delay to let initial greeting finish and avoid speaking over itself
-                    }
-                } else {
-                    console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Skipping auto-trigger (retry attempt ${memory.graphState.idvAttempts})`);
-                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Waiting for user to provide corrected details`);
-                }
-            }
+                        const triggerMessage = `I need to verify account ${memory.account} with sort code ${memory.sortCode}`;
 
-            // CRITICAL: Auto-trigger banking agent with verified user and intent
-            // If this is a banking agent with verified user and intent in memory, send automatic trigger
-            if (this.config.agentId === 'banking' && memory) {
-                const hasVerifiedUser = memory.verified && memory.userName;
-                const hasIntent = memory.userIntent;
-                const hasAccountDetails = memory.account && memory.sortCode;
-
-                if (hasVerifiedUser && (hasIntent || hasAccountDetails)) {
-                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering Banking agent with verified user and intent`);
-                    console.log(`[UnifiedRuntime:${this.config.agentId}]    User: ${memory.userName}, Intent: ${hasIntent ? memory.userIntent : 'check balance'}`);
-                    console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
-
-                    // Send trigger via voice session with explicit request
-                    // This mimics what the user would say, prompting immediate action
-                    const intent = memory.userIntent || 'check my balance';
-                    const triggerMessage = `I want to ${intent}`;
-
-                    if (this.voiceSideCar) {
-                        setTimeout(() => {
-                            this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
-                            });
-                        }, 1000); // Small delay to let handoff greeting finish and avoid speaking over itself
+                        if (this.voiceSideCar) {
+                            setTimeout(() => {
+                                this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500); // Increased delay for safety
+                        }
+                    } else {
+                        if (DEBUG) {
+                            console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Skipping auto-trigger (retry attempt ${memory.graphState.idvAttempts})`);
+                        }
                     }
                 }
+
+                // CRITICAL: Auto-trigger banking agent with verified user and intent
+                if (this.config.agentId === 'banking' && memory) {
+                    const hasVerifiedUser = memory.verified && memory.userName;
+                    const hasIntent = memory.userIntent;
+                    const hasAccountDetails = memory.account && memory.sortCode;
+
+                    if (hasVerifiedUser && (hasIntent || hasAccountDetails)) {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering Banking agent (first time only)`);
+                        console.log(`[UnifiedRuntime:${this.config.agentId}]    User: ${memory.userName}, Intent: ${hasIntent ? memory.userIntent : 'check balance'}`);
+                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+
+                        session.autoTriggered = true; // Mark as triggered
+
+                        const intent = memory.userIntent || 'check my balance';
+                        const triggerMessage = `I want to ${intent}`;
+
+                        if (this.voiceSideCar) {
+                            setTimeout(() => {
+                                this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500); // Increased delay for safety
+                        }
+                    }
+                }
+            } else if (!AUTO_TRIGGER_ENABLED && DEBUG) {
+                console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Auto-trigger disabled via environment variable`);
             }
 
             console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Session initialized: ${sessionId}`);
@@ -632,11 +688,19 @@ export class UnifiedRuntime {
             // Clean up on error
             this.sessions.delete(sessionId);
 
+            // Close WebSocket if still open
+            if (ws.readyState === ws.OPEN) {
+                ws.close(1011, 'Session initialization failed');
+            }
+
             ws.send(JSON.stringify({
                 type: 'error',
                 message: 'Failed to initialize session',
-                details: error.message
+                details: error.message,
+                fatal: true
             }));
+            
+            throw error;
         }
     }
 
@@ -648,6 +712,36 @@ export class UnifiedRuntime {
         if (!session) {
             console.warn(`[UnifiedRuntime:${this.config.agentId}] Message for unknown session: ${sessionId}`);
             return;
+        }
+
+        // Circuit breaker: Check error rate
+        if (session.errorCount && session.errorCount >= MAX_SESSION_ERRORS) {
+            const timeSinceLastError = Date.now() - (session.lastError || 0);
+            
+            if (timeSinceLastError < ERROR_WINDOW_MS) {
+                console.error(`[UnifiedRuntime:${this.config.agentId}] 🔴 Circuit breaker: Too many errors (${session.errorCount}) for session ${sessionId}`);
+                
+                // Send error to client before closing
+                if (session.ws.readyState === session.ws.OPEN) {
+                    session.ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Session terminated due to repeated errors',
+                        errorCount: session.errorCount,
+                        fatal: true
+                    }));
+                }
+                
+                // Close session
+                await this.handleDisconnect(sessionId);
+                
+                return;
+            } else {
+                // Reset error count after window expires
+                session.errorCount = 0;
+                if (DEBUG) {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] Circuit breaker reset for session ${sessionId}`);
+                }
+            }
         }
 
         try {
@@ -671,7 +765,9 @@ export class UnifiedRuntime {
                     case 'text_input':
                         // Hybrid mode - text input to voice session
                         if (this.voiceSideCar) {
-                            console.log(`[UnifiedRuntime:${this.config.agentId}] 📥 Processing text_input: "${message.text.substring(0, 20)}..." (skipTranscript=${!!message.skipTranscript})`);
+                            if (DEBUG) {
+                                console.log(`[UnifiedRuntime:${this.config.agentId}] 📥 Processing text_input: "${message.text.substring(0, 20)}..." (skipTranscript=${!!message.skipTranscript})`);
+                            }
                             await this.voiceSideCar.handleTextInput(sessionId, message.text, message.skipTranscript || false);
                         }
                         break;
@@ -691,11 +787,27 @@ export class UnifiedRuntime {
                         break;
 
                     default:
-                        console.warn(`[UnifiedRuntime:${this.config.agentId}] Unknown message type: ${message.type}`);
+                        if (DEBUG) {
+                            console.warn(`[UnifiedRuntime:${this.config.agentId}] Unknown message type: ${message.type}`);
+                        }
                 }
             }
         } catch (error: any) {
             console.error(`[UnifiedRuntime:${this.config.agentId}] Error handling message: ${error.message}`);
+            
+            // Track error for circuit breaker
+            session.errorCount = (session.errorCount || 0) + 1;
+            session.lastError = Date.now();
+            
+            // Send error to client
+            if (session.ws.readyState === session.ws.OPEN) {
+                session.ws.send(JSON.stringify({
+                    type: 'error',
+                    message: 'Error processing message',
+                    details: error.message,
+                    errorCount: session.errorCount
+                }));
+            }
         }
     }
 
@@ -717,12 +829,11 @@ export class UnifiedRuntime {
             } else if (this.config.mode === 'text' && this.textAdapter) {
                 await this.textAdapter.stopTextSession(sessionId);
             } else if (this.config.mode === 'hybrid') {
+                // FIXED: In hybrid mode, only voice adapter was started
                 if (this.voiceSideCar) {
                     await this.voiceSideCar.stopVoiceSession(sessionId);
                 }
-                if (this.textAdapter) {
-                    await this.textAdapter.stopTextSession(sessionId);
-                }
+                // DO NOT stop text adapter - it was never started
             }
 
             // Remove session
@@ -845,7 +956,7 @@ if (require.main === module) {
         },
         gatewayUrl: process.env.GATEWAY_URL || 'http://gateway:8080',
         localToolsUrl: process.env.LOCAL_TOOLS_URL || 'http://local-tools:9000',
-        agentCoreUrl: process.env.AGENTCORE_URL
+        agentCoreUrl: process.env.AGENTCORE_GATEWAY_URL  // Fixed: was AGENTCORE_URL
     };
 
     // Create and start runtime

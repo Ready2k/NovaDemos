@@ -1,122 +1,165 @@
-# Specs Directory
+# Voice S2S Specifications & Documentation
 
-This directory contains feature specifications for the A2A (Agent-to-Agent) migration project.
+This directory contains all specifications, plans, and documentation for the Voice S2S rebuild and testing process.
 
-## Overview
+## 📋 Quick Navigation
 
-The A2A migration is a three-phase project to complete the LangGraph-based workflow execution system and deprecate the legacy text injection mode.
+### Start Here
+- **[QUICK_START.md](QUICK_START.md)** - TL;DR version, essential commands
+- **[PHASE1_CHECKLIST.md](PHASE1_CHECKLIST.md)** - Testing checklist to track progress
 
-**Start here:** `A2A_MIGRATION_OVERVIEW.md`
+### Detailed Guides
+- **[PHASE1_TESTING_GUIDE.md](PHASE1_TESTING_GUIDE.md)** - Comprehensive testing instructions
+- **[CURRENT_STATUS.md](CURRENT_STATUS.md)** - Current status and what's next
+- **[REBUILD_STRATEGY.md](REBUILD_STRATEGY.md)** - Overall 3-phase strategy
 
-## Specs
+### Reference
+- **[SESSION_SUMMARY.md](SESSION_SUMMARY.md)** - What we accomplished this session
+- **[docker-runtime-improvements.md](docker-runtime-improvements.md)** - Original issue analysis
+- **[CRITICAL_FIX_DUPLICATION.md](CRITICAL_FIX_DUPLICATION.md)** - Duplication bug fix details
 
-### Voice-Agnostic Agent Architecture
-**Status:** 📋 Ready for Implementation  
-**Location:** `voice-agnostic-agent-architecture/requirements.md`  
-**Goal:** Enable developers to write agents once and deploy them in voice, text, or hybrid modes with minimal code (~10 lines).
+## 🎯 Current Phase: Phase 1 - Text-Only Testing
 
-**Key Features:**
-- Agent Core: Voice-agnostic LangGraph business logic
-- Voice Side-Car: Wraps core with voice I/O via SonicClient
-- Text Adapter: Wraps core with WebSocket text I/O
-- Unified Runtime: Single entry point for all modes
-- Easy agent addition (~10 lines of configuration)
-- Code reduction (~433 lines saved)
+**Goal**: Validate core agent logic and handoffs without voice complexity
 
-**Duration:** 8 days  
-**Dependencies:** None (can start immediately)
+**Status**: ✅ Ready for testing
+
+**Next Action**: Run build commands and execute tests
+
+## 📚 Document Purpose Guide
+
+### For First-Time Users
+1. Read: `QUICK_START.md`
+2. Run: Commands from quick start
+3. Test: Using `PHASE1_CHECKLIST.md`
+
+### For Detailed Testing
+1. Read: `PHASE1_TESTING_GUIDE.md`
+2. Follow: All test scenarios
+3. Troubleshoot: Using guide's troubleshooting section
+
+### For Understanding Context
+1. Read: `CURRENT_STATUS.md` - What we've done
+2. Read: `REBUILD_STRATEGY.md` - Why we're doing it this way
+3. Read: `SESSION_SUMMARY.md` - Recent changes
+
+### For Debugging
+1. Check: `PHASE1_TESTING_GUIDE.md` troubleshooting section
+2. Review: `docker-runtime-improvements.md` for known issues
+3. Check: `CRITICAL_FIX_DUPLICATION.md` for duplication bug details
+
+## 🏗️ The Three-Phase Plan
+
+### Phase 1: Text-Only Mode (Current)
+- **Goal**: Validate agent logic and handoffs
+- **Status**: Ready for testing
+- **Docs**: `PHASE1_TESTING_GUIDE.md`, `PHASE1_CHECKLIST.md`
+
+### Phase 2: Voice on One Agent (Next)
+- **Goal**: Prove Nova2Sonic wrapper works
+- **Status**: Not started
+- **Docs**: Will be created after Phase 1 success
+
+### Phase 3: Voice on All Agents (Final)
+- **Goal**: Full voice-enabled system
+- **Status**: Not started
+- **Docs**: Will be created after Phase 2 success
+
+## 🔧 Key Changes Made
+
+### Configuration
+- All 6 agents set to `MODE=text` in `docker-compose-unified.yml`
+- Environment variables standardized
+- Frontend API routes fixed
+
+### Code
+- Fixed hybrid mode duplication bug in `agent-runtime-unified.ts`
+- Added better error handling
+- Improved logging
+
+### Documentation
+- Created comprehensive testing guides
+- Documented strategy and rationale
+- Created quick reference materials
+
+## ✅ Success Criteria
+
+Phase 1 is successful when:
+- ✅ All 4 test scenarios pass
+- ✅ No message duplication
+- ✅ No JSON parsing errors
+- ✅ Clean logs
+- ✅ Fast responses (<2s)
+
+## 📊 Document Status
+
+| Document | Status | Purpose |
+|----------|--------|---------|
+| QUICK_START.md | ✅ Complete | Quick reference |
+| PHASE1_CHECKLIST.md | ✅ Complete | Testing tracker |
+| PHASE1_TESTING_GUIDE.md | ✅ Complete | Detailed testing |
+| CURRENT_STATUS.md | ✅ Complete | Status overview |
+| REBUILD_STRATEGY.md | ✅ Complete | Overall strategy |
+| SESSION_SUMMARY.md | ✅ Complete | Session recap |
+| docker-runtime-improvements.md | ✅ Complete | Issue analysis |
+| CRITICAL_FIX_DUPLICATION.md | ✅ Complete | Bug fix details |
+| README.md | ✅ Complete | This file |
+
+## 🚀 Getting Started
+
+```bash
+# 1. Read the quick start
+cat .kiro/specs/QUICK_START.md
+
+# 2. Run the build commands
+docker-compose -f docker-compose-unified.yml down
+docker-compose -f docker-compose-unified.yml build
+docker-compose -f docker-compose-unified.yml up -d
+
+# 3. Follow the testing checklist
+# Open .kiro/specs/PHASE1_CHECKLIST.md and check off items
+
+# 4. Test the system
+# Open http://localhost:3000 and type "What's my balance?"
+```
+
+## 🐛 Troubleshooting
+
+If you encounter issues:
+
+1. **Check logs**: `docker-compose -f docker-compose-unified.yml logs -f agent-triage`
+2. **Review guide**: See troubleshooting section in `PHASE1_TESTING_GUIDE.md`
+3. **Check status**: Review `CURRENT_STATUS.md` for known issues
+4. **Restart**: `docker-compose -f docker-compose-unified.yml restart`
+
+## 📞 Support
+
+For questions or issues:
+1. Check the troubleshooting section in `PHASE1_TESTING_GUIDE.md`
+2. Review known issues in `docker-runtime-improvements.md`
+3. Check recent changes in `SESSION_SUMMARY.md`
+
+## 🔄 Update History
+
+- **Current Session**: Phase 1 preparation complete
+  - All agents set to text mode
+  - Comprehensive documentation created
+  - Ready for testing
+
+- **Previous Session**: Issue analysis and initial fixes
+  - Identified hybrid mode bug
+  - Fixed duplication issue
+  - Created improvement plan
+
+## 📝 Notes
+
+- All agents are in text-only mode (no voice)
+- Voice will be added incrementally in Phase 2 & 3
+- Focus is on validating agent logic first
+- Documentation is comprehensive and up-to-date
 
 ---
 
-### Phase 3: Complete LangGraph Conversion
-**Status:** 📋 Planned  
-**Location:** `phase3-langgraph-conversion/requirements.md`  
-**Goal:** Enable true state machine workflow execution with LLM integration, tool calling, and sub-workflow support.
-
-**Key Features:**
-- LLM-powered decision nodes
-- Actual tool execution
-- Sub-workflow invocation
-- Streaming graph execution
-- Enhanced state management
-- Error handling and resilience
-
-**Duration:** 2-3 weeks
-
----
-
-### Phase 4: Full A2A with Multi-Agent Orchestration
-**Status:** 📋 Planned  
-**Location:** `phase4-full-a2a-multi-agent/requirements.md`  
-**Goal:** Build intelligent routing, context-aware handoffs, and multi-agent collaboration.
-
-**Key Features:**
-- Intelligent triage routing with intent classification
-- Context-aware handoffs (preserve conversation history)
-- Multi-agent consultation (agents can ask each other)
-- Routing fallbacks and recovery
-- User-initiated agent selection
-- Unified conversation management
-
-**Duration:** 2-3 weeks  
-**Dependencies:** Phase 3 must be complete
-
----
-
-### Phase 5: Deprecate Text Injection Mode
-**Status:** 📋 Planned  
-**Location:** `phase5-deprecate-text-injection/requirements.md`  
-**Goal:** Remove legacy text injection system and fully migrate to LangGraph.
-
-**Key Features:**
-- Remove text injection code from backend
-- Update frontend visualizer to use graph events
-- Remove dual-mode configuration
-- Staged rollout with feature flags
-- Complete migration validation
-
-**Duration:** 4 weeks  
-**Dependencies:** Phase 3 and 4 must be complete
-
----
-
-## How to Use These Specs
-
-### For Implementation
-1. Read the overview document first: `A2A_MIGRATION_OVERVIEW.md`
-2. Review the specific phase spec you're working on
-3. Follow the implementation plan step-by-step
-4. Check off items in the Definition of Done
-
-### For Planning
-- Each spec includes user stories, technical requirements, and success metrics
-- Use the implementation plans for sprint planning
-- Refer to the timeline estimates for project scheduling
-
-### For Review
-- Each spec includes acceptance criteria for validation
-- Testing strategies are defined for each phase
-- Success metrics provide clear completion criteria
-
-## Related Documentation
-
-- `docs/WORKFLOW_VS_A2A.md` - Architecture comparison between text injection and LangGraph
-- `docs/WORKFLOW_STATUS.md` - Current implementation status
-- `docs/workflows.md` - Workflow system guide (needs update)
-
-## Questions?
-
-- Review the detailed spec for each phase
-- Check existing documentation in `docs/`
-- Review current implementation in codebase
-- Consult with team leads before major changes
-
-## Status Tracking
-
-| Phase | Status | Start Date | End Date | Notes |
-|-------|--------|------------|----------|-------|
-| Phase 3 | 📋 Planned | TBD | TBD | - |
-| Phase 4 | 📋 Planned | TBD | TBD | Depends on Phase 3 |
-| Phase 5 | 📋 Planned | TBD | TBD | Depends on Phase 3 & 4 |
-
-Last Updated: 2026-01-29
+**Last Updated**: Current session
+**Status**: Phase 1 ready for testing
+**Next Action**: Execute tests from `PHASE1_CHECKLIST.md`

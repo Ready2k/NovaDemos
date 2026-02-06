@@ -425,9 +425,11 @@ wss.on('connection', async (clientWs: WebSocket) => {
             const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B;
             if (!isBinary) {
                 const message = JSON.parse(data.toString());
+                console.log(`[Gateway] Received JSON message from client:`, message.type);
 
                 // Proactive extraction of credentials and intent
                 if (message.type === 'text_input' && message.text) {
+                    console.log(`[Gateway] Text input received: "${message.text}"`);
                     const parsed = parseUserMessage(message.text);
                     if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
                         const currentMemory = await router.getMemory(sessionId);
@@ -467,6 +469,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                 }
                 if (message.type === 'ping') { clientWs.send(JSON.stringify({ type: 'pong', timestamp: Date.now() })); return; }
                 if (!sessionInitialized && !isInitializing && !isHandingOff) {
+                    console.log(`[Gateway] Session not initialized, initializing now...`);
                     isInitializing = true;
                     try {
                         await router.createSession(sessionId, selectedWorkflowId);
@@ -477,12 +480,17 @@ wss.on('connection', async (clientWs: WebSocket) => {
             }
             // Forward or buffer based on state
             if (agentWs && agentWs.readyState === WebSocket.OPEN && !isHandingOff) {
+                console.log(`[Gateway] Forwarding message to agent (binary: ${isBinary})`);
                 agentWs.send(data, { binary: isBinary });
             } else if (isInitializing || isHandingOff || (agentWs && agentWs.readyState === WebSocket.CONNECTING)) {
                 // Buffer user input during transtions
+                console.log(`[Gateway] Buffering message (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
                 messageQueue.push({ data, isBinary });
+            } else {
+                console.log(`[Gateway] Cannot forward message - no agent connection`);
             }
         } catch (error) {
+            console.error(`[Gateway] Error processing message:`, error);
             // audio usually
             if (agentWs && agentWs.readyState === WebSocket.OPEN && !isHandingOff) {
                 agentWs.send(data, { binary: true });
