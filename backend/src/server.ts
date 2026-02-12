@@ -1074,18 +1074,128 @@ interface ClientSession {
     toolsCalledThisTurn?: string[]; // Track tools called in current turn
     processedToolIds?: Set<string>; // Track processed tool IDs to prevent duplicates
     phantomCorrectionCount?: number; // Track number of corrections attempted
+    
+    // Inactivity Detection
+    inactivityTimer?: NodeJS.Timeout | null;
+    lastUserActivityTime?: number;
+    inactivityCheckCount?: number; // Track how many times we've checked
+    inactivityTimeout?: number; // Configurable timeout in seconds
+    inactivityMaxChecks?: number; // Max number of checks before closing
+    inactivityEnabled?: boolean; // Toggle inactivity detection
 }
 
 // --- Helper for Broadcasting Workflow State ---
 function broadcastWorkflowStatus(session: ClientSession) {
-    if (session.ws.readyState === WebSocket.OPEN) {
-        session.ws.send(JSON.stringify({
-            type: 'workflowStatus',
-            data: {
-                workflowName: session.currentWorkflowId || 'Not Started',
-                checks: session.workflowChecks || {}
+    if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+
+    session.ws.send(JSON.stringify({
+        type: 'workflowStatus',
+        data: {
+            activeStepId: session.activeWorkflowStepId,
+            workflowId: session.currentWorkflowId,
+            checks: session.workflowChecks || {}
+        }
+    }));
+}
+
+// --- Inactivity Detection ---
+const DEFAULT_INACTIVITY_TIMEOUT = 20; // 20 seconds
+const DEFAULT_INACTIVITY_MAX_CHECKS = 3; // 3 checks before closing
+
+function startInactivityTimer(session: ClientSession) {
+    // Check if inactivity detection is enabled
+    if (session.inactivityEnabled === false) {
+        return;
+    }
+    
+    // Clear existing timer
+    if (session.inactivityTimer) {
+        clearTimeout(session.inactivityTimer);
+    }
+    
+    // Update last activity time
+    session.lastUserActivityTime = Date.now();
+    
+    // Get timeout value (in milliseconds)
+    const timeoutMs = (session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT) * 1000;
+    
+    // Start new timer
+    session.inactivityTimer = setTimeout(async () => {
+        // Check if user is still connected
+        if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+        
+        // Initialize check count if not set
+        if (session.inactivityCheckCount === undefined) {
+            session.inactivityCheckCount = 0;
+        }
+        
+        // Increment check count
+        session.inactivityCheckCount++;
+        
+        const maxChecks = session.inactivityMaxChecks || DEFAULT_INACTIVITY_MAX_CHECKS;
+        
+        console.log(`[Server] User inactive for ${session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT} seconds (check ${session.inactivityCheckCount}/${maxChecks})`);
+        
+        // Check if we've reached max checks
+        if (session.inactivityCheckCount >= maxChecks) {
+            console.log('[Server] Max inactivity checks reached, closing session gracefully');
+            
+            // Send farewell message
+            const farewellMessage = "[SYSTEM: User has not responded after multiple check-ins. Politely end the conversation and say goodbye. Keep it brief and friendly.]";
+            
+            try {
+                // Ensure session is started
+                if (!session.sonicClient.getSessionId()) {
+                    await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(session.ws, event, session), session.sessionId);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                if (session.sonicClient.getSessionId()) {
+                    await session.sonicClient.sendText(farewellMessage);
+                    
+                    // Wait for response to complete, then close
+                    setTimeout(() => {
+                        if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+                            console.log('[Server] Closing connection after inactivity farewell');
+                            session.ws.close(1000, 'Inactivity timeout');
+                        }
+                    }, 5000); // Give 5 seconds for farewell message to play
+                }
+            } catch (error) {
+                console.error('[Server] Failed to send farewell message:', error);
+                // Close anyway
+                if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+                    session.ws.close(1000, 'Inactivity timeout');
+                }
             }
-        }));
+        } else {
+            // Send check-in message
+            const checkInMessage = "[SYSTEM: User has been inactive. Check if they are still there and if they need any help. Keep it brief and friendly.]";
+            
+            try {
+                // Ensure session is started
+                if (!session.sonicClient.getSessionId()) {
+                    await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(session.ws, event, session), session.sessionId);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                if (session.sonicClient.getSessionId()) {
+                    await session.sonicClient.sendText(checkInMessage);
+                }
+                
+                // Restart timer for next check
+                startInactivityTimer(session);
+            } catch (error) {
+                console.error('[Server] Failed to send inactivity check:', error);
+            }
+        }
+    }, timeoutMs);
+}
+
+function stopInactivityTimer(session: ClientSession) {
+    if (session.inactivityTimer) {
+        clearTimeout(session.inactivityTimer);
+        session.inactivityTimer = null;
     }
 }
 
@@ -2247,6 +2357,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     };
     activeSessions.set(ws, session);
 
+    // Start inactivity timer
+    startInactivityTimer(session);
+
     // Send connection acknowledgment
     ws.send(JSON.stringify({
         type: 'connected',
@@ -2470,65 +2583,22 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                         // 2. Handle Brain Mode
                         if (parsed.config.brainMode) {
+                            // Map 'agent' to 'bedrock_agent' for backwards compatibility
+                            if (parsed.config.brainMode === 'agent') {
+                                parsed.config.brainMode = 'bedrock_agent';
+                            }
+                            
                             session.brainMode = parsed.config.brainMode;
                             logWithTimestamp('[Server]', `Switched Brain Mode to: ${session.brainMode}`);
 
                             // Workflow injection moved to after tool injection
 
-                            // If Agent Mode, override system prompt to be a TTS engine
+                            // If Agent Mode, use TTS-only prompt for Nova Sonic
                             if (session.brainMode === 'bedrock_agent') {
                                 parsed.config.systemPrompt = await loadPrompt('core-agent_echo.txt');
-                                console.log('[Server] Overriding System Prompt for Agent Mode (Echo Bot)');
-                                console.log(`[Server] --- AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
-
-                                // Test the agent with an initial greeting - DISABLED to prevent double streams
-                                // setTimeout(async () => {
-                                //     try {
-                                //         console.log('[Server] Testing Banking Bot with initial greeting...');
-                                //         const { completion: agentReply } = await callBankAgent(
-                                //             "Hello, I'd like to get started",
-                                //             session.sessionId,
-                                //             session.agentId,
-                                //             session.agentAliasId,
-                                //             {
-                                //                 accessKeyId: session.awsAccessKeyId,
-                                //                 secretAccessKey: session.awsSecretAccessKey,
-                                //                 sessionToken: session.awsSessionToken,
-                                //                 region: session.awsRegion
-                                //             }
-                                //         );
-                                //         logWithTimestamp('[Server]', `Banking Bot replied: "${agentReply}"`);
-
-                                //         // Send to UI
-                                //         ws.send(JSON.stringify({
-                                //             type: 'transcript',
-                                //             role: 'assistant',
-                                //             text: agentReply,
-                                //             isFinal: true
-                                //         }));
-
-                                //         // Send to TTS - Ensure session is properly started
-                                //         if (session.sonicClient) {
-                                //             // Check if Nova Sonic session is active
-                                //             if (!session.sonicClient.getSessionId()) {
-                                //                 console.log('[Server] Starting Nova Sonic session for Banking Bot TTS...');
-                                //                 await session.sonicClient.startSession((event: SonicEvent) =>
-                                //                     handleSonicEvent(ws, event, session)
-                                //                 );
-                                //                 // Wait a moment for session to be fully established
-                                //                 await new Promise(resolve => setTimeout(resolve, 500));
-                                //             }
-
-                                //             // Double-check session is active before sending text
-                                //             if (session.sonicClient.getSessionId()) {
-                                //                 logWithTimestamp('[Server]', 'Sending Banking Bot greeting to TTS...');
-                                //                 await session.sonicClient.sendText(agentReply);
-                                //             } else {
-                                //                 console.error('[Server] Nova Sonic session failed to start for Banking Bot TTS');
-                                //             }
-                                //         }
-                                //     } catch (error) {
-                                //         console.error('[Server] Banking Bot test failed:', error);
+                                console.log('[Server] Using TTS-only prompt for Bedrock Agent Mode');
+                                console.log(`[Server] --- BEDROCK AGENT MODE ACTIVE: ${session.agentId || 'Default Banking Bot'} ---`);
+                                console.log('[Server] Nova Sonic will handle TTS only, Bedrock Agent handles reasoning');
                                 //         ws.send(JSON.stringify({
                                 //             type: 'transcript',
                                 //             role: 'system',
@@ -2788,6 +2858,20 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (parsed.config.userLocation) session.userLocation = parsed.config.userLocation;
                         if (parsed.config.userTimezone) session.userTimezone = parsed.config.userTimezone;
 
+                        // 5. Update Inactivity Detection Settings
+                        if (parsed.config.inactivityEnabled !== undefined) {
+                            session.inactivityEnabled = parsed.config.inactivityEnabled;
+                            console.log(`[Server] Inactivity detection ${session.inactivityEnabled ? 'enabled' : 'disabled'}`);
+                        }
+                        if (parsed.config.inactivityTimeout !== undefined) {
+                            session.inactivityTimeout = parsed.config.inactivityTimeout;
+                            console.log(`[Server] Inactivity timeout set to: ${session.inactivityTimeout}s`);
+                        }
+                        if (parsed.config.inactivityMaxChecks !== undefined) {
+                            session.inactivityMaxChecks = parsed.config.inactivityMaxChecks;
+                            console.log(`[Server] Inactivity max checks set to: ${session.inactivityMaxChecks}`);
+                        }
+
                         console.log(`[Server] Session configured. Voice: ${session.voiceId}, Location: ${session.userLocation}, Timezone: ${session.userTimezone}`);
 
                         // Filler cache prewarming removed - Nova 2 Sonic handles filler natively
@@ -2844,22 +2928,10 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (parsed.text) {
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
-
-
-                            // NOTE: Voice switching via Transcribe language identification only works for audio input
-                            // Text input does not go through Transcribe, so voice remains unchanged
-
-
-                            // DEMO: Send detected language metadata (will be replaced with actual Transcribe data)
-                            // This demonstrates the frontend language display feature
-                            ws.send(JSON.stringify({
-                                type: 'metadata',
-                                data: {
-                                    detectedLanguage: 'en-US',
-                                    languageConfidence: 0.95
-                                }
-                            }));
-
+                            
+                            // Reset inactivity timer on user input
+                            session.inactivityCheckCount = 0; // Reset check count
+                            startInactivityTimer(session);
 
                             // Add user message to transcript for chat history
                             session.transcript.push({
@@ -3020,6 +3092,10 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 console.log(`[Server] Audio buffer info: ${fullAudio.length} bytes, RMS: ${rms}`);
                             }
                             if (text) {
+                                // Reset inactivity timer on user audio input
+                                session.inactivityCheckCount = 0; // Reset check count
+                                startInactivityTimer(session);
+                                
                                 let finalText = text;
                                 try {
                                     finalText = formatUserTranscript(text);
@@ -3174,7 +3250,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
         const session = activeSessions.get(ws);
         if (session) {
-
+            // Clean up inactivity timer
+            stopInactivityTimer(session);
 
             // Clean up Sonic session
             if (session.sonicClient.isActive()) {

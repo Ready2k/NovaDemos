@@ -303,6 +303,69 @@ export default function GeneralSettings() {
                     />
                 </div>
             </section>
+
+            {/* Inactivity Detection */}
+            <section className="flex flex-col gap-6 pt-4 border-t border-white/5">
+                <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    Inactivity Detection
+                </h3>
+
+                {/* Enable/Disable Toggle */}
+                <div className={cn("p-4 rounded-xl border flex items-center justify-between", isDarkMode ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}>
+                    <div>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Enable Inactivity Checks</div>
+                        <div className={cn("text-xs", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>AI checks in if user is silent</div>
+                    </div>
+                    <button
+                        onClick={() => updateSettings({ inactivityEnabled: !settings.inactivityEnabled })}
+                        className={cn(
+                            "w-12 h-6 rounded-full transition-colors relative",
+                            settings.inactivityEnabled !== false ? "bg-emerald-500" : "bg-gray-600"
+                        )}
+                    >
+                        <div className={cn(
+                            "w-4 h-4 rounded-full bg-white absolute top-1 transition-transform",
+                            settings.inactivityEnabled !== false ? "left-7" : "left-1"
+                        )} />
+                    </button>
+                </div>
+
+                {/* Timeout Slider */}
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className={isDarkMode ? "text-white" : "text-gray-900"}>Check-in Timeout</span>
+                        <span className="text-gray-500">{settings.inactivityTimeout ?? 20}s</span>
+                    </div>
+                    <input
+                        type="range" min="5" max="60" step="5"
+                        value={settings.inactivityTimeout ?? 20}
+                        onChange={(e) => updateSettings({ inactivityTimeout: parseInt(e.target.value) })}
+                        className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-violet-500"
+                        disabled={settings.inactivityEnabled === false}
+                    />
+                    <div className={cn("text-xs", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                        Time before AI checks if user is still there
+                    </div>
+                </div>
+
+                {/* Max Checks Slider */}
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className={isDarkMode ? "text-white" : "text-gray-900"}>Max Check-ins</span>
+                        <span className="text-gray-500">{settings.inactivityMaxChecks ?? 3}</span>
+                    </div>
+                    <input
+                        type="range" min="1" max="5" step="1"
+                        value={settings.inactivityMaxChecks ?? 3}
+                        onChange={(e) => updateSettings({ inactivityMaxChecks: parseInt(e.target.value) })}
+                        className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-violet-500"
+                        disabled={settings.inactivityEnabled === false}
+                    />
+                    <div className={cn("text-xs", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                        Number of check-ins before ending session
+                    </div>
+                </div>
+            </section>
         </div>
     );
 }

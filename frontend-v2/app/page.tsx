@@ -103,6 +103,9 @@ export default function Home() {
                 linkedWorkflows: settings.linkedWorkflows || [],
                 agentId: settings.agentId,
                 agentAliasId: settings.agentAliasId,
+                inactivityEnabled: settings.inactivityEnabled ?? true,
+                inactivityTimeout: settings.inactivityTimeout ?? 20,
+                inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
               },
             });
           }
@@ -369,6 +372,9 @@ export default function Home() {
           linkedWorkflows: settings.linkedWorkflows || [],
           agentId: settings.agentId,
           agentAliasId: settings.agentAliasId,
+          inactivityEnabled: settings.inactivityEnabled ?? true,
+          inactivityTimeout: settings.inactivityTimeout ?? 20,
+          inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
         }
       });
     }
@@ -382,7 +388,10 @@ export default function Home() {
     settings.enableGuardrails,
     settings.enableGuardrails,
     settings.enabledTools,
-    settings.linkedWorkflows
+    settings.linkedWorkflows,
+    settings.inactivityEnabled,
+    settings.inactivityTimeout,
+    settings.inactivityMaxChecks
   ]);
 
   // Handle send text message

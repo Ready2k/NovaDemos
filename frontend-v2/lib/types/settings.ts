@@ -33,6 +33,11 @@ export interface AppSettings {
     physicsSensitivity?: number;
     contextGrowth?: number;
 
+    // Inactivity Detection
+    inactivityEnabled?: boolean;
+    inactivityTimeout?: number; // seconds
+    inactivityMaxChecks?: number;
+
     // Persona Settings
     systemPrompt: string;
     speechPrompt?: string;
