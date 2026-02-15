@@ -27,6 +27,7 @@ interface AppState {
     messages: Message[];
     addMessage: (message: Message) => void;
     updateLastMessage: (updates: Partial<Message>) => void;
+    updateMessageById: (id: string, updates: Partial<Message>) => void;
     clearMessages: () => void;
 
     // Settings
@@ -230,6 +231,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    const updateMessageById = useCallback((id: string, updates: Partial<Message>) => {
+        setMessages(prev => {
+            const index = prev.findIndex(m => m.id === id);
+            if (index === -1) return prev;
+            const newMessages = [...prev];
+            newMessages[index] = { ...newMessages[index], ...updates };
+            return newMessages;
+        });
+
+        // Also update in session transcript
+        setCurrentSession(prev => {
+            if (!prev) return prev;
+            const index = prev.transcript.findIndex(m => m.id === id);
+            if (index === -1) return prev;
+            const newTranscript = [...prev.transcript];
+            newTranscript[index] = { ...newTranscript[index], ...updates };
+            return { ...prev, transcript: newTranscript };
+        });
+    }, []);
+
     const clearMessages = useCallback(() => {
         setMessages([]);
     }, []);
@@ -311,6 +332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         messages,
         addMessage,
         updateLastMessage,
+        updateMessageById,
         clearMessages,
 
         // Settings

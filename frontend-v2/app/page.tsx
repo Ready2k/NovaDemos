@@ -31,6 +31,7 @@ export default function Home() {
     messages,
     addMessage,
     updateLastMessage,
+    updateMessageById,
     currentSession,
     setCurrentSession,
     updateSessionStats,
@@ -166,9 +167,15 @@ export default function Home() {
         const role = transcriptMsg.role || 'assistant';
         const isFinal = transcriptMsg.isFinal || false;
 
-        if (role === 'user' && (cleanText === 'Hello' || cleanText.includes('[SYSTEM_INJECTION]'))) {
-          if (messages.length === 0 || hasSentInitialGreetingRef.current === sessionIdRef.current || cleanText.includes('[SYSTEM_INJECTION]')) {
-            console.log('[App] Filtering out initial/system/injected message:', cleanText.substring(0, 20));
+        // CRITICAL: Filter out system messages that shouldn't be visible to users
+        if (cleanText.startsWith('[System:') || cleanText.startsWith('[SYSTEM') || cleanText.includes('[SYSTEM_INJECTION]')) {
+          console.log('[App] Filtering out system message:', cleanText.substring(0, 50));
+          break;
+        }
+
+        if (role === 'user' && cleanText === 'Hello') {
+          if (messages.length === 0 || hasSentInitialGreetingRef.current === sessionIdRef.current) {
+            console.log('[App] Filtering out initial Hello message');
             break;
           }
         }
@@ -178,25 +185,26 @@ export default function Home() {
         // Use message ID if available, else derive one
         const messageId = transcriptMsg.id || `msg-${role}-${transcriptMsg.timestamp || Date.now()}`;
 
-        // Deduplicate strategy
+        // CRITICAL FIX: Deduplicate by ID - streaming messages should update, not duplicate
         const existingMsgIndex = messages.findIndex(m => m.id === messageId);
 
         if (existingMsgIndex >= 0) {
           const existing = messages[existingMsgIndex];
-          if (existing.isFinal && isFinal && existing.content === cleanText) {
-            console.log('[App] Ignoring duplicate final message');
-            break;
-          }
-
-          updateLastMessage({
-            id: messageId,
+          
+          // FIXED: Always update if same ID, regardless of isFinal status
+          // This handles streaming → final transition properly
+          console.log(`[App] Updating message ID: ${messageId}, isFinal: ${existing.isFinal} → ${isFinal}`);
+          
+          updateMessageById(messageId, {
             content: cleanText,
-            role: role,
             isFinal: isFinal,
             sentiment: transcriptMsg.sentiment || existing.sentiment,
             timestamp: transcriptMsg.timestamp || existing.timestamp
-          } as any);
+          });
         } else {
+          // Only add if this is a new message ID
+          console.log(`[App] Adding new message ID: ${messageId}, isFinal: ${isFinal}`);
+          
           addMessage({
             id: messageId,
             role: role,

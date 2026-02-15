@@ -363,22 +363,14 @@ export class UnifiedRuntime {
         // Initialize Text Adapter ONLY for text-only mode
         // In hybrid mode, voice adapter handles text input via handleTextInput()
         if (this.config.mode === 'text') {
-            // Text mode also needs SonicClient for LLM invocation
-            const sonicConfig: SonicConfig = {
-                region: this.config.awsConfig!.region,
-                accessKeyId: this.config.awsConfig!.accessKeyId!,
-                secretAccessKey: this.config.awsConfig!.secretAccessKey!,
-                sessionToken: this.config.awsConfig?.sessionToken,
-                modelId: 'amazon.nova-2-sonic-v1:0'
-            };
-
+            // VOICE-AGNOSTIC: Text mode uses Agent Core directly (Claude Sonnet)
+            // No Nova Sonic needed - Agent Core generates responses independently
             const textAdapterConfig: TextAdapterConfig = {
-                agentCore: this.agentCore,
-                sonicConfig // Pass SonicConfig for LLM invocation
+                agentCore: this.agentCore
             };
 
             this.textAdapter = new TextAdapter(textAdapterConfig);
-            console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Text Adapter initialized with SonicClient`);
+            console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Text Adapter initialized (Voice-Agnostic Mode)`);
         }
     }
 
@@ -542,6 +534,8 @@ export class UnifiedRuntime {
                             console.warn(`[UnifiedRuntime:${this.config.agentId}] ⚠️  No sessionId available for memory_update`);
                         }
                     } else if (sessionId) {
+                        // CRITICAL: Await message processing to ensure it completes
+                        // before handling any subsequent messages or disconnect
                         await this.handleMessage(sessionId, data, false);
                     }
                 }
@@ -625,29 +619,28 @@ export class UnifiedRuntime {
 
             // IMPROVED: Auto-trigger with guards
             if (AUTO_TRIGGER_ENABLED && !session.autoTriggered) {
-                // CRITICAL: Auto-trigger IDV agent with context from memory
-                if (this.config.agentId === 'idv' && memory && memory.account && memory.sortCode) {
-                    const isFirstAttempt = !memory.graphState || !memory.graphState.idvAttempts || memory.graphState.idvAttempts === 0;
+                // CRITICAL: Auto-trigger IDV agent - ALWAYS greet on handoff, regardless of credentials
+                if (this.config.agentId === 'idv') {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent greeting`);
 
-                    if (isFirstAttempt) {
-                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent (first time only)`);
-                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+                    session.autoTriggered = true; // Mark as triggered
 
-                        session.autoTriggered = true; // Mark as triggered
+                    // Simple greeting trigger - let the agent's prompt handle the rest
+                    const triggerMessage = '[System: User has been transferred to you for identity verification. Please greet them and ask for their credentials.]';
 
-                        const triggerMessage = `I need to verify account ${memory.account} with sort code ${memory.sortCode}`;
-
-                        if (this.voiceSideCar) {
-                            setTimeout(() => {
-                                this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
-                                });
-                            }, 1500); // Increased delay for safety
-                        }
-                    } else {
-                        if (DEBUG) {
-                            console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Skipping auto-trigger (retry attempt ${memory.graphState.idvAttempts})`);
-                        }
+                    // Support both text and voice modes
+                    if (this.voiceSideCar) {
+                        setTimeout(() => {
+                            this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                            });
+                        }, 1500); // Delay to ensure session is fully initialized
+                    } else if (this.textAdapter) {
+                        setTimeout(() => {
+                            this.textAdapter!.handleUserInput(sessionId, triggerMessage).catch(error => {
+                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                            });
+                        }, 1500); // Delay to ensure session is fully initialized
                     }
                 }
 
@@ -668,11 +661,15 @@ export class UnifiedRuntime {
                         const triggerMessage = `I want to ${intent}`;
 
                         if (this.voiceSideCar) {
+                            // CRITICAL: Increased delay to ensure session is fully initialized
                             setTimeout(() => {
+                                console.log(`[UnifiedRuntime:${this.config.agentId}] 🎯 Sending auto-trigger message: "${triggerMessage}"`);
+                                
                                 this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ Error sending auto-trigger: ${error.message}`);
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Stack:`, error.stack);
                                 });
-                            }, 1500); // Increased delay for safety
+                            }, 2000); // Increased to 2 seconds for safety
                         }
                     }
                 }
@@ -763,12 +760,17 @@ export class UnifiedRuntime {
                         break;
 
                     case 'text_input':
-                        // Hybrid mode - text input to voice session
+                        // Text input - works for both text mode and hybrid mode
                         if (this.voiceSideCar) {
                             if (DEBUG) {
-                                console.log(`[UnifiedRuntime:${this.config.agentId}] 📥 Processing text_input: "${message.text.substring(0, 20)}..." (skipTranscript=${!!message.skipTranscript})`);
+                                console.log(`[UnifiedRuntime:${this.config.agentId}] 📥 Processing text_input (voice/hybrid): "${message.text.substring(0, 20)}..." (skipTranscript=${!!message.skipTranscript})`);
                             }
                             await this.voiceSideCar.handleTextInput(sessionId, message.text, message.skipTranscript || false);
+                        } else if (this.textAdapter) {
+                            if (DEBUG) {
+                                console.log(`[UnifiedRuntime:${this.config.agentId}] 📥 Processing text_input (text mode): "${message.text.substring(0, 20)}..."`);
+                            }
+                            await this.textAdapter.handleUserInput(sessionId, message.text);
                         }
                         break;
 

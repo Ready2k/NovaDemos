@@ -1,0 +1,22 @@
+{
+  "id": "idv-simple",
+  "name": "Identity Verification Agent (Simple)",
+  "description": "Simple agentic IDV agent with behavioral prompts - no workflow, just clear instructions",
+  "promptFile": "persona-idv-simple.txt",
+  "workflows": [],
+  "allowedTools": [
+    "perform_idv_check"
+  ],
+  "voiceId": "stephen",
+  "metadata": {
+    "language": "en-US",
+    "region": "UK",
+    "tone": "professional-security",
+    "specializations": [
+      "identity-verification",
+      "security-checks"
+    ],
+    "approach": "behavioral-prompts",
+    "workflow": "none"
+  }
+}

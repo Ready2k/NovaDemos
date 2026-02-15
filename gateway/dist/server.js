@@ -53,7 +53,6 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '8080');
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 // --- DATA PATHS ---
-// Determine if running in Docker or locally
 const isDocker = fs.existsSync('/app');
 const BASE_DIR = isDocker ? '/app' : path.join(__dirname, '../..');
 const WORKFLOWS_DIR = path.join(BASE_DIR, 'backend/workflows');
@@ -61,13 +60,6 @@ const TOOLS_DIR = path.join(BASE_DIR, 'backend/tools');
 const HISTORY_DIR = path.join(BASE_DIR, 'backend/history');
 const PROMPTS_DIR = path.join(BASE_DIR, 'backend/prompts');
 const PERSONAS_DIR = path.join(BASE_DIR, 'backend/personas');
-console.log('[Gateway] Running in:', isDocker ? 'Docker' : 'Local');
-console.log('[Gateway] BASE_DIR:', BASE_DIR);
-console.log('[Gateway] WORKFLOWS_DIR:', WORKFLOWS_DIR);
-console.log('[Gateway] TOOLS_DIR:', TOOLS_DIR);
-console.log('[Gateway] HISTORY_DIR:', HISTORY_DIR);
-console.log('[Gateway] PROMPTS_DIR:', PROMPTS_DIR);
-console.log('[Gateway] PERSONAS_DIR:', PERSONAS_DIR);
 // Ensure directories exist
 [WORKFLOWS_DIR, TOOLS_DIR, HISTORY_DIR, PROMPTS_DIR, PERSONAS_DIR].forEach(dir => {
     if (!fs.existsSync(dir))
@@ -93,44 +85,30 @@ const langfuse = new langfuse_1.Langfuse({
     secretKey: process.env.LANGFUSE_SECRET_KEY,
     baseUrl: process.env.LANGFUSE_HOST || "https://cloud.langfuse.com"
 });
-// Express app for health checks and management APIs
+// Express app
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-// Stub endpoints for remaining ones
+// Stub endpoints
 app.get('/api/tests', (req, res) => res.json([]));
 app.get('/api/presets', (req, res) => res.json([]));
 app.get('/api/knowledge-bases', (req, res) => res.json([]));
-// Health check endpoint
+// Health check
 app.get('/health', async (req, res) => {
     const agents = await registry.getAllAgents();
-    res.json({
-        status: 'healthy',
-        service: 'gateway',
-        agents: agents.length,
-        timestamp: Date.now()
-    });
+    res.json({ status: 'healthy', service: 'gateway', agents: agents.length, timestamp: Date.now() });
 });
-// Agent registration endpoint (called by agents on startup)
+// Agent registration
 app.post('/api/agents/register', async (req, res) => {
     try {
         const { id, url, capabilities, port } = req.body;
-        await registry.registerAgent({
-            id,
-            url,
-            status: 'healthy',
-            capabilities: capabilities || [],
-            lastHeartbeat: Date.now(),
-            port
-        });
+        await registry.registerAgent({ id, url, status: 'healthy', capabilities: capabilities || [], lastHeartbeat: Date.now(), port });
         res.json({ success: true, message: `Agent ${id} registered` });
     }
     catch (error) {
-        console.error('[Gateway] Agent registration error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// Agent heartbeat endpoint
 app.post('/api/agents/heartbeat', async (req, res) => {
     try {
         const { agentId } = req.body;
@@ -141,51 +119,37 @@ app.post('/api/agents/heartbeat', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// API endpoints for frontend compatibility
-// These are stub implementations - in production, these would be backed by a database
-// Voices endpoint - Nova Sonic voices
+// Voices
 app.get('/api/voices', (req, res) => {
     res.json([
-        // Polyglot voices (can speak all languages)
         { id: 'tiffany', name: 'Tiffany (US Female, Polyglot)', language: 'en-US', polyglot: true },
         { id: 'matthew', name: 'Matthew (US Male, Polyglot)', language: 'en-US', polyglot: true },
-        // English variants
         { id: 'amy', name: 'Amy (UK Female)', language: 'en-GB' },
         { id: 'olivia', name: 'Olivia (AU Female)', language: 'en-AU' },
         { id: 'kiara', name: 'Kiara (IN Female)', language: 'en-IN' },
         { id: 'arjun', name: 'Arjun (IN Male)', language: 'en-IN' },
-        // European languages
         { id: 'ambre', name: 'Ambre (French Female)', language: 'fr-FR' },
         { id: 'florian', name: 'Florian (French Male)', language: 'fr-FR' },
         { id: 'beatrice', name: 'Beatrice (Italian Female)', language: 'it-IT' },
         { id: 'lorenzo', name: 'Lorenzo (Italian Male)', language: 'it-IT' },
         { id: 'tina', name: 'Tina (German Female)', language: 'de-DE' },
         { id: 'lennart', name: 'Lennart (German Male)', language: 'de-DE' },
-        // Spanish & Portuguese
         { id: 'lupe', name: 'Lupe (Spanish US Female)', language: 'es-US' },
         { id: 'carlos', name: 'Carlos (Spanish US Male)', language: 'es-US' },
         { id: 'carolina', name: 'Carolina (Portuguese Female)', language: 'pt-BR' },
         { id: 'leo', name: 'Leo (Portuguese Male)', language: 'pt-BR' }
     ]);
 });
-// History endpoint
+// History
 app.get('/api/history', (req, res) => {
     try {
-        const files = fs.readdirSync(HISTORY_DIR)
-            .filter(f => f.endsWith('.json') && f.startsWith('session_'));
+        const files = fs.readdirSync(HISTORY_DIR).filter(f => f.endsWith('.json') && f.startsWith('session_'));
         const historyList = files.map(f => {
             try {
                 const content = readJsonFile(path.join(HISTORY_DIR, f));
                 const firstUserMsg = content.transcript?.find((m) => m.role === 'user');
                 const summary = firstUserMsg?.text || `Session ${content.sessionId?.substring(0, 8) || 'unknown'}`;
-                return {
-                    id: f,
-                    date: content.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs,
-                    summary: summary,
-                    totalMessages: content.transcript?.length || 0,
-                    usage: content.usage,
-                    sentiment: content.averageSentiment || 0.5
-                };
+                return { id: f, date: content.startTime || fs.statSync(path.join(HISTORY_DIR, f)).mtimeMs, summary: summary, totalMessages: content.transcript?.length || 0, usage: content.usage, sentiment: content.averageSentiment || 0.5 };
             }
             catch (e) {
                 return null;
@@ -197,27 +161,23 @@ app.get('/api/history', (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
-// Individual history session endpoint
 app.get('/api/history/:id', (req, res) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        // Handle both with and without .json extension
         const filename = id.endsWith('.json') ? id : `${id}.json`;
         const sessionPath = path.join(HISTORY_DIR, filename);
-        if (!fs.existsSync(sessionPath)) {
+        if (!fs.existsSync(sessionPath))
             return res.status(404).json({ error: `Session ${id} not found` });
-        }
         const session = readJsonFile(sessionPath, null);
-        if (!session) {
+        if (!session)
             return res.status(404).json({ error: `Failed to read session ${id}` });
-        }
         res.json(session);
     }
     catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
-// Workflows endpoint
+// Workflows
 app.get('/api/workflows', (req, res) => {
     try {
         const files = fs.readdirSync(WORKFLOWS_DIR).filter(f => f.startsWith('workflow_') && f.endsWith('.json'));
@@ -231,32 +191,14 @@ app.get('/api/workflows', (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
-// Individual workflow endpoint
 app.get('/api/workflow/:id', (req, res) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        // Try with and without workflow_ prefix and .json extension
-        const possibleFiles = [
-            `${id}.json`,
-            `workflow_${id}.json`,
-            id.endsWith('.json') ? id : `${id}.json`
-        ];
-        let workflowPath = null;
-        for (const filename of possibleFiles) {
-            const testPath = path.join(WORKFLOWS_DIR, filename);
-            if (fs.existsSync(testPath)) {
-                workflowPath = testPath;
-                break;
-            }
-        }
-        if (!workflowPath) {
+        const filename = id.startsWith('workflow_') ? (id.endsWith('.json') ? id : `${id}.json`) : `workflow_${id}.json`;
+        const workflowPath = path.join(WORKFLOWS_DIR, filename);
+        if (!fs.existsSync(workflowPath))
             return res.status(404).json({ error: `Workflow ${id} not found` });
-        }
-        const workflow = readJsonFile(workflowPath, null);
-        if (!workflow) {
-            return res.status(404).json({ error: `Failed to read workflow ${id}` });
-        }
-        res.json(workflow);
+        res.json(readJsonFile(workflowPath, null));
     }
     catch (e) {
         res.status(500).json({ error: e.message });
@@ -265,294 +207,76 @@ app.get('/api/workflow/:id', (req, res) => {
 app.post('/api/workflow/:id', (req, res) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const workflow = req.body;
-        // Determine filename
         const filename = id.startsWith('workflow_') ? `${id}.json` : `workflow_${id}.json`;
-        const workflowPath = path.join(WORKFLOWS_DIR, filename);
-        fs.writeFileSync(workflowPath, JSON.stringify(workflow, null, 2));
-        res.json({ success: true, message: `Workflow ${id} saved` });
+        fs.writeFileSync(path.join(WORKFLOWS_DIR, filename), JSON.stringify(req.body, null, 2));
+        res.json({ success: true });
     }
     catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
-app.delete('/api/workflow/:id', (req, res) => {
-    try {
-        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const possibleFiles = [
-            `${id}.json`,
-            `workflow_${id}.json`,
-            id.endsWith('.json') ? id : `${id}.json`
-        ];
-        let deleted = false;
-        for (const filename of possibleFiles) {
-            const testPath = path.join(WORKFLOWS_DIR, filename);
-            if (fs.existsSync(testPath)) {
-                fs.unlinkSync(testPath);
-                deleted = true;
-                break;
-            }
-        }
-        if (!deleted) {
-            return res.status(404).json({ error: `Workflow ${id} not found` });
-        }
-        res.json({ success: true, message: `Workflow ${id} deleted` });
-    }
-    catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-// Tools endpoint
-app.get('/api/tools', (req, res) => {
-    try {
-        const files = fs.readdirSync(TOOLS_DIR).filter(f => f.endsWith('.json'));
-        const tools = files.map(f => {
-            const content = readJsonFile(path.join(TOOLS_DIR, f), {});
-            return {
-                id: f,
-                name: content.toolSpec?.name || f,
-                description: content.toolSpec?.description || ''
-            };
-        });
-        res.json(tools);
-    }
-    catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-// Agents endpoint - List all agents with metadata
-app.get('/api/agents', async (req, res) => {
-    try {
-        const agents = await registry.getAllAgents();
-        res.json(agents);
-    }
-    catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-// Individual agent endpoint
-app.get('/api/agents/:id', async (req, res) => {
-    try {
-        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const agent = await registry.getAgent(id);
-        if (!agent) {
-            return res.status(404).json({ error: `Agent ${id} not found` });
-        }
-        res.json(agent);
-    }
-    catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-// ===== PERSONA ENDPOINTS =====
-// List all personas
+// Personas
 app.get('/api/personas', (req, res) => {
     try {
         const files = fs.readdirSync(PERSONAS_DIR).filter(f => f.endsWith('.json'));
         const personas = files.map(file => {
             try {
-                const content = fs.readFileSync(path.join(PERSONAS_DIR, file), 'utf-8');
-                const persona = JSON.parse(content);
-                return {
-                    id: persona.id || file.replace('.json', ''),
-                    name: persona.name || 'Untitled',
-                    description: persona.description || '',
-                    voiceId: persona.voiceId || 'matthew',
-                    workflows: persona.workflows || [],
-                    allowedToolsCount: (persona.allowedTools || []).length,
-                    metadata: persona.metadata || {}
-                };
+                const persona = JSON.parse(fs.readFileSync(path.join(PERSONAS_DIR, file), 'utf-8'));
+                return { id: persona.id || file.replace('.json', ''), name: persona.name || 'Untitled', description: persona.description || '', voiceId: persona.voiceId || 'matthew', workflows: persona.workflows || [], allowedToolsCount: (persona.allowedTools || []).length, metadata: persona.metadata || {} };
             }
             catch (e) {
-                console.error(`[Gateway] Failed to parse persona ${file}:`, e);
                 return null;
             }
         }).filter(p => p !== null);
-        console.log(`[Gateway] Loaded ${personas.length} personas`);
         res.json(personas);
     }
     catch (e) {
-        console.error('[Gateway] Failed to list personas:', e);
         res.status(500).json({ error: e.message });
     }
 });
-// Get individual persona
 app.get('/api/personas/:id', (req, res) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
         const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        if (!fs.existsSync(filePath)) {
+        if (!fs.existsSync(filePath))
             return res.status(404).json({ error: `Persona ${id} not found` });
-        }
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const persona = JSON.parse(content);
-        // Also load the prompt file if it exists
+        const persona = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
         let promptContent = null;
         if (persona.promptFile) {
             const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
-            if (fs.existsSync(promptPath)) {
+            if (fs.existsSync(promptPath))
                 promptContent = fs.readFileSync(promptPath, 'utf-8');
-            }
         }
-        res.json({
-            ...persona,
-            promptContent
-        });
+        res.json({ ...persona, promptContent });
     }
     catch (e) {
-        console.error('[Gateway] Failed to get persona:', e);
         res.status(500).json({ error: e.message });
     }
 });
-// Create new persona
-app.post('/api/personas', (req, res) => {
-    try {
-        const persona = req.body;
-        // Validate required fields
-        if (!persona.id) {
-            return res.status(400).json({ error: 'Persona ID is required' });
-        }
-        const filePath = path.join(PERSONAS_DIR, `${persona.id}.json`);
-        // Check if already exists
-        if (fs.existsSync(filePath)) {
-            return res.status(409).json({ error: 'Persona already exists' });
-        }
-        // Set defaults
-        const personaData = {
-            id: persona.id,
-            name: persona.name || 'Untitled Persona',
-            description: persona.description || '',
-            promptFile: persona.promptFile || null,
-            workflows: persona.workflows || [],
-            allowedTools: persona.allowedTools || [],
-            voiceId: persona.voiceId || 'matthew',
-            metadata: persona.metadata || {
-                language: 'en-US',
-                region: 'UK',
-                tone: 'professional'
-            }
-        };
-        // Write persona config file
-        fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
-        // Create prompt file if content provided
-        if (persona.promptContent && persona.promptFile) {
-            const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
-            fs.writeFileSync(promptPath, persona.promptContent, 'utf-8');
-        }
-        console.log(`[Gateway] Created persona: ${persona.id}`);
-        res.json({ success: true, persona: personaData });
-    }
-    catch (e) {
-        console.error('[Gateway] Failed to create persona:', e);
-        res.status(500).json({ error: e.message });
-    }
-});
-// Update persona
 app.put('/api/personas/:id', (req, res) => {
     try {
         const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const updates = req.body;
         const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        if (!fs.existsSync(filePath)) {
+        if (!fs.existsSync(filePath))
             return res.status(404).json({ error: `Persona ${id} not found` });
-        }
-        // Read existing persona
         const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        // Merge updates
-        const updated = {
-            ...existing,
-            ...updates,
-            id: existing.id // Don't allow ID changes
-        };
-        // Remove promptContent from persona file (it goes in separate file)
-        const { promptContent, ...personaData } = updated;
-        // Write updated persona config
-        fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2), 'utf-8');
-        // Update prompt file if content provided
-        if (promptContent && personaData.promptFile) {
-            const promptPath = path.join(PROMPTS_DIR, personaData.promptFile);
-            fs.writeFileSync(promptPath, promptContent, 'utf-8');
-        }
-        console.log(`[Gateway] Updated persona: ${id}`);
+        const { promptContent, ...personaData } = { ...existing, ...req.body, id: existing.id };
+        fs.writeFileSync(filePath, JSON.stringify(personaData, null, 2));
+        if (promptContent && personaData.promptFile)
+            fs.writeFileSync(path.join(PROMPTS_DIR, personaData.promptFile), promptContent);
         res.json({ success: true, persona: personaData });
     }
     catch (e) {
-        console.error('[Gateway] Failed to update persona:', e);
         res.status(500).json({ error: e.message });
     }
 });
-// Delete persona
-app.delete('/api/personas/:id', (req, res) => {
-    try {
-        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-        const filePath = path.join(PERSONAS_DIR, `${id}.json`);
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: `Persona ${id} not found` });
-        }
-        // Read persona to get prompt file
-        const persona = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        // Delete persona config file
-        fs.unlinkSync(filePath);
-        // Optionally delete prompt file (commented out for safety)
-        // if (persona.promptFile) {
-        //     const promptPath = path.join(PROMPTS_DIR, persona.promptFile);
-        //     if (fs.existsSync(promptPath)) {
-        //         fs.unlinkSync(promptPath);
-        //     }
-        // }
-        console.log(`[Gateway] Deleted persona: ${id}`);
-        res.json({ success: true, message: `Persona ${id} deleted` });
-    }
-    catch (e) {
-        console.error('[Gateway] Failed to delete persona:', e);
-        res.status(500).json({ error: e.message });
-    }
-});
-// System Status endpoint
-app.get('/api/system/status', (req, res) => {
-    const awsConnected = !!(process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID);
-    res.json({
-        aws: awsConnected ? 'connected' : 'error',
-        region: process.env.AWS_REGION || process.env.NOVA_AWS_REGION || 'unknown'
-    });
-});
-app.post('/api/system/debug', (req, res) => {
-    const { enabled } = req.body;
-    process.env.DEBUG = enabled ? 'true' : 'false';
-    console.log(`[Gateway] Debug mode set to: ${enabled}`);
-    res.json({ success: true, debug: enabled });
-});
-app.post('/api/system/reset', async (req, res) => {
-    console.log('[Gateway] Initiating System Reset (Stubs only)...');
-    res.json({ success: true, message: 'System reset initiated (stub)' });
-});
-// Prompts endpoint (with Langfuse fetch logic)
+// Prompts
 app.get('/api/prompts', async (req, res) => {
     try {
         const files = fs.readdirSync(PROMPTS_DIR).filter(f => f.endsWith('.txt'));
-        if (files.length === 0) {
-            console.log('[Gateway] No local prompts found, forcing sync...');
-            // In a real app we'd wait for sync or return empty
-        }
         const prompts = files.map(f => {
             const content = fs.readFileSync(path.join(PROMPTS_DIR, f), 'utf-8');
-            let displayName = f.replace('.txt', '');
-            if (displayName.startsWith('core-')) {
-                displayName = 'Core ' + displayName.substring(5).replace(/_/g, ' ');
-            }
-            else if (displayName.startsWith('persona-')) {
-                displayName = 'Persona ' + displayName.substring(8).replace(/_/g, ' ');
-            }
-            else {
-                displayName = displayName.replace(/_/g, ' ');
-            }
-            displayName = displayName.replace(/\b\w/g, l => l.toUpperCase());
-            return {
-                id: f.replace('.txt', ''),
-                name: displayName,
-                content: content,
-                source: 'local'
-            };
+            return { id: f.replace('.txt', ''), name: f.replace('.txt', '').replace(/_/g, ' '), content, source: 'local' };
         });
         res.json(prompts);
     }
@@ -560,378 +284,391 @@ app.get('/api/prompts', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
-app.post('/api/prompts/sync', async (req, res) => {
+// System
+app.get('/api/system/status', (req, res) => {
+    res.json({ aws: (process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID) ? 'connected' : 'error', region: process.env.AWS_REGION || process.env.NOVA_AWS_REGION || 'unknown' });
+});
+app.get('/api/agents', async (req, res) => {
     try {
-        // Trigger sync - simplified implementation
-        console.log('[Gateway] Syncing prompts with Langfuse...');
-        // @ts-ignore
-        const response = await langfuse.api.promptsList({ limit: 100 });
-        if (response && response.data) {
-            for (const p of response.data) {
-                try {
-                    const prompt = await langfuse.getPrompt(p.name);
-                    const content = prompt.compile();
-                    fs.writeFileSync(path.join(PROMPTS_DIR, `${p.name}.txt`), content);
-                }
-                catch (err) {
-                    console.error(`[Gateway] Failed to sync prompt ${p.name}:`, err);
-                }
-            }
-        }
-        res.json({ success: true });
+        res.json(await registry.getAllAgents());
     }
     catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
-// Stub endpoints for remaining ones
-app.get('/api/tests', (req, res) => res.json([]));
-app.get('/api/presets', (req, res) => res.json([]));
-app.get('/api/knowledge-bases', (req, res) => res.json([]));
-// Create HTTP server
+app.get('/api/tools', (req, res) => {
+    try {
+        const files = fs.readdirSync(TOOLS_DIR).filter(f => f.endsWith('.json'));
+        const tools = files.map(f => {
+            const content = readJsonFile(path.join(TOOLS_DIR, f), {});
+            return { id: f, name: content.toolSpec?.name || f, description: content.toolSpec?.description || '' };
+        });
+        res.json(tools);
+    }
+    catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+// create HTTP and WebSocket servers
 const server = (0, http_1.createServer)(app);
-// WebSocket server
 const wss = new ws_1.WebSocketServer({ server, path: '/sonic' });
-// Active WebSocket connections
 const activeConnections = new Map();
-wss.on('connection', async (ws) => {
+wss.on('connection', async (clientWs) => {
     const sessionId = (0, uuid_1.v4)();
-    activeConnections.set(sessionId, ws);
+    activeConnections.set(sessionId, clientWs);
     console.log(`[Gateway] New WebSocket connection: ${sessionId}`);
-    // Store selected workflow for this session
-    let selectedWorkflowId = 'triage'; // Default to triage
-    // Send confirmation to frontend immediately
-    ws.send(JSON.stringify({
-        type: 'connected',
-        sessionId: sessionId,
-        timestamp: Date.now()
-    }));
-    console.log(`[Gateway] Sent 'connected' confirmation to frontend`);
-    // Create Langfuse trace for this session
-    const trace = langfuse.trace({
-        name: 'a2a-session',
-        sessionId: sessionId,
-        metadata: {
-            initialAgent: selectedWorkflowId,
-            timestamp: Date.now()
-        }
-    });
-    const traceId = trace.id;
-    console.log(`[Gateway] Created Langfuse trace: ${traceId}`);
-    // Wait for workflow selection before routing
+    let selectedWorkflowId = 'triage';
     let agentWs = null;
     let currentAgent = null;
     let sessionInitialized = false;
-    let isInitializing = false; // Prevent concurrent initialization
-    const connectToAgent = async (agent) => {
-        // Close existing connection if any
-        if (agentWs) {
+    let isInitializing = false;
+    let isHandingOff = false;
+    const messageQueue = [];
+    clientWs.send(JSON.stringify({ type: 'connected', sessionId: sessionId, timestamp: Date.now() }));
+    const trace = langfuse.trace({
+        name: 'a2a-session',
+        sessionId: sessionId,
+        metadata: { initialAgent: selectedWorkflowId, timestamp: Date.now() }
+    });
+    const traceId = trace.id;
+    const transcriptDedupe = new Set();
+    const connectToAgent = (agent) => {
+        return new Promise((resolve, reject) => {
+            const oldWs = agentWs;
             try {
-                agentWs.removeAllListeners();
-                // Only close if not already closed/closing
-                if (agentWs.readyState === ws_1.WebSocket.OPEN || agentWs.readyState === ws_1.WebSocket.CONNECTING) {
-                    agentWs.close();
-                }
-            }
-            catch (error) {
-                console.warn(`[Gateway] Error closing previous agent connection:`, error);
-            }
-            agentWs = null;
-        }
-        try {
-            console.log(`[Gateway] Routing session ${sessionId} to agent: ${agent.id}`);
-            const agentUrl = agent.url.replace('http://', 'ws://').replace('https://', 'wss://');
-            agentWs = new ws_1.WebSocket(`${agentUrl}/session`);
-            // Add error handler immediately to prevent unhandled errors
-            agentWs.on('error', (error) => {
-                console.error(`[Gateway] Agent ${agent.id} WebSocket error:`, error);
-            });
-            agentWs.on('open', () => {
-                console.log(`[Gateway] Connected to agent: ${agent.id}`);
-                // Get current session memory to pass to new agent
-                router.getMemory(sessionId).then(memory => {
-                    // Send session initialization with trace context and memory
-                    agentWs.send(JSON.stringify({
-                        type: 'session_init',
-                        sessionId,
-                        traceId, // Pass trace ID to agent
-                        memory: memory || {}, // Pass session memory to agent
-                        graphState: memory?.graphState, // Pass full graph state if available
-                        timestamp: Date.now()
-                    }));
-                    if (memory && memory.verified) {
-                        console.log(`[Gateway] Passed verified user to agent ${agent.id}: ${memory.userName}`);
+                console.log(`[Gateway] Routing session ${sessionId} to agent: ${agent.id}`);
+                const agentUrl = agent.url.replace('http://', 'ws://').replace('https://', 'wss://');
+                const ws = new ws_1.WebSocket(`${agentUrl}/session`);
+                const timeout = setTimeout(() => {
+                    if (ws.readyState !== ws_1.WebSocket.OPEN) {
+                        ws.close();
+                        reject(new Error(`Agent ${agent.id} connection timeout`));
                     }
-                    if (memory?.graphState) {
-                        console.log(`[Gateway] Passed graphState to agent ${agent.id} (${Object.keys(memory.graphState.context || {}).length} context keys)`);
+                }, 5000);
+                ws.on('error', (error) => { clearTimeout(timeout); reject(error); });
+                ws.on('open', () => {
+                    clearTimeout(timeout);
+                    console.log(`[Gateway] Connected to agent: ${agent.id}`);
+                    // Seamless swap: Update pointer and only then close old connection
+                    agentWs = ws;
+                    if (oldWs) {
+                        setTimeout(() => {
+                            try {
+                                oldWs.removeAllListeners();
+                                if (oldWs.readyState === ws_1.WebSocket.OPEN || oldWs.readyState === ws_1.WebSocket.CONNECTING)
+                                    oldWs.close();
+                            }
+                            catch (e) { }
+                        }, 500);
+                    }
+                    router.getMemory(sessionId).then(async (memory) => {
+                        console.log(`[Gateway] Sending session_init to ${agent.id} with memory:`, JSON.stringify(memory).substring(0, 200));
+                        ws.send(JSON.stringify({ type: 'session_init', sessionId, traceId, memory: memory || {}, graphState: memory?.graphState, timestamp: Date.now() }));
+                        // CRITICAL: Wait for agent to initialize session before flushing buffer
+                        // This prevents "Session not found" errors
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        // Buffer flush
+                        console.log(`[Gateway] Flushing ${messageQueue.length} buffered messages to ${agent.id}`);
+                        while (messageQueue.length > 0) {
+                            const msg = messageQueue.shift();
+                            if (msg && ws.readyState === ws_1.WebSocket.OPEN)
+                                ws.send(msg.data, { binary: msg.isBinary });
+                        }
+                        // REMOVED: Gateway handoff trigger - agents now use auto-trigger instead
+                        // This prevents duplicate messages and race conditions
+                        // Agents will auto-trigger based on their own logic after session_init
+                        resolve();
+                    }).catch(reject);
+                });
+                ws.on('message', async (data, isBinary) => {
+                    if (clientWs.readyState === ws_1.WebSocket.OPEN) {
+                        try {
+                            if (!isBinary) {
+                                const message = JSON.parse(data.toString());
+                                const handoffTools = ['transfer_to_idv', 'transfer_to_banking', 'transfer_to_disputes', 'transfer_to_investigation', 'transfer_to_mortgage', 'return_to_triage'];
+                                // Anti-duplication for transcripts
+                                if (message.type === 'transcript' && message.id) {
+                                    if (transcriptDedupe.has(message.id))
+                                        return;
+                                    transcriptDedupe.add(message.id);
+                                    // Periodic cleanup
+                                    if (transcriptDedupe.size > 100) {
+                                        const first = transcriptDedupe.values().next().value;
+                                        if (first)
+                                            transcriptDedupe.delete(first);
+                                    }
+                                }
+                                // Identity Synthesis: Intercept IDV results to update central memory
+                                if (message.type === 'tool_result' && message.toolName === 'perform_idv_check') {
+                                    // Parse the nested result structure
+                                    let idvResult = message.result;
+                                    // Handle nested content structure: {content: [{text: "..."}]}
+                                    if (idvResult?.content && Array.isArray(idvResult.content) && idvResult.content[0]?.text) {
+                                        try {
+                                            idvResult = JSON.parse(idvResult.content[0].text);
+                                        }
+                                        catch (e) {
+                                            console.warn(`[Gateway] Failed to parse IDV result text:`, e);
+                                        }
+                                    }
+                                    if (message.success && idvResult?.auth_status === 'VERIFIED') {
+                                        console.log(`[Gateway] ✅ Detected successful IDV. Syncing memory and triggering auto-route to banking.`);
+                                        console.log(`[Gateway]    Customer: ${idvResult.customer_name}, Account: ${idvResult.account}`);
+                                        // Update memory with verified credentials
+                                        await router.updateMemory(sessionId, {
+                                            verified: true,
+                                            userName: idvResult.customer_name,
+                                            account: idvResult.account,
+                                            sortCode: idvResult.sortCode
+                                        });
+                                        // VERIFIED STATE GATE: Automatically route to banking after successful verification
+                                        // This implements the "state gate" pattern where the system handles routing
+                                        console.log(`[Gateway] 🚪 VERIFIED STATE GATE: Auto-routing to banking agent`);
+                                        // Wait for IDV agent to finish speaking, then route to banking
+                                        setTimeout(async () => {
+                                            const bankingAgent = await registry.getAgent('banking');
+                                            if (bankingAgent) {
+                                                currentAgent = bankingAgent;
+                                                isHandingOff = true;
+                                                try {
+                                                    await connectToAgent(bankingAgent);
+                                                    // Inform client of automatic handoff
+                                                    clientWs.send(JSON.stringify({
+                                                        type: 'handoff_event',
+                                                        target: 'banking',
+                                                        reason: 'verified_state_gate',
+                                                        timestamp: Date.now()
+                                                    }));
+                                                }
+                                                catch (err) {
+                                                    console.error(`[Gateway] Auto-route to banking failed:`, err);
+                                                }
+                                                finally {
+                                                    isHandingOff = false;
+                                                }
+                                            }
+                                        }, 2000); // Wait 2 seconds for IDV agent to finish speaking
+                                    }
+                                }
+                                if (message.type === 'tool_use' && handoffTools.includes(message.toolName)) {
+                                    console.log(`[Gateway] 🔄 HANDOFF TOOL DETECTED: ${message.toolName} (waiting for result...)`);
+                                    // Don't intercept yet - wait for tool_result to confirm success
+                                    // This prevents intercepting blocked handoffs
+                                }
+                                if (message.type === 'tool_result' && handoffTools.includes(message.toolName)) {
+                                    // Only intercept if the handoff was successful
+                                    if (!message.success || message.error) {
+                                        console.log(`[Gateway] ⚠️  Handoff ${message.toolName} failed or blocked: ${message.error || 'unknown error'}`);
+                                        // Forward the error to client but don't intercept
+                                        clientWs.send(data, { binary: isBinary });
+                                        return;
+                                    }
+                                    console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName} (confirmed successful)`);
+                                    // SHIELD current agent from any more user input immediately
+                                    isHandingOff = true;
+                                    // Wait for agent to finish speaking (if it had more to say) then swap
+                                    setTimeout(async () => {
+                                        const targetId = message.toolName.replace('transfer_to_', '').replace('return_to_', '');
+                                        const targetAgent = await registry.getAgent(targetId);
+                                        if (targetAgent) {
+                                            currentAgent = targetAgent;
+                                            try {
+                                                await connectToAgent(targetAgent);
+                                            }
+                                            catch (err) {
+                                                console.error(`[Gateway] Handoff failed:`, err);
+                                                isHandingOff = false; // Reset if failed
+                                            }
+                                            finally {
+                                                isHandingOff = false;
+                                            }
+                                        }
+                                        else {
+                                            isHandingOff = false;
+                                        }
+                                    }, 1500); // reduced to 1.5s for snappier transition
+                                    // Inform client of handoff for UI/logging
+                                    clientWs.send(JSON.stringify({
+                                        type: 'handoff_event',
+                                        target: message.toolName.replace('transfer_to_', ''),
+                                        timestamp: Date.now()
+                                    }));
+                                    return;
+                                }
+                                if (message.type === 'update_memory') {
+                                    router.updateMemory(sessionId, message.memory);
+                                    return;
+                                }
+                            }
+                        }
+                        catch (e) { }
+                        // Strict output management to prevent echo
+                        if (agentWs === ws) {
+                            clientWs.send(data, { binary: isBinary });
+                        }
                     }
                 });
-            });
-            // Handle messages from agent
-            agentWs.on('message', async (data) => {
-                try {
-                    const message = JSON.parse(data.toString());
-                    console.log(`[Gateway] Received from agent ${agent.id}:`, message.type);
-                    // Handle memory updates from agents
-                    if (message.type === 'update_memory') {
-                        console.log(`[Gateway] Updating session memory:`, message.memory);
-                        await router.updateMemory(sessionId, message.memory);
-                        return; // Don't forward to client
-                    }
-                    // INTERCEPT Hand-off requests!
-                    if (message.type === 'handoff_request') {
-                        console.log(`[Gateway] Handoff requested: ${agent.id} -> ${message.targetAgentId}`);
-                        // Get current session memory
-                        const sessionMemory = await router.getMemory(sessionId);
-                        // Update memory with handoff context
-                        if (message.context) {
-                            const updates = {
-                                lastAgent: agent.id
-                            };
-                            // PERSIST GRAPH STATE
-                            if (message.graphState) {
-                                updates.graphState = message.graphState;
-                                console.log(`[Gateway] 📦 Captured graphState for handoff from ${agent.id}`);
-                            }
-                            // Handle return to triage
-                            if (message.context.isReturn) {
-                                updates.taskCompleted = message.context.taskCompleted;
-                                updates.conversationSummary = message.context.summary;
-                                // CRITICAL: Clear the user intent since the task is complete
-                                updates.userIntent = undefined;
-                                console.log(`[Gateway] Return handoff - Task: ${updates.taskCompleted}`);
-                                console.log(`[Gateway] ✅ Cleared user intent (task complete)`);
-                                // CRITICAL: Store IDV failure status in graphState
-                                console.log(`[Gateway] Checking for IDV failure: idvFailed=${message.context.idvFailed}`);
-                                if (message.context.idvFailed) {
-                                    if (!updates.graphState) {
-                                        updates.graphState = sessionMemory?.graphState || {};
-                                    }
-                                    updates.graphState.idvFailed = true;
-                                    console.log(`[Gateway] ⚠️  Stored IDV failure status in graphState`);
-                                }
-                                else {
-                                    console.log(`[Gateway] No IDV failure flag in context`);
-                                }
-                            }
-                            else {
-                                // Store user intent from handoff reason
-                                // CRITICAL: Preserve ORIGINAL intent through verification flows (IDV)
-                                // BUT allow Triage to set NEW intents (since it's the routing agent)
-                                if (message.context.reason) {
-                                    const isFromTriage = agent.id === 'triage';
-                                    const hasExistingIntent = sessionMemory && sessionMemory.userIntent;
-                                    if (!hasExistingIntent || isFromTriage) {
-                                        updates.userIntent = message.context.reason;
-                                        console.log(`[Gateway] ${hasExistingIntent ? 'UPDATING' : 'Storing NEW'} user intent: ${message.context.reason}`);
-                                    }
-                                    else {
-                                        console.log(`[Gateway] Preserving ORIGINAL user intent: ${sessionMemory.userIntent} (not overwriting with: ${message.context.reason})`);
-                                    }
-                                }
-                                // Store last user message
-                                if (message.context.lastUserMessage) {
-                                    updates.lastUserMessage = message.context.lastUserMessage;
-                                }
-                            }
-                            await router.updateMemory(sessionId, updates);
-                        }
-                        // Tag handoff event in Langfuse
-                        trace.event({
-                            name: 'a2a-handoff',
-                            metadata: {
-                                from: agent.id,
-                                to: message.targetAgentId,
-                                reason: message.context?.reason || message.context?.summary || 'unknown',
-                                isReturn: message.context?.isReturn || false,
-                                sessionId: sessionId,
-                                sessionMemory: sessionMemory
-                            }
-                        });
-                        // 1. Update session in Redis
-                        await router.transferSession(sessionId, message.targetAgentId, message.context);
-                        // 2. Resolve new agent
-                        const nextAgent = await router.routeToAgent(sessionId);
-                        if (nextAgent) {
-                            currentAgent = nextAgent;
-                            // 3. Re-route!
-                            await connectToAgent(nextAgent);
-                        }
-                        else {
-                            console.error(`[Gateway] Target agent ${message.targetAgentId} not found for handoff`);
-                        }
-                        return;
-                    }
-                    // Forward all other messages to client
-                    console.log(`[Gateway] Forwarding ${message.type} to client`);
-                    if (ws.readyState === ws_1.WebSocket.OPEN) {
-                        ws.send(data);
-                    }
-                    else {
-                        console.warn(`[Gateway] Cannot forward ${message.type}, client WebSocket not open`);
-                    }
-                }
-                catch (e) {
-                    // If not JSON, just forward (binary audio etc)
-                    if (ws.readyState === ws_1.WebSocket.OPEN) {
-                        ws.send(data);
-                    }
-                }
-            });
-            agentWs.on('close', () => {
-                console.log(`[Gateway] Agent ${agent.id} closed connection for session ${sessionId}`);
-            });
-            agentWs.on('error', (error) => {
-                console.error(`[Gateway] Agent ${agent.id} WebSocket error:`, error);
-            });
-        }
-        catch (error) {
-            console.error(`[Gateway] Failed to connect to agent ${agent.id}:`, error);
-            ws.send(JSON.stringify({
-                type: 'error',
-                message: `Failed to connect to agent ${agent.id}`
-            }));
-        }
-    };
-    // Forward messages from client to current agent
-    ws.on('message', async (data, isBinary) => {
-        try {
-            const message = JSON.parse(data.toString());
-            // Parse text_input messages for account details and intent
-            if (message.type === 'text_input' && message.text) {
-                const parsed = (0, intent_parser_1.parseUserMessage)(message.text);
-                // Store account details and intent in memory if found
-                if (parsed.hasAccountDetails || parsed.intent) {
-                    const updates = {};
-                    const currentMemory = await router.getMemory(sessionId);
-                    // CRITICAL: When user provides account details, ALWAYS UPDATE them
-                    // This handles both initial input AND retry corrections
-                    if (parsed.accountNumber) {
-                        const isUpdate = currentMemory?.account && currentMemory.account !== parsed.accountNumber;
-                        updates.account = parsed.accountNumber;
-                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} account number: ${parsed.accountNumber}${isUpdate ? ` (was: ${currentMemory.account})` : ''}`);
-                        // CRITICAL: Update userIntent to reflect the corrected account
-                        if (isUpdate && currentMemory?.userIntent && currentMemory?.account) {
-                            // Replace old account number in intent with new one
-                            const updatedIntent = currentMemory.userIntent.replace(currentMemory.account, parsed.accountNumber);
-                            updates.userIntent = updatedIntent;
-                            console.log(`[Gateway] 📝 Updated userIntent to reflect corrected account: ${updatedIntent}`);
-                        }
-                    }
-                    if (parsed.sortCode) {
-                        const isUpdate = currentMemory?.sortCode && currentMemory.sortCode !== parsed.sortCode;
-                        updates.sortCode = parsed.sortCode;
-                        console.log(`[Gateway] 📝 ${isUpdate ? 'UPDATED' : 'Extracted'} sort code: ${parsed.sortCode}${isUpdate ? ` (was: ${currentMemory.sortCode})` : ''}`);
-                    }
-                    if (parsed.intent) {
-                        // Only store intent if we don't already have one
-                        if (!currentMemory?.userIntent) {
-                            updates.userIntent = parsed.intent;
-                            console.log(`[Gateway] 📝 Extracted intent: ${parsed.intent}`);
-                        }
-                    }
-                    // Store the original user message
-                    updates.lastUserMessage = message.text;
-                    if (Object.keys(updates).length > 0) {
-                        await router.updateMemory(sessionId, updates);
-                        console.log(`[Gateway] ✅ Stored ${Object.keys(updates).length} items in memory`);
-                    }
-                }
+                ws.on('close', () => {
+                    console.log(`[Gateway] Agent WebSocket closed for session: ${sessionId}`);
+                    if (agentWs === ws)
+                        agentWs = null;
+                });
             }
-            // Handle workflow selection
-            if (message.type === 'select_workflow') {
-                console.log(`[Gateway] Workflow selected: ${message.workflowId}`);
-                selectedWorkflowId = message.workflowId || 'triage';
-                // Initialize session with selected workflow
-                if (!sessionInitialized && !isInitializing) {
+            catch (error) {
+                reject(error);
+            }
+        });
+    };
+    clientWs.on('message', async (data) => {
+        try {
+            const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B;
+            if (!isBinary) {
+                const message = JSON.parse(data.toString());
+                console.log(`[Gateway] Received JSON message from client:`, message.type);
+                // Proactive extraction of credentials and intent
+                if (message.type === 'text_input' && message.text) {
+                    console.log(`[Gateway] Text input received: "${message.text}"`);
+                    // CRITICAL FIX: Forward text_input to agent FIRST, before memory update
+                    // This ensures the agent receives and can process the user's message
+                    if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN && !isHandingOff) {
+                        console.log(`[Gateway] Forwarding text_input to agent FIRST`);
+                        agentWs.send(data, { binary: isBinary });
+                    }
+                    else if (isInitializing || isHandingOff || (agentWs && agentWs.readyState === ws_1.WebSocket.CONNECTING)) {
+                        console.log(`[Gateway] Buffering text_input (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
+                        messageQueue.push({ data, isBinary });
+                    }
+                    // THEN extract credentials and update memory
+                    const parsed = (0, intent_parser_1.parseUserMessage)(message.text);
+                    if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
+                        const currentMemory = await router.getMemory(sessionId);
+                        const updates = {};
+                        if (parsed.accountNumber)
+                            updates.account = parsed.accountNumber;
+                        if (parsed.sortCode)
+                            updates.sortCode = parsed.sortCode;
+                        if (parsed.intent && !currentMemory?.userIntent)
+                            updates.userIntent = parsed.intent;
+                        updates.lastUserMessage = message.text;
+                        if (Object.keys(updates).length > 0) {
+                            await router.updateMemory(sessionId, updates);
+                            const finalMemory = await router.getMemory(sessionId);
+                            if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {
+                                console.log(`[Gateway] Sending memory_update AFTER text_input`);
+                                agentWs.send(JSON.stringify({
+                                    type: 'memory_update',
+                                    sessionId,
+                                    memory: finalMemory,
+                                    graphState: finalMemory?.graphState,
+                                    timestamp: Date.now()
+                                }));
+                            }
+                        }
+                    }
+                    // IMPORTANT: Return here to prevent duplicate forwarding below
+                    return;
+                }
+                if (message.type === 'select_workflow') {
+                    selectedWorkflowId = message.workflowId || 'triage';
+                    if (!sessionInitialized && !isInitializing) {
+                        isInitializing = true;
+                        try {
+                            await router.createSession(sessionId, selectedWorkflowId);
+                            const agent = await router.routeToAgent(sessionId);
+                            if (agent) {
+                                currentAgent = agent;
+                                await connectToAgent(agent);
+                                sessionInitialized = true;
+                            }
+                        }
+                        finally {
+                            isInitializing = false;
+                        }
+                    }
+                    return;
+                }
+                if (message.type === 'ping') {
+                    clientWs.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                    return;
+                }
+                if (!sessionInitialized && !isInitializing && !isHandingOff) {
+                    console.log(`[Gateway] Session not initialized, initializing now...`);
                     isInitializing = true;
                     try {
-                        const session = await router.createSession(sessionId, selectedWorkflowId);
+                        await router.createSession(sessionId, selectedWorkflowId);
                         const agent = await router.routeToAgent(sessionId);
-                        if (!agent) {
-                            console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                            ws.send(JSON.stringify({
-                                type: 'error',
-                                message: `No agent available for ${selectedWorkflowId}. Please try again later.`
-                            }));
-                            isInitializing = false;
-                            return;
+                        if (agent) {
+                            currentAgent = agent;
+                            await connectToAgent(agent);
+                            sessionInitialized = true;
                         }
-                        currentAgent = agent;
-                        await connectToAgent(agent);
-                        sessionInitialized = true;
                     }
                     finally {
                         isInitializing = false;
                     }
                 }
-                return;
             }
-            // Handle special gateway commands
-            if (message.type === 'ping') {
-                ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-                return;
-            }
-            // Initialize with default workflow if not yet initialized
-            if (!sessionInitialized && !isInitializing) {
-                isInitializing = true;
-                try {
-                    console.log(`[Gateway] Auto-initializing with default workflow: ${selectedWorkflowId}`);
-                    const session = await router.createSession(sessionId, selectedWorkflowId);
-                    const agent = await router.routeToAgent(sessionId);
-                    if (!agent) {
-                        console.error(`[Gateway] No agent available for workflow: ${selectedWorkflowId}`);
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: 'No agents available. Please try again later.'
-                        }));
-                        isInitializing = false;
-                        return;
-                    }
-                    currentAgent = agent;
-                    await connectToAgent(agent);
-                    sessionInitialized = true;
-                }
-                finally {
-                    isInitializing = false;
-                }
-            }
-            // Forward to current agent
-            if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {
+            // Forward or buffer based on state
+            if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN && !isHandingOff) {
+                console.log(`[Gateway] Forwarding message to agent (binary: ${isBinary})`);
                 agentWs.send(data, { binary: isBinary });
+            }
+            else if (isInitializing || isHandingOff || (agentWs && agentWs.readyState === ws_1.WebSocket.CONNECTING)) {
+                // Buffer user input during transtions
+                console.log(`[Gateway] Buffering message (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
+                messageQueue.push({ data, isBinary });
+            }
+            else {
+                console.log(`[Gateway] Cannot forward message - no agent connection`);
             }
         }
         catch (error) {
-            // Forward non-JSON (audio) to current agent
-            if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {
-                agentWs.send(data, { binary: isBinary });
+            console.error(`[Gateway] Error processing message:`, error);
+            // audio usually
+            if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN && !isHandingOff) {
+                agentWs.send(data, { binary: true });
+            }
+            else if (isInitializing || isHandingOff) {
+                messageQueue.push({ data, isBinary: true });
             }
         }
     });
-    // Handle client disconnection
-    ws.on('close', async () => {
-        console.log(`[Gateway] Client disconnected: ${sessionId}`);
+    clientWs.on('close', async (code, reason) => {
+        console.log(`[Gateway] Client WebSocket closed: code=${code}, reason=${reason?.toString() || 'none'}, sessionId=${sessionId}`);
         activeConnections.delete(sessionId);
-        // Close agent connection
+        // CRITICAL FIX: Add grace period for agent to finish processing
+        // Don't close agent WebSocket immediately - give it time to complete operations
         if (agentWs) {
-            agentWs.close();
+            console.log(`[Gateway] Waiting 10 seconds for agent to finish processing before closing...`);
+            // Set a flag to prevent new messages from being forwarded
+            isHandingOff = true;
+            // Wait for agent to finish processing (or timeout after 10 seconds)
+            setTimeout(() => {
+                console.log(`[Gateway] Grace period expired, closing agent WebSocket for session: ${sessionId}`);
+                try {
+                    if (agentWs && agentWs.readyState === ws_1.WebSocket.OPEN) {
+                        agentWs.close();
+                    }
+                }
+                catch (e) {
+                    console.error(`[Gateway] Error closing agent WebSocket:`, e);
+                }
+            }, 10000); // 10 second grace period
         }
-        // Clean up session (with delay to allow for reconnection)
+        // Clean up session after grace period + buffer
         setTimeout(async () => {
             await router.deleteSession(sessionId);
-        }, 60000); // 1 minute grace period
+        }, 70000); // 70 seconds total (10s grace + 60s buffer)
     });
-    ws.on('error', (error) => {
-        console.error('[Gateway] WebSocket error:', error);
+    clientWs.on('error', (error) => {
+        console.error('[Gateway] Client WebSocket error:', error);
     });
 });
-// Start server with retry logic
 async function start() {
     const maxRetries = 10;
     let retryCount = 0;
     while (retryCount < maxRetries) {
         try {
-            console.log(`[Gateway] Attempting to connect to Redis (attempt ${retryCount + 1}/${maxRetries})...`);
             await registry.connect();
             await router.connect();
             console.log('[Gateway] Successfully connected to Redis');
@@ -939,33 +676,23 @@ async function start() {
         }
         catch (error) {
             retryCount++;
-            if (retryCount >= maxRetries) {
-                console.error('[Gateway] Failed to connect to Redis after max retries');
+            if (retryCount >= maxRetries)
                 process.exit(1);
-            }
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
-            console.log(`[Gateway] Redis connection failed, retrying in ${delay}ms...`);
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`[Gateway] HTTP server listening on port ${PORT}`);
-        console.log(`[Gateway] WebSocket endpoint: ws://localhost:${PORT}/sonic`);
-        console.log(`[Gateway] Health check: http://localhost:${PORT}/health`);
-    });
+    server.listen(PORT, '0.0.0.0', () => console.log(`[Gateway] Listening on ${PORT}`));
 }
-// Graceful shutdown
 process.on('SIGINT', async () => {
-    console.log('\n[Gateway] Shutting down gracefully...');
-    // Close all WebSocket connections
-    for (const [sessionId, ws] of activeConnections) {
-        ws.close();
+    for (const [id, ws] of activeConnections) {
+        try {
+            ws.close();
+        }
+        catch (e) { }
     }
     await registry.close();
     await router.close();
-    server.close(() => {
-        console.log('[Gateway] Server closed');
-        process.exit(0);
-    });
+    server.close(() => process.exit(0));
 });
 start();

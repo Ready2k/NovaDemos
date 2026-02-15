@@ -304,30 +304,30 @@ wss.on('connection', async (clientWs: WebSocket) => {
                     }
 
                     router.getMemory(sessionId).then(async (memory) => {
+                        console.log(`[Gateway] Sending session_init to ${agent.id} with memory:`, JSON.stringify(memory).substring(0, 200));
+                        
                         ws.send(JSON.stringify({ type: 'session_init', sessionId, traceId, memory: memory || {}, graphState: memory?.graphState, timestamp: Date.now() }));
 
+                        // CRITICAL: Wait for agent to initialize session before flushing buffer
+                        // This prevents "Session not found" errors
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+
                         // Buffer flush
+                        console.log(`[Gateway] Flushing ${messageQueue.length} buffered messages to ${agent.id}`);
                         while (messageQueue.length > 0) {
                             const msg = messageQueue.shift();
                             if (msg && ws.readyState === WebSocket.OPEN) ws.send(msg.data, { binary: msg.isBinary });
                         }
 
-                        // Proactive trigger for the new agent to speak first
-                        if (isHandingOff) {
-                            console.log(`[Gateway] Sending handoff trigger to agent: ${agent.id}`);
-                            ws.send(JSON.stringify({
-                                type: 'text_input',
-                                text: '[System: User has been transferred to you. Please greet them and proceed with the verification or task.]',
-                                skipTranscript: true,
-                                timestamp: Date.now()
-                            }));
-                        }
+                        // REMOVED: Gateway handoff trigger - agents now use auto-trigger instead
+                        // This prevents duplicate messages and race conditions
+                        // Agents will auto-trigger based on their own logic after session_init
 
                         resolve();
                     }).catch(reject);
                 });
 
-                ws.on('message', (data: Buffer, isBinary: boolean) => {
+                ws.on('message', async (data: Buffer, isBinary: boolean) => {
                     if (clientWs.readyState === WebSocket.OPEN) {
                         try {
                             if (!isBinary) {
@@ -347,32 +347,79 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                                 // Identity Synthesis: Intercept IDV results to update central memory
                                 if (message.type === 'tool_result' && message.toolName === 'perform_idv_check') {
-                                    if (message.success && message.result?.auth_status === 'VERIFIED') {
-                                        console.log(`[Gateway] ✅ Detected successful IDV. Syncing memory.`);
-                                        router.updateMemory(sessionId, {
+                                    // Parse the nested result structure
+                                    let idvResult = message.result;
+                                    
+                                    // Handle nested content structure: {content: [{text: "..."}]}
+                                    if (idvResult?.content && Array.isArray(idvResult.content) && idvResult.content[0]?.text) {
+                                        try {
+                                            idvResult = JSON.parse(idvResult.content[0].text);
+                                        } catch (e) {
+                                            console.warn(`[Gateway] Failed to parse IDV result text:`, e);
+                                        }
+                                    }
+                                    
+                                    if (message.success && idvResult?.auth_status === 'VERIFIED') {
+                                        console.log(`[Gateway] ✅ Detected successful IDV. Syncing memory and triggering auto-route to banking.`);
+                                        console.log(`[Gateway]    Customer: ${idvResult.customer_name}, Account: ${idvResult.account}`);
+                                        
+                                        // Update memory with verified credentials
+                                        await router.updateMemory(sessionId, {
                                             verified: true,
-                                            userName: message.result.customer_name,
-                                            account: message.result.account,
-                                            sortCode: message.result.sortCode
+                                            userName: idvResult.customer_name,
+                                            account: idvResult.account,
+                                            sortCode: idvResult.sortCode
                                         });
+
+                                        // VERIFIED STATE GATE: Automatically route to banking after successful verification
+                                        // This implements the "state gate" pattern where the system handles routing
+                                        console.log(`[Gateway] 🚪 VERIFIED STATE GATE: Auto-routing to banking agent`);
+                                        
+                                        // Wait for IDV agent to finish speaking, then route to banking
+                                        setTimeout(async () => {
+                                            const bankingAgent = await registry.getAgent('banking');
+                                            if (bankingAgent) {
+                                                currentAgent = bankingAgent;
+                                                isHandingOff = true;
+                                                try {
+                                                    await connectToAgent(bankingAgent);
+                                                    
+                                                    // Inform client of automatic handoff
+                                                    clientWs.send(JSON.stringify({
+                                                        type: 'handoff_event',
+                                                        target: 'banking',
+                                                        reason: 'verified_state_gate',
+                                                        timestamp: Date.now()
+                                                    }));
+                                                } catch (err) {
+                                                    console.error(`[Gateway] Auto-route to banking failed:`, err);
+                                                } finally {
+                                                    isHandingOff = false;
+                                                }
+                                            }
+                                        }, 2000); // Wait 2 seconds for IDV agent to finish speaking
                                     }
                                 }
 
                                 if (message.type === 'tool_use' && handoffTools.includes(message.toolName)) {
-                                    console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName}`);
+                                    console.log(`[Gateway] 🔄 HANDOFF TOOL DETECTED: ${message.toolName} (waiting for result...)`);
+                                    // Don't intercept yet - wait for tool_result to confirm success
+                                    // This prevents intercepting blocked handoffs
+                                }
+
+                                if (message.type === 'tool_result' && handoffTools.includes(message.toolName)) {
+                                    // Only intercept if the handoff was successful
+                                    if (!message.success || message.error) {
+                                        console.log(`[Gateway] ⚠️  Handoff ${message.toolName} failed or blocked: ${message.error || 'unknown error'}`);
+                                        // Forward the error to client but don't intercept
+                                        clientWs.send(data, { binary: isBinary });
+                                        return;
+                                    }
+
+                                    console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName} (confirmed successful)`);
 
                                     // SHIELD current agent from any more user input immediately
                                     isHandingOff = true;
-
-                                    // Acknowledge to agent so it can finish its turn properly
-                                    ws.send(JSON.stringify({
-                                        type: 'tool_result',
-                                        toolName: message.toolName,
-                                        toolUseId: message.toolUseId,
-                                        result: { status: 'handoff_initiated', target: message.toolName },
-                                        success: true,
-                                        timestamp: Date.now()
-                                    }));
 
                                     // Wait for agent to finish speaking (if it had more to say) then swap
                                     setTimeout(async () => {
@@ -415,7 +462,10 @@ wss.on('connection', async (clientWs: WebSocket) => {
                     }
                 });
 
-                ws.on('close', () => { if (agentWs === ws) agentWs = null; });
+                ws.on('close', () => { 
+                    console.log(`[Gateway] Agent WebSocket closed for session: ${sessionId}`);
+                    if (agentWs === ws) agentWs = null; 
+                });
             } catch (error) { reject(error); }
         });
     };
@@ -430,6 +480,18 @@ wss.on('connection', async (clientWs: WebSocket) => {
                 // Proactive extraction of credentials and intent
                 if (message.type === 'text_input' && message.text) {
                     console.log(`[Gateway] Text input received: "${message.text}"`);
+                    
+                    // CRITICAL FIX: Forward text_input to agent FIRST, before memory update
+                    // This ensures the agent receives and can process the user's message
+                    if (agentWs && agentWs.readyState === WebSocket.OPEN && !isHandingOff) {
+                        console.log(`[Gateway] Forwarding text_input to agent FIRST`);
+                        agentWs.send(data, { binary: isBinary });
+                    } else if (isInitializing || isHandingOff || (agentWs && agentWs.readyState === WebSocket.CONNECTING)) {
+                        console.log(`[Gateway] Buffering text_input (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
+                        messageQueue.push({ data, isBinary });
+                    }
+                    
+                    // THEN extract credentials and update memory
                     const parsed = parseUserMessage(message.text);
                     if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
                         const currentMemory = await router.getMemory(sessionId);
@@ -443,6 +505,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                             await router.updateMemory(sessionId, updates);
                             const finalMemory = await router.getMemory(sessionId);
                             if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                                console.log(`[Gateway] Sending memory_update AFTER text_input`);
                                 agentWs.send(JSON.stringify({
                                     type: 'memory_update',
                                     sessionId,
@@ -453,6 +516,9 @@ wss.on('connection', async (clientWs: WebSocket) => {
                             }
                         }
                     }
+                    
+                    // IMPORTANT: Return here to prevent duplicate forwarding below
+                    return;
                 }
 
                 if (message.type === 'select_workflow') {
@@ -500,10 +566,35 @@ wss.on('connection', async (clientWs: WebSocket) => {
         }
     });
 
-    clientWs.on('close', async () => {
+    clientWs.on('close', async (code, reason) => {
+        console.log(`[Gateway] Client WebSocket closed: code=${code}, reason=${reason?.toString() || 'none'}, sessionId=${sessionId}`);
         activeConnections.delete(sessionId);
-        if (agentWs) { try { agentWs.close(); } catch (e) { } }
-        setTimeout(async () => { await router.deleteSession(sessionId); }, 60000);
+        
+        // CRITICAL FIX: Add grace period for agent to finish processing
+        // Don't close agent WebSocket immediately - give it time to complete operations
+        if (agentWs) { 
+            console.log(`[Gateway] Waiting 10 seconds for agent to finish processing before closing...`);
+            
+            // Set a flag to prevent new messages from being forwarded
+            isHandingOff = true;
+            
+            // Wait for agent to finish processing (or timeout after 10 seconds)
+            setTimeout(() => {
+                console.log(`[Gateway] Grace period expired, closing agent WebSocket for session: ${sessionId}`);
+                try { 
+                    if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                        agentWs.close(); 
+                    }
+                } catch (e) { 
+                    console.error(`[Gateway] Error closing agent WebSocket:`, e);
+                }
+            }, 10000); // 10 second grace period
+        }
+        
+        // Clean up session after grace period + buffer
+        setTimeout(async () => { 
+            await router.deleteSession(sessionId); 
+        }, 70000); // 70 seconds total (10s grace + 60s buffer)
     });
 
     clientWs.on('error', (error) => {

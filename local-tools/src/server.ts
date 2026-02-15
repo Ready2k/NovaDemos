@@ -9,6 +9,7 @@ const AGENTCORE_GATEWAY_URL = process.env.AGENTCORE_GATEWAY_URL || 'https://agen
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || process.env.NOVA_AWS_SECRET_ACCESS_KEY;
+const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
 
 const app = express();
 app.use(express.json());
@@ -18,7 +19,10 @@ const tools = new Map<string, any>();
 
 // Check if AgentCore credentials are available
 const hasAgentCoreCredentials = !!(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY);
-if (hasAgentCoreCredentials) {
+if (USE_MOCK_DATA) {
+    console.log('[LocalTools] 🧪 MOCK MODE ENABLED - Using test data instead of AgentCore');
+    console.log('[LocalTools] ⚠️  This is for testing only - not for production use');
+} else if (hasAgentCoreCredentials) {
     console.log('[LocalTools] ✅ AgentCore credentials available - will use AgentCore Gateway');
     console.log('[LocalTools] ⚠️  NO FALLBACK DATA - AgentCore failures will throw errors');
 } else {
@@ -60,6 +64,16 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
     
     const actualToolName = gatewayTarget || toolMapping[toolName] || toolName;
     console.log(`[LocalTools] Calling AgentCore Gateway: ${actualToolName}`);
+    console.log(`[LocalTools] Input parameters:`, JSON.stringify(input, null, 2));
+    
+    // Transform input field names for AgentCore compatibility
+    // AgentCore expects 'accountId' but our tools use 'accountNumber'
+    let transformedInput = { ...input };
+    if (input.accountNumber && !input.accountId) {
+        transformedInput.accountId = input.accountNumber;
+        delete transformedInput.accountNumber;
+        console.log(`[LocalTools] Transformed accountNumber → accountId for AgentCore`);
+    }
     
     // Create JSON-RPC 2.0 payload
     const payload = {
@@ -68,9 +82,11 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
         method: "tools/call",
         params: {
             name: actualToolName,
-            arguments: input
+            arguments: transformedInput
         }
     };
+    
+    console.log(`[LocalTools] Payload:`, JSON.stringify(payload, null, 2));
     
     const url = new URL(AGENTCORE_GATEWAY_URL);
     const body = JSON.stringify(payload);
@@ -200,18 +216,228 @@ app.post('/tools/execute', async (req, res) => {
     }
 });
 
+// Mock data for testing
+function getMockData(toolName: string, input: any): any {
+    console.log(`[LocalTools] 🧪 Using mock data for ${toolName}`);
+    
+    switch (toolName) {
+        case 'perform_idv_check':
+            // Valid test account
+            if (input.accountNumber === '12345678' && input.sortCode === '112233') {
+                return {
+                    content: [{
+                        text: JSON.stringify({
+                            auth_status: 'VERIFIED',
+                            customer_name: 'Sarah Jones',
+                            account: input.accountNumber,
+                            sortCode: input.sortCode,
+                            account_status: 'OPEN',
+                            marker_Vunl: 2
+                        })
+                    }]
+                };
+            }
+            // Invalid account - any other combination
+            return {
+                content: [{
+                    text: JSON.stringify({
+                        auth_status: 'FAILED',
+                        message: 'Invalid account credentials. Please check your account number and sort code.',
+                        account: input.accountNumber,
+                        sortCode: input.sortCode
+                    })
+                }]
+            };
+            
+        case 'agentcore_balance':
+            if (input.accountNumber === '12345678' && input.sortCode === '112233') {
+                return {
+                    content: [{
+                        text: JSON.stringify({
+                            balance: 1200.00,
+                            currency: 'GBP',
+                            account: input.accountNumber,
+                            sortCode: input.sortCode,
+                            timestamp: new Date().toISOString()
+                        })
+                    }]
+                };
+            }
+            return {
+                content: [{
+                    text: JSON.stringify({
+                        error: 'Account not found',
+                        account: input.accountNumber
+                    })
+                }]
+            };
+            
+        case 'get_account_transactions':
+            if (input.accountNumber === '12345678' && input.sortCode === '112233') {
+                return {
+                    content: [{
+                        text: JSON.stringify({
+                            transactions: [
+                                // February 2026 transactions
+                                {
+                                    date: '2026-02-10',
+                                    merchant: 'Tesco Superstore',
+                                    amount: -45.67,
+                                    type: 'debit',
+                                    disputed: true,
+                                    category: 'groceries'
+                                },
+                                {
+                                    date: '2026-02-09',
+                                    merchant: 'Shell Petrol',
+                                    amount: -52.30,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'fuel'
+                                },
+                                {
+                                    date: '2026-02-08',
+                                    merchant: 'Amazon UK',
+                                    amount: -89.99,
+                                    type: 'debit',
+                                    disputed: true,
+                                    category: 'shopping'
+                                },
+                                // January 2026 transactions
+                                {
+                                    date: '2026-01-28',
+                                    merchant: 'Sainsburys',
+                                    amount: -67.45,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'groceries'
+                                },
+                                {
+                                    date: '2026-01-15',
+                                    merchant: 'Netflix',
+                                    amount: -15.99,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'entertainment'
+                                },
+                                // December 2025 transactions
+                                {
+                                    date: '2025-12-20',
+                                    merchant: 'John Lewis',
+                                    amount: -234.50,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'shopping'
+                                },
+                                {
+                                    date: '2025-12-15',
+                                    merchant: 'Marks & Spencer',
+                                    amount: -89.99,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'groceries'
+                                },
+                                // November 2025 transactions (for the test query)
+                                {
+                                    date: '2025-11-28',
+                                    merchant: 'Argos',
+                                    amount: -156.99,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'shopping'
+                                },
+                                {
+                                    date: '2025-11-25',
+                                    merchant: 'Tesco',
+                                    amount: -78.45,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'groceries'
+                                },
+                                {
+                                    date: '2025-11-20',
+                                    merchant: 'BP Petrol',
+                                    amount: -65.00,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'fuel'
+                                },
+                                {
+                                    date: '2025-11-15',
+                                    merchant: 'Boots Pharmacy',
+                                    amount: -34.50,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'health'
+                                },
+                                {
+                                    date: '2025-11-10',
+                                    merchant: 'Waitrose',
+                                    amount: -92.30,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'groceries'
+                                },
+                                {
+                                    date: '2025-11-05',
+                                    merchant: 'Costa Coffee',
+                                    amount: -12.50,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'dining'
+                                },
+                                {
+                                    date: '2025-11-03',
+                                    merchant: 'Zara',
+                                    amount: -145.00,
+                                    type: 'debit',
+                                    disputed: false,
+                                    category: 'clothing'
+                                }
+                            ],
+                            account: input.accountNumber,
+                            sortCode: input.sortCode,
+                            // Calculate November 2025 total spending
+                            summary: {
+                                november_2025_total: 584.74,
+                                november_2025_count: 7,
+                                total_transactions: 17
+                            }
+                        })
+                    }]
+                };
+            }
+            return {
+                content: [{
+                    text: JSON.stringify({
+                        transactions: [],
+                        account: input.accountNumber
+                    })
+                }]
+            };
+            
+        default:
+            throw new Error(`No mock data available for ${toolName}`);
+    }
+}
+
 // Tool execution logic
 async function executeTool(toolName: string, input: any): Promise<any> {
     console.log(`[LocalTools] Executing tool: ${toolName}`, input);
     
-    // Banking tools - MUST use AgentCore (no fallback)
+    // Banking tools - Use mock data if enabled, otherwise AgentCore
     if (toolName === 'perform_idv_check' || toolName === 'agentcore_balance' || toolName === 'get_account_transactions') {
         // Get tool definition to find gatewayTarget
         const toolDef = tools.get(toolName);
         const gatewayTarget = toolDef?.gatewayTarget;
         
+        // Use mock data if enabled
+        if (USE_MOCK_DATA) {
+            return getMockData(toolName, input);
+        }
+        
         if (!hasAgentCoreCredentials) {
-            throw new Error(`AgentCore credentials not configured. Cannot execute ${toolName}. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.`);
+            throw new Error(`AgentCore credentials not configured. Cannot execute ${toolName}. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables or enable USE_MOCK_DATA=true.`);
         }
         
         console.log(`[LocalTools] Calling AgentCore Gateway for ${toolName}...`);

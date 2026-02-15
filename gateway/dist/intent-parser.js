@@ -12,6 +12,10 @@ exports.parseUserMessage = parseUserMessage;
  * - "account 12345678 sort code 112233"
  * - "12345678, 112233"
  * - "account number is 12345678 and sort code is 112233"
+ * - "12345678" (just account number)
+ * - "112233" (just sort code)
+ *
+ * CRITICAL: Now supports PARTIAL matches - can extract just account OR just sort code
  */
 function extractAccountDetails(message) {
     const result = {
@@ -55,13 +59,40 @@ function extractAccountDetails(message) {
         result.hasAccountDetails = true;
         return result;
     }
-    // Pattern 5: Just look for 8-digit and 6-digit numbers
+    // Pattern 5: Just look for 8-digit and 6-digit numbers (both present)
     const eightDigit = message.match(/\b(\d{8})\b/);
     const sixDigit = message.match(/\b(\d{6})\b/);
     if (eightDigit && sixDigit) {
         result.accountNumber = eightDigit[1];
         result.sortCode = sixDigit[1];
         result.hasAccountDetails = true;
+        return result;
+    }
+    // CRITICAL NEW PATTERNS: Handle partial matches
+    // Pattern 6: Just account number (8 digits) with context
+    const accountOnly = /(?:account|acc|acct)\s*(?:number|no|num|#)?\s*(?:is\s+)?(\d{8})\b/i;
+    const matchAccount = message.match(accountOnly);
+    if (matchAccount) {
+        result.accountNumber = matchAccount[1];
+        // Don't set hasAccountDetails=true since we only have partial
+        return result;
+    }
+    // Pattern 7: Just sort code (6 digits) with context
+    const sortOnly = /(?:sort\s*code|sortcode)\s*(?:is\s+)?(\d{6})\b/i;
+    const matchSort = message.match(sortOnly);
+    if (matchSort) {
+        result.sortCode = matchSort[1];
+        // Don't set hasAccountDetails=true since we only have partial
+        return result;
+    }
+    // Pattern 8: Just 8 digits alone (likely account number)
+    if (eightDigit && !sixDigit) {
+        result.accountNumber = eightDigit[1];
+        return result;
+    }
+    // Pattern 9: Just 6 digits alone (likely sort code)
+    if (sixDigit && !eightDigit) {
+        result.sortCode = sixDigit[1];
         return result;
     }
     return result;

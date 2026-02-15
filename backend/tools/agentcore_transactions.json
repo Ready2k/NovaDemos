@@ -1,12 +1,12 @@
 {
   "name": "get_account_transactions",
   "description": "Returns a list of recent transactions.",
-  "input_schema": {
+  "inputSchema": {
     "type": "object",
     "properties": {
-      "accountId": {
+      "accountNumber": {
         "type": "string",
-        "description": "The unique identifier for the customer's bank account (e.g., 10-digit number)."
+        "description": "The unique 8 digit identifier for the customer's bank account."
       },
       "sortCode": {
         "type": "string",
@@ -14,11 +14,11 @@
       }
     },
     "required": [
-      "accountId",
+      "accountNumber",
       "sortCode"
     ]
   },
-  "instruction": "- Use 'agentcore_transactions' when the user asks for transaction history, recent transactions, or account activity.\n- Always require both accountId and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
+  "instruction": "- Use 'get_account_transactions' when the user asks for transaction history, recent transactions, or account activity.\n- Always require both accountNumber and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
   "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory",
   "category": "Banking"
 }

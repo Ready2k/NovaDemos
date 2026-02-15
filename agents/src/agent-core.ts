@@ -214,6 +214,7 @@ export class AgentCore {
      */
     public initializeSession(sessionId: string, memory?: any): SessionContext {
         console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId}`);
+        console.log(`[AgentCore:${this.agentId}] Memory received:`, JSON.stringify(memory, null, 2));
         
         const session: SessionContext = {
             sessionId,
@@ -379,13 +380,137 @@ export class AgentCore {
             timestamp: Date.now()
         });
         
-        // This is a placeholder - actual LLM processing would happen here
-        // In the real implementation, this would invoke the LangGraph workflow
-        // For now, we just return a simple response
-        return {
-            type: 'text',
-            content: 'Message received and processed'
-        };
+        // Generate response using Claude Sonnet
+        return await this.generateResponse(sessionId, message);
+    }
+
+    /**
+     * Generate a response using Claude Sonnet
+     * This makes Agent Core voice-agnostic - it can generate responses without Nova Sonic
+     * 
+     * @param sessionId Session identifier
+     * @param userMessage User's message
+     * @returns Agent response (text, tool_call, handoff, or error)
+     */
+    public async generateResponse(sessionId: string, userMessage: string): Promise<AgentResponse> {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            return {
+                type: 'error',
+                content: 'Session not found',
+                error: 'Session not found'
+            };
+        }
+
+        try {
+            console.log(`[AgentCore:${this.agentId}] Generating response for: "${userMessage.substring(0, 50)}..."`);
+
+            // Build system prompt with context
+            const systemPrompt = this.getSystemPrompt(sessionId);
+
+            // Build conversation history for Claude
+            const messages = this.buildClaudeMessages(session);
+
+            // Get available tools
+            const tools = this.getAllTools();
+
+            // Call Claude Sonnet via Bedrock Converse API
+            const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
+            const bedrockClient = new BedrockRuntimeClient({ 
+                region: process.env.AWS_REGION || 'us-east-1' 
+            });
+
+            const command = new ConverseCommand({
+                modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+                messages: messages,
+                system: [{ text: systemPrompt }],
+                inferenceConfig: {
+                    maxTokens: 2048,
+                    temperature: 0.7,
+                    topP: 0.9
+                },
+                toolConfig: tools.length > 0 ? {
+                    tools: tools.map(tool => ({
+                        toolSpec: tool.toolSpec
+                    }))
+                } : undefined
+            });
+
+            console.log(`[AgentCore:${this.agentId}] Calling Claude Sonnet...`);
+            const response = await bedrockClient.send(command);
+
+            // Parse response
+            if (response.output?.message) {
+                const message = response.output.message;
+
+                // Check for tool use
+                if (message.content) {
+                    for (const content of message.content) {
+                        if (content.toolUse) {
+                            console.log(`[AgentCore:${this.agentId}] Claude requested tool: ${content.toolUse.name}`);
+                            
+                            // Return tool call response
+                            return {
+                                type: 'tool_call',
+                                content: '',
+                                toolCalls: [{
+                                    toolName: content.toolUse.name,
+                                    toolUseId: content.toolUse.toolUseId,
+                                    input: content.toolUse.input,
+                                    timestamp: Date.now()
+                                }]
+                            };
+                        }
+
+                        if (content.text) {
+                            const responseText = content.text;
+                            console.log(`[AgentCore:${this.agentId}] Claude response: "${responseText.substring(0, 100)}..."`);
+
+                            // Store assistant response
+                            this.trackAssistantResponse(sessionId, responseText);
+
+                            return {
+                                type: 'text',
+                                content: responseText
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Fallback
+            return {
+                type: 'error',
+                content: 'No response from Claude',
+                error: 'Empty response'
+            };
+
+        } catch (error: any) {
+            console.error(`[AgentCore:${this.agentId}] Error generating response:`, error);
+            return {
+                type: 'error',
+                content: 'Failed to generate response',
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Build Claude-compatible message history
+     * Converts session messages to Claude's expected format
+     */
+    private buildClaudeMessages(session: SessionContext): any[] {
+        const messages: any[] = [];
+
+        // Convert session messages to Claude format
+        for (const msg of session.messages) {
+            messages.push({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: [{ text: msg.content }]
+            });
+        }
+
+        return messages;
     }
 
     /**
@@ -448,6 +573,28 @@ export class AgentCore {
         session.lastToolCallTime = now;
         
         console.log(`[AgentCore:${this.agentId}] Executing tool: ${toolName} (call ${currentCount + 1}/${MAX_TOOL_CALLS_PER_TOOL})`);
+        
+        // CRITICAL: Block Multiple Handoff Calls in Same Turn
+        // Prevents agents from calling multiple transfer tools (e.g., transfer_to_idv then transfer_to_banking)
+        // This enforces the "one handoff per turn" rule
+        if (isHandoffTool(toolName)) {
+            // Check if another handoff tool was already called in this turn
+            const handoffToolsCalledThisTurn = Array.from(session.toolCallCounts?.keys() || [])
+                .filter(key => isHandoffTool(key) && key !== toolName);
+            
+            if (handoffToolsCalledThisTurn.length > 0) {
+                console.error(`[AgentCore:${this.agentId}] ❌ BLOCKED: Multiple handoff calls in same turn`);
+                console.error(`[AgentCore:${this.agentId}]    Already called: ${handoffToolsCalledThisTurn.join(', ')}`);
+                console.error(`[AgentCore:${this.agentId}]    Attempted: ${toolName}`);
+                console.error(`[AgentCore:${this.agentId}]    Rule: Only ONE handoff tool per turn allowed`);
+                
+                return {
+                    success: false,
+                    result: null,
+                    error: `Multiple handoff calls blocked: Already called ${handoffToolsCalledThisTurn[0]} in this turn. Only one handoff tool can be called per turn. Please wait for the handoff to complete.`
+                };
+            }
+        }
         
         // CRITICAL: Duplicate IDV Call Blocking
         // Prevent LLM from calling perform_idv_check multiple times with same parameters
@@ -827,6 +974,8 @@ export class AgentCore {
     
     /**
      * Handle IDV check result and store verified user in session
+     * CRITICAL: Implements "Verified State Gate" pattern
+     * After successful verification, automatically triggers handoff to banking agent
      */
     private handleIdvResult(sessionId: string, result: any, toolInput: any): void {
         const session = this.sessions.get(sessionId);
@@ -863,10 +1012,40 @@ export class AgentCore {
                 sortCode: toolInput.sortCode,
                 auth_status: idvData.auth_status
             };
+            
+            // Update graph state with verified flag
+            if (!session.graphState) {
+                session.graphState = {};
+            }
+            session.graphState.verified = true;
+            session.graphState.customer_name = idvData.customer_name;
+            session.graphState.account = toolInput.accountNumber;
+            session.graphState.sortCode = toolInput.sortCode;
+            
             // Reset IDV attempts on success
             session.idvAttempts = 0;
             session.lastIdvFailure = undefined;
             console.log(`[AgentCore:${this.agentId}] ✅ Stored verified user: ${idvData.customer_name}`);
+            console.log(`[AgentCore:${this.agentId}] ✅ Set verified state flag: true`);
+            
+            // CRITICAL: Verified State Gate - Auto-trigger handoff to banking
+            // This removes the burden from the IDV agent to decide where to go
+            // The system handles routing based on verified state
+            if (this.agentId === 'idv') {
+                console.log(`[AgentCore:${this.agentId}] 🚀 Verified State Gate: Auto-triggering handoff to banking`);
+                
+                // Store pending handoff in session for next response
+                session.graphState.pendingHandoff = {
+                    targetAgent: 'banking',
+                    reason: 'Identity verified successfully',
+                    context: {
+                        verified: true,
+                        userName: idvData.customer_name,
+                        account: toolInput.accountNumber,
+                        sortCode: toolInput.sortCode
+                    }
+                };
+            }
         } else if (idvData && idvData.auth_status === 'FAILED') {
             // Store failure reason
             session.lastIdvFailure = idvData.message || 'Verification failed';
@@ -1129,8 +1308,12 @@ export class AgentCore {
         
         // Build context injection
         let contextInjection = '';
+        
+        // NOTE: Conversation history is now passed via messages array to Claude
+        // No need to duplicate it in the system prompt
+        
         if (session.userIntent || session.verifiedUser || session.graphState) {
-            contextInjection = '\n### CURRENT SESSION CONTEXT ###\n';
+            contextInjection += '\n### CURRENT SESSION CONTEXT ###\n';
             
             if (session.userIntent) {
                 contextInjection += `\n**User's Original Request:** ${session.userIntent}\n`;
@@ -1269,12 +1452,42 @@ export class AgentCore {
 - Be efficient and move to the next task
 `;
                 }
-            } else if (this.agentId !== 'idv') {
-                // For non-triage, non-IDV agents (banking, mortgage, etc.)
+            } else if (this.agentId === 'idv') {
+                // For IDV agent - DO NOT skip verification!
+                contextInjection += `
+**CRITICAL INSTRUCTION FOR IDV AGENT:** 
+- Your ONLY job is to verify the customer's identity
+- DO NOT skip verification even if you know what they want
+- DO NOT immediately transfer to another agent
+- FOLLOW YOUR PERSONA INSTRUCTIONS EXACTLY:
+  1. Check if you have account number and sort code in memory
+  2. If NOT, ask the user for them
+  3. Once you have both, call perform_idv_check
+  4. If VERIFIED, transfer to the appropriate agent (banking, mortgage, etc.)
+  5. If FAILED, allow retry (max 3 attempts) then return to triage
+- The "User's Original Request" tells you WHY they need verification, not what to do instead of verifying
+`;
+            } else if (this.agentId === 'banking') {
+                // For banking agent receiving handoff from IDV
+                contextInjection += `
+**CRITICAL INSTRUCTION FOR BANKING AGENT:** 
+- You are receiving this customer from the IDV agent who has ALREADY VERIFIED their identity
+- The customer is ALREADY AUTHENTICATED - you are in STATE 4: AUTHENTICATED (Service Mode)
+- DO NOT ask for account details again - you have them above
+- DO NOT call perform_idv_check - you don't have access to that tool (only IDV agent does)
+- DO NOT ask for confirmation - verification is already complete
+- SKIP directly to helping with their request
+- If the "User's Original Request" mentions what they want (balance, transactions, etc.), ACT ON IT IMMEDIATELY
+- Example: If they want balance, say "Let me check your balance" and IMMEDIATELY call agentcore_balance
+- Example: If they want transactions, say "Let me get your transactions" and IMMEDIATELY call get_account_transactions
+- Be proactive and efficient - the customer has already been verified
+`;
+            } else {
+                // For other agents (mortgage, disputes, investigation, etc.)
                 contextInjection += `
 **CRITICAL INSTRUCTION:** 
 - The customer is already verified and you have their details above
-- If the "User's Original Request" mentions what they want (balance, transactions, etc.), ACT ON IT IMMEDIATELY
+- If the "User's Original Request" mentions what they want, ACT ON IT IMMEDIATELY
 - Greet them by name and help them with their request
 - DO NOT ask "How can I help you?" if you already know what they want
 - Be proactive and efficient
@@ -1391,13 +1604,16 @@ You: "I'll connect you to our banking specialist right away."
                 return handoffTools;
                 
             case 'idv':
-                // IDV agent: IDV tools + handoff tools
-                // Can verify identity and hand off to banking or return to triage
+                // IDV agent: ONLY IDV tools (NO handoff tools)
+                // Gateway handles routing after successful verification (Verified State Gate pattern)
                 const idvTools = bankingTools.filter(t => 
                     t.toolSpec.name === 'perform_idv_check'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: IDV + Handoff (${idvTools.length + handoffTools.length} tools)`);
-                return [...handoffTools, ...idvTools];
+                
+                console.log(`[AgentCore:${this.agentId}] Tool access: IDV only (${idvTools.length} tools) - Gateway handles routing`);
+                
+                // Return ONLY IDV tools - no handoff tools
+                return idvTools;
                 
             case 'banking':
                 // Banking agent: Banking tools + handoff tools

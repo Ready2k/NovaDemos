@@ -360,22 +360,30 @@ export class VoiceSideCar {
 
         console.log(`[VoiceSideCar] Transcript event - Role: ${transcriptData.role}, Text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
 
+        // CRITICAL FIX: Generate stable ID if not provided by SonicClient
+        const role = transcriptData.role || 'assistant';
+        const stableId = transcriptData.id || `${session.sessionId}-${role}-${transcriptData.timestamp || Date.now()}`;
+
         // Forward transcript to client (FLATTENED)
         session.ws.send(JSON.stringify({
             type: 'transcript',
-            id: transcriptData.id, // Preserve the stable ID from SonicClient
-            role: transcriptData.role || 'assistant',
+            id: stableId, // Stable ID for deduplication
+            role: role,
             text: text,
             isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true, // Default to true if not specified
             timestamp: transcriptData.timestamp || Date.now()
         }));
 
-        // If this is a user transcript, process it through Agent Core
-        if (transcriptData.role === 'user') {
+        // CRITICAL: Store messages in Agent Core for conversation history
+        if (role === 'user') {
+            // Process user message through Agent Core
             this.agentCore.processUserMessage(session.sessionId, text)
                 .catch(error => {
                     console.error(`[VoiceSideCar] Error processing user message: ${error.message}`);
                 });
+        } else if (role === 'assistant' && transcriptData.isFinal) {
+            // Store final assistant responses in conversation history
+            this.agentCore.trackAssistantResponse(session.sessionId, text);
         }
     }
 
@@ -444,6 +452,35 @@ export class VoiceSideCar {
                 error: result.error,
                 timestamp: Date.now()
             }));
+
+            // CRITICAL: Check for pending handoff from Verified State Gate
+            // After successful IDV verification, agent core sets pendingHandoff in graphState
+            const agentSession = this.agentCore.getSession(session.sessionId);
+            if (agentSession?.graphState?.pendingHandoff) {
+                const pendingHandoff = agentSession.graphState.pendingHandoff;
+                console.log(`[VoiceSideCar] 🚀 Detected pending handoff from Verified State Gate: ${pendingHandoff.targetAgent}`);
+                
+                // Create handoff request
+                const handoffRequest = {
+                    targetAgentId: pendingHandoff.targetAgent,
+                    context: pendingHandoff.context,
+                    graphState: agentSession.graphState
+                };
+                
+                // Clear pending handoff
+                delete agentSession.graphState.pendingHandoff;
+                
+                // Forward handoff request to Gateway
+                session.ws.send(JSON.stringify({
+                    type: 'handoff_request',
+                    targetAgentId: handoffRequest.targetAgentId,
+                    context: handoffRequest.context,
+                    graphState: handoffRequest.graphState,
+                    timestamp: Date.now()
+                }));
+                
+                console.log(`[VoiceSideCar] ✅ Sent automatic handoff request to Gateway`);
+            }
 
             // Check if this is a handoff tool and the result contains a handoff request
             // Requirement 9.4: Send handoff_request to Gateway (via adapter)

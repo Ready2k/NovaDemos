@@ -1,19 +1,11 @@
 {
   "id": "idv",
   "name": "Identity Verification Specialist",
-  "description": "Identity verification specialist for security checks",
-  "promptFile": "persona-idv.txt",
-  "workflows": [
-    "idv"
-  ],
+  "description": "Identity verification specialist for security checks - simple behavioral approach",
+  "promptFile": "persona-idv-simple.txt",
+  "workflows": [],
   "allowedTools": [
-    "perform_idv_check",
-    "return_to_triage",
-    "transfer_to_banking",
-    "transfer_to_idv",
-    "transfer_to_mortgage",
-    "transfer_to_disputes",
-    "transfer_to_investigation"
+    "perform_idv_check"
   ],
   "voiceId": "stephen",
   "metadata": {
@@ -23,6 +15,7 @@
     "specializations": [
       "identity-verification",
       "security-checks"
-    ]
+    ],
+    "approach": "behavioral-prompts"
   }
 }
