@@ -1,0 +1,24 @@
+{
+  "name": "get_account_transactions",
+  "description": "Returns a list of recent transactions.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "accountNumber": {
+        "type": "string",
+        "description": "The unique 8 digit identifier for the customer's bank account."
+      },
+      "sortCode": {
+        "type": "string",
+        "description": "The 6-digit sort code required alongside the account ID for verification."
+      }
+    },
+    "required": [
+      "accountNumber",
+      "sortCode"
+    ]
+  },
+  "instruction": "- Use 'get_account_transactions' when the user asks for transaction history, recent transactions, or account activity.\n- Always require both accountNumber and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
+  "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory",
+  "category": "Banking"
+}

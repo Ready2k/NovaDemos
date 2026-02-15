@@ -28,8 +28,9 @@ RUN npm ci --only=production
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Workflow file will be mounted at runtime
-# VOLUME ["/app/workflow.json"]
+# Copy backend resources (workflows, personas, prompts, tools) from local directory
+# These are synced by prepare-docker-build.sh script
+COPY backend ./backend
 
 # Expose port (will be overridden by docker-compose)
 EXPOSE 8081

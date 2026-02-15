@@ -1,0 +1,28 @@
+{
+  "name": "update_dispute_case",
+  "originalName": "Update-Dispute-case___update_dispute_case",
+  "description": "Updates an existing case when status is 'MORE_INFO'.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "caseId": {
+        "description": "ID of the existing dispute.",
+        "type": "string"
+      },
+      "additionalDetails": {
+        "description": "The specific information requested (e.g. Correct Date, Invoice Proof).",
+        "type": "string"
+      },
+      "status": {
+        "description": "The specific status, CLOSED if resolved by the Customer, OPEN if customer still has this issue open.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "additionalDetails",
+      "caseId",
+      "status"
+    ]
+  },
+  "gatewayTarget": "Update-Dispute-case___update_dispute_case"
+}

@@ -15,12 +15,6 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=${LANGFUSE_HOST}
-    volumes:
-      - ./backend/workflows:/app/workflows
-      - ./backend/tools:/app/tools
-      - ./backend/history:/app/history
-      - ./backend/prompts:/app/prompts
-      - ./backend/knowledge_bases.json:/app/knowledge_bases.json
     depends_on:
       redis:
         condition: service_healthy
@@ -42,7 +36,7 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_triage.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -50,11 +44,6 @@ services:
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
       - LOG_LEVEL=debug
-    volumes:
-      - ./backend/workflows/workflow_triage.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -77,18 +66,13 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_banking-master.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
-    volumes:
-      - ./backend/workflows/workflow_banking-master.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -111,18 +95,13 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_persona-mortgage.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
-    volumes:
-      - ./backend/workflows/workflow_persona-mortgage.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -145,18 +124,13 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_idv-simple.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
-    volumes:
-      - ./backend/workflows/workflow_idv-simple.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -179,18 +153,13 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_disputes.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
-    volumes:
-      - ./backend/workflows/workflow_disputes.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -213,18 +182,13 @@ services:
       - GATEWAY_URL=http://gateway:8080
       - LOCAL_TOOLS_URL=http://local-tools:9000
       - AGENTCORE_URL=${AGENTCORE_GATEWAY_URL}
-      - WORKFLOW_FILE=/app/workflow.json
+      - WORKFLOW_FILE=/app/backend/workflows/workflow_investigation.json
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_BASEURL=${LANGFUSE_BASEURL}
-    volumes:
-      - ./backend/workflows/workflow_investigation.json:/app/workflow.json:ro
-      - ./backend/personas:/app/backend/personas:ro
-      - ./backend/prompts:/app/backend/prompts:ro
-      - ./backend/tools:/app/backend/tools:ro
     depends_on:
       - redis
       - local-tools
@@ -247,8 +211,6 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - USE_MOCK_DATA=true
-    volumes:
-      - ./backend/tools:/app/tools:ro
     networks:
       - agent-network
 
@@ -274,13 +236,13 @@ services:
       context: ./frontend-v2
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8080
-        - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+        - NEXT_PUBLIC_API_URL=http://192.168.5.190:8080
+        - NEXT_PUBLIC_WS_URL=ws://192.168.5.190:8080
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+      - NEXT_PUBLIC_API_URL=http://192.168.5.190:8080
+      - NEXT_PUBLIC_WS_URL=ws://192.168.5.190:8080
       - INTERNAL_API_URL=http://gateway:8080
     depends_on:
       - gateway

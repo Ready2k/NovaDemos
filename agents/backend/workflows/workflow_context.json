@@ -1,0 +1,83 @@
+{
+  "title": "Context & History Retrieval",
+  "nodes": [
+    {
+      "id": "context_start",
+      "label": "Start Context Retrieval",
+      "type": "start"
+    },
+    {
+      "id": "check_credentials",
+      "label": "Are 'accountNumber' and 'sortCode' present in context?",
+      "type": "decision",
+      "required_context": [
+        "accountNumber",
+        "sortCode"
+      ]
+    },
+    {
+      "id": "retrieve_history",
+      "label": "Call 'manage_recent_interactions' with action='RETRIEVE'.",
+      "type": "tool",
+      "toolName": "manage_recent_interactions"
+    },
+    {
+      "id": "check_disputes",
+      "label": "Check Tool Result: Is 'disputesOpen' == true?",
+      "type": "decision"
+    },
+    {
+      "id": "note_dispute",
+      "label": "Active Dispute Found. INSTRUCTION: Note the 'caseId', 'status', 'requiredInfo' (if MORE_INFO), and 'dateCreated'.",
+      "type": "process"
+    },
+    {
+      "id": "context_end",
+      "label": "Context Retrieval Complete",
+      "type": "end",
+      "outcome": "CONTEXT_RETRIEVED"
+    }
+  ],
+  "edges": [
+    {
+      "from": "context_start",
+      "to": "check_credentials"
+    },
+    {
+      "from": "check_credentials",
+      "to": "retrieve_history",
+      "label": "Yes (Credentials Present)"
+    },
+    {
+      "from": "check_credentials",
+      "to": "context_end",
+      "label": "No (Missing Credentials)"
+    },
+    {
+      "from": "retrieve_history",
+      "to": "check_disputes"
+    },
+    {
+      "from": "check_disputes",
+      "to": "note_dispute",
+      "label": "Yes (True)"
+    },
+    {
+      "from": "check_disputes",
+      "to": "context_end",
+      "label": "No (False)"
+    },
+    {
+      "from": "note_dispute",
+      "to": "context_end"
+    }
+  ],
+  "id": "context",
+  "name": "Context",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "context-handler",
+    "language": "en-US",
+    "description": "Context"
+  }
+}

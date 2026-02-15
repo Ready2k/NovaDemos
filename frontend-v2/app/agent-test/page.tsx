@@ -71,7 +71,8 @@ export default function AgentTestPage() {
     setSessionId(newSessionId);
 
     // Connect directly to agent (bypassing gateway)
-    const wsUrl = `ws://localhost:${selectedAgent.port}/session`;
+    const wsHost = process.env.NEXT_PUBLIC_WS_URL?.replace('ws://', '').replace(':8080', '') || 'localhost';
+    const wsUrl = `ws://${wsHost}:${selectedAgent.port}/session`;
     console.log(`[AgentTest] Connecting to ${selectedAgent.name} at ${wsUrl}`);
 
     const ws = new WebSocket(wsUrl);

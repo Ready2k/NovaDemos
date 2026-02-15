@@ -28,8 +28,8 @@ RUN npm ci --only=production
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Tools directory will be mounted at runtime
-# VOLUME ["/app/tools"]
+# Copy tools from local directory (synced by prepare-docker-build.sh)
+COPY tools ./tools
 
 # Expose port
 EXPOSE 9000

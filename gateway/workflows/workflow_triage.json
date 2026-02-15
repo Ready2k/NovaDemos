@@ -1,0 +1,172 @@
+{
+  "id": "triage",
+  "name": "Triage",
+  "nodes": [
+    {
+      "id": "triage_start",
+      "label": "Start Triage Protocol",
+      "type": "start"
+    },
+    {
+      "id": "check_return",
+      "label": "Check Memory: Is this a return from another agent?",
+      "type": "decision"
+    },
+    {
+      "id": "welcome_back",
+      "label": "Welcome user back and ask if they need anything else",
+      "type": "process"
+    },
+    {
+      "id": "greet_new",
+      "label": "Greet new user and ask how you can help",
+      "type": "process"
+    },
+    {
+      "id": "capture_intent",
+      "label": "Listen to user request and determine intent type",
+      "type": "process"
+    },
+    {
+      "id": "classify_intent",
+      "label": "Decision: Is this a general question (public info) or account-specific?",
+      "type": "decision"
+    },
+    {
+      "id": "handle_general",
+      "label": "Handle general questions (branch locations, rates, etc.) - NO ID&V needed",
+      "type": "process"
+    },
+    {
+      "id": "end_general",
+      "label": "General query handled",
+      "type": "end",
+      "outcome": "GENERAL_HANDLED"
+    },
+    {
+      "id": "check_verified",
+      "label": "Decision: Is user already verified?",
+      "type": "decision"
+    },
+    {
+      "id": "route_to_idv",
+      "label": "User needs verification - route to ID&V with intent",
+      "type": "process"
+    },
+    {
+      "id": "end_idv",
+      "label": "Handed off to ID&V",
+      "type": "end",
+      "outcome": "IDV_HANDOFF"
+    },
+    {
+      "id": "route_by_intent",
+      "label": "User verified - route directly to appropriate service (Banking, Disputes, Mortgage, etc.)",
+      "type": "process"
+    },
+    {
+      "id": "end_routed",
+      "label": "Routed to specialist",
+      "type": "end",
+      "outcome": "ROUTED"
+    },
+    {
+      "id": "check_done",
+      "label": "Decision: Does user need anything else?",
+      "type": "decision"
+    },
+    {
+      "id": "say_goodbye",
+      "label": "Thank user and say goodbye",
+      "type": "process"
+    },
+    {
+      "id": "end_complete",
+      "label": "Session complete",
+      "type": "end",
+      "outcome": "COMPLETE"
+    }
+  ],
+  "edges": [
+    {
+      "from": "triage_start",
+      "to": "check_return"
+    },
+    {
+      "from": "check_return",
+      "to": "welcome_back",
+      "label": "Yes (Returning)"
+    },
+    {
+      "from": "check_return",
+      "to": "greet_new",
+      "label": "No (New)"
+    },
+    {
+      "from": "welcome_back",
+      "to": "check_done"
+    },
+    {
+      "from": "greet_new",
+      "to": "capture_intent"
+    },
+    {
+      "from": "capture_intent",
+      "to": "classify_intent"
+    },
+    {
+      "from": "classify_intent",
+      "to": "handle_general",
+      "label": "General (Public Info)"
+    },
+    {
+      "from": "handle_general",
+      "to": "end_general"
+    },
+    {
+      "from": "classify_intent",
+      "to": "check_verified",
+      "label": "Account-Specific"
+    },
+    {
+      "from": "check_verified",
+      "to": "route_to_idv",
+      "label": "No (Not Verified)"
+    },
+    {
+      "from": "route_to_idv",
+      "to": "end_idv"
+    },
+    {
+      "from": "check_verified",
+      "to": "route_by_intent",
+      "label": "Yes (Verified)"
+    },
+    {
+      "from": "route_by_intent",
+      "to": "end_routed"
+    },
+    {
+      "from": "check_done",
+      "to": "capture_intent",
+      "label": "Yes (More Help)"
+    },
+    {
+      "from": "check_done",
+      "to": "say_goodbye",
+      "label": "No (Done)"
+    },
+    {
+      "from": "say_goodbye",
+      "to": "end_complete"
+    }
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingDisputes",
+    "successCriteria": "The system gives me my balance, shows me some transactions and checks my disputes ",
+    "testInstructions": "I just want my balance for account 12345678, \nWait and give the sort code only when asked, 112233\nI also need to see my last 2 transactions and if i have any open disputes",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 10
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "persona-SimpleBanking",
+  "name": "Banking Specialist",
+  "description": "Banking specialist for balance checks, transactions, and account services",
+  "promptFile": "persona-banking.txt",
+  "workflows": ["banking"],
+  "allowedTools": [
+    "agentcore_balance",
+    "agentcore_transactions",
+    "perform_idv_check",
+    "return_to_triage",
+    "transfer_to_banking",
+    "transfer_to_idv",
+    "transfer_to_mortgage",
+    "transfer_to_disputes",
+    "transfer_to_investigation"
+  ],
+  "voiceId": "joanna",
+  "metadata": {
+    "language": "en-US",
+    "region": "UK",
+    "tone": "friendly-professional",
+    "specializations": ["balance-inquiry", "transactions", "account-services"]
+  }
+}

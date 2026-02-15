@@ -1,0 +1,23 @@
+{
+  "name": "get_account_transactions",
+  "originalName": "get-TransactionalHistory___get_TransactionHistory",
+  "description": "Retrieves the recent transaction history for a specified bank account. Fetches a list of the last 10 transactions, including date, type, and amount.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "accountId": {
+        "description": "The unique identifier for the customer's bank account (e.g., 10-digit number).",
+        "type": "string"
+      },
+      "sortCode": {
+        "description": "The 6-digit sort code required alongside the account ID for verification.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "accountId",
+      "sortCode"
+    ]
+  },
+  "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory"
+}

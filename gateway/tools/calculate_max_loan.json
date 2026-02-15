@@ -1,0 +1,22 @@
+{
+    "name": "calculate_max_loan",
+    "description": "Calculates the maximum loan amount mostly based on income multipliers.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "total_annual_income": {
+                "type": "number",
+                "description": "Total annual income including bonuses"
+            },
+            "applicant_count": {
+                "type": "number",
+                "description": "Number of applicants (1 or 2)"
+            }
+        },
+        "required": [
+            "total_annual_income"
+        ]
+    },
+    "instruction": "Use this tool to calculate how much the bank is willing to lend.",
+    "category": "Mortgage"
+}

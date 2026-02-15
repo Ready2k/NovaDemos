@@ -1,0 +1,23 @@
+{
+    "name": "value_property",
+    "description": "Estimates the value of a property based on address and user estimate.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "string",
+                "description": "Full address of the property"
+            },
+            "estimated_value": {
+                "type": "number",
+                "description": "User's estimated value of the property"
+            }
+        },
+        "required": [
+            "address",
+            "estimated_value"
+        ]
+    },
+    "instruction": "Use this tool to verify the property value. It returns the lender's valuation.",
+    "category": "Mortgage"
+}

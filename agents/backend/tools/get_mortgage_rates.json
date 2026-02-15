@@ -1,0 +1,22 @@
+{
+    "name": "get_mortgage_rates",
+    "description": "Retrieves current mortgage interest rates and products.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "ltv": {
+                "type": "number",
+                "description": "Loan to Value ratio as a percentage (e.g. 75)"
+            },
+            "term_years": {
+                "type": "number",
+                "description": "Desired mortgage term in years"
+            }
+        },
+        "required": [
+            "ltv"
+        ]
+    },
+    "instruction": "Use this tool to get specific interest rates and monthly payment estimates.",
+    "category": "Mortgage"
+}

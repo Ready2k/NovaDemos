@@ -1,12 +1,23 @@
 # Dependency directories (already installed during build)
-node_modules/
-jspm_packages/
+**/node_modules/
+**/jspm_packages/
+frontend-v2/node_modules/
+backend/node_modules/
+agents/node_modules/
+gateway/node_modules/
+local-tools/node_modules/
 
 # Local build artifacts (recreated inside the container)
-dist/
-build/
-.next/
-out/
+**/dist/
+**/build/
+**/.next/
+**/out/
+frontend-v2/.next/
+frontend-v2/out/
+backend/dist/
+agents/dist/
+gateway/dist/
+local-tools/dist/
 
 # Version control (huge and not needed for running the app)
 .git/

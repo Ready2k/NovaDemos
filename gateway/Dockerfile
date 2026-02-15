@@ -28,6 +28,15 @@ RUN npm ci --only=production
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy backend resources (workflows, tools, prompts, knowledge_bases)
+# These are synced by prepare-docker-build.sh script
+COPY workflows ./workflows
+COPY tools ./tools
+COPY prompts ./prompts
+COPY knowledge_bases.json ./knowledge_bases.json
+# Create history directory
+RUN mkdir -p ./history
+
 # Expose port
 EXPOSE 8080
 

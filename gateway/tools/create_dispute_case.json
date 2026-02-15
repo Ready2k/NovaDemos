@@ -1,0 +1,46 @@
+{
+  "name": "create_dispute_case",
+  "originalName": "create-dispute-case___create_dispute_case",
+  "description": "Creates a new dispute case.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "disputeReason": {
+        "type": "string"
+      },
+      "isPriorityRefund": {
+        "description": "Set to true if Vuln Marker is 1-4 and Amount < 150.",
+        "type": "boolean"
+      },
+      "merchantContacted": {
+        "type": "boolean"
+      },
+      "transactionAmount": {
+        "description": "The amount actually charged.",
+        "type": "number"
+      },
+      "accountNumber": {
+        "type": "string"
+      },
+      "expectedAmount": {
+        "description": "The amount the customer expected to pay (if applicable).",
+        "type": "number"
+      },
+      "transactionDate": {
+        "description": "YYYY-MM-DD",
+        "type": "string"
+      },
+      "merchantName": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "accountNumber",
+      "disputeReason",
+      "merchantContacted",
+      "merchantName",
+      "transactionAmount"
+    ]
+  },
+  "gatewayTarget": "create-dispute-case___create_dispute_case"
+}

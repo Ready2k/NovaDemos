@@ -1,0 +1,60 @@
+{
+  "id": "idv",
+  "name": "Identity Verification",
+  "personaId": "idv",
+  "voiceId": "stephen",
+  "metadata": {
+    "persona": "security-focused",
+    "language": "en-US",
+    "description": "Identity verification and security checks"
+  },
+  "nodes": [
+    {
+      "id": "idv_start",
+      "label": "Start Identity Verification",
+      "type": "start"
+    },
+    {
+      "id": "verify_identity",
+      "label": "Verify customer identity through security questions",
+      "type": "process"
+    },
+    {
+      "id": "check_verification",
+      "label": "Check: Identity verified successfully?",
+      "type": "decision"
+    },
+    {
+      "id": "verification_success",
+      "label": "Identity verified - proceed with request",
+      "type": "end",
+      "outcome": "VERIFIED"
+    },
+    {
+      "id": "verification_failed",
+      "label": "Verification failed - escalate to security",
+      "type": "end",
+      "outcome": "FAILED"
+    }
+  ],
+  "edges": [
+    {
+      "from": "idv_start",
+      "to": "verify_identity"
+    },
+    {
+      "from": "verify_identity",
+      "to": "check_verification"
+    },
+    {
+      "from": "check_verification",
+      "to": "verification_success",
+      "label": "Yes"
+    },
+    {
+      "from": "check_verification",
+      "to": "verification_failed",
+      "label": "No"
+    }
+  ]
+}

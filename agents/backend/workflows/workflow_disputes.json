@@ -1,0 +1,219 @@
+{
+  "id": "disputes",
+  "name": "Disputes",
+  "personaId": "persona-BankingDisputes",
+  "title": "Managing Disputes",
+  "nodes": [
+    {
+      "id": "dispute_start",
+      "label": "Start Dispute Management",
+      "type": "start"
+    },
+    {
+      "id": "check_type",
+      "label": "Is the user asking about an EXISTING case (found in Context) or creating a NEW dispute?",
+      "type": "decision"
+    },
+    {
+      "id": "check_cooling",
+      "label": "Calculate: Is (Current Date - DateCreated) < 15 days?",
+      "type": "decision"
+    },
+    {
+      "id": "cooling_active",
+      "label": "Say: 'We are currently in the merchant cooling-off period. You have [calculated_days] days left.'",
+      "type": "process"
+    },
+    {
+      "id": "end_cooling",
+      "label": "Cooling Off Active",
+      "type": "end",
+      "outcome": "INFO_ONLY"
+    },
+    {
+      "id": "check_status",
+      "label": "Check Case Status: OPEN or MORE_INFO?",
+      "type": "decision"
+    },
+    {
+      "id": "handoff_open",
+      "label": "Say: 'Since the cooling-off period has passed, I'm transferring you to a Dispute Agent.'",
+      "type": "process"
+    },
+    {
+      "id": "end_handoff",
+      "label": "Dispute Handoff",
+      "type": "end",
+      "outcome": "DISPUTE_HANDOFF"
+    },
+    {
+      "id": "ask_more_info",
+      "label": "Say: 'We need more information: [requiredInfo]. Can you provide this now?'",
+      "type": "process"
+    },
+    {
+      "id": "update_case",
+      "label": "Call 'update_dispute_case' with provided info.",
+      "type": "tool",
+      "toolName": "update_dispute_case"
+    },
+    {
+      "id": "end_update",
+      "label": "Case Updated",
+      "type": "end",
+      "outcome": "CASE_UPDATED"
+    },
+    {
+      "id": "check_contact",
+      "label": "Has the customer contacted the merchant first?",
+      "type": "decision"
+    },
+    {
+      "id": "advise_contact",
+      "label": "Advise customer to contact merchant first.",
+      "type": "process"
+    },
+    {
+      "id": "end_contact",
+      "label": "Advised Merchant Contact",
+      "type": "end",
+      "outcome": "ADVISED_CONTACT"
+    },
+    {
+      "id": "capture_details",
+      "label": "Capture: Date, Merchant, Amounts, Reason. Confirm details.",
+      "type": "process"
+    },
+    {
+      "id": "create_case",
+      "label": "Call 'create_dispute_case'.",
+      "type": "tool",
+      "toolName": "create_dispute_case"
+    },
+    {
+      "id": "check_vuln_promise",
+      "label": "Check Memory: Is 'marker_Vunl' between 1-4 AND Amount < £150?",
+      "type": "decision"
+    },
+    {
+      "id": "promise_refund",
+      "label": "Say: 'I have raised the dispute. Given the circumstances, I can confirm this will be refunded to your account as soon as possible.'",
+      "type": "process"
+    },
+    {
+      "id": "standard_response",
+      "label": "Say: 'I have raised the dispute case [ID]. We will investigate and update you shortly.'",
+      "type": "process"
+    },
+    {
+      "id": "end_created",
+      "label": "Dispute Created",
+      "type": "end",
+      "outcome": "DISPUTE_RAISED"
+    }
+  ],
+  "edges": [
+    {
+      "from": "dispute_start",
+      "to": "check_type"
+    },
+    {
+      "from": "check_type",
+      "to": "check_cooling",
+      "label": "Existing Case"
+    },
+    {
+      "from": "check_cooling",
+      "to": "cooling_active",
+      "label": "Yes (< 15 days)"
+    },
+    {
+      "from": "cooling_active",
+      "to": "end_cooling"
+    },
+    {
+      "from": "check_cooling",
+      "to": "check_status",
+      "label": "No (> 15 days)"
+    },
+    {
+      "from": "check_status",
+      "to": "handoff_open",
+      "label": "OPEN"
+    },
+    {
+      "from": "handoff_open",
+      "to": "end_handoff"
+    },
+    {
+      "from": "check_status",
+      "to": "ask_more_info",
+      "label": "MORE_INFO"
+    },
+    {
+      "from": "ask_more_info",
+      "to": "update_case"
+    },
+    {
+      "from": "update_case",
+      "to": "end_update"
+    },
+    {
+      "from": "check_type",
+      "to": "check_contact",
+      "label": "New Dispute"
+    },
+    {
+      "from": "check_contact",
+      "to": "advise_contact",
+      "label": "No"
+    },
+    {
+      "from": "advise_contact",
+      "to": "end_contact"
+    },
+    {
+      "from": "check_contact",
+      "to": "capture_details",
+      "label": "Yes"
+    },
+    {
+      "from": "capture_details",
+      "to": "create_case"
+    },
+    {
+      "from": "create_case",
+      "to": "check_vuln_promise"
+    },
+    {
+      "from": "check_vuln_promise",
+      "to": "promise_refund",
+      "label": "Yes (Vuln 1-4 & <£150)"
+    },
+    {
+      "from": "check_vuln_promise",
+      "to": "standard_response",
+      "label": "No"
+    },
+    {
+      "from": "promise_refund",
+      "to": "end_created"
+    },
+    {
+      "from": "standard_response",
+      "to": "end_created"
+    },
+    {
+      "from": "update_case",
+      "to": "end_created"
+    }
+  ],
+  "id": "disputes",
+  "name": "Disputes",
+  "voiceId": "matthew",
+  "metadata": {
+    "persona": "professional-disputes",
+    "language": "en-US",
+    "description": "Disputes"
+  }
+}

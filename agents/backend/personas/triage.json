@@ -1,0 +1,15 @@
+{
+  "id": "triage",
+  "name": "Triage Agent",
+  "description": "Initial routing agent for customer vulnerability and account status checks",
+  "promptFile": "persona-triage.txt",
+  "workflows": ["triage"],
+  "allowedTools": [],
+  "voiceId": "matthew",
+  "metadata": {
+    "language": "en-US",
+    "region": "UK",
+    "tone": "professional-efficient",
+    "specializations": ["routing", "vulnerability-assessment", "account-status"]
+  }
+}

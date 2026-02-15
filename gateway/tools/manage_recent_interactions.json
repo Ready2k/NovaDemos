@@ -1,0 +1,34 @@
+{
+  "name": "manage_recent_interactions",
+  "originalName": "manage-recent-interactions___manage_recent_interactions",
+  "description": "Retrieves history/disputes at start, OR publishes summary at end.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "description": "[REQUIRED for PUBLISH] Summary of conversation.",
+        "type": "string"
+      },
+      "action": {
+        "description": "'RETRIEVE' for history; 'PUBLISH' for summary.",
+        "type": "string"
+      },
+      "accountNumber": {
+        "type": "string"
+      },
+      "sortCode": {
+        "type": "string"
+      },
+      "outcome": {
+        "description": "[REQUIRED for PUBLISH] Final classification.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "accountNumber",
+      "action",
+      "sortCode"
+    ]
+  },
+  "gatewayTarget": "manage-recent-interactions___manage_recent_interactions"
+}

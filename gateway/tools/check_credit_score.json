@@ -1,0 +1,22 @@
+{
+    "name": "check_credit_score",
+    "description": "Checks the credit score of an applicant. Returns a score between 0 and 999.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Full name of the applicant"
+            },
+            "dob": {
+                "type": "string",
+                "description": "Date of birth (YYYY-MM-DD)"
+            }
+        },
+        "required": [
+            "name"
+        ]
+    },
+    "instruction": "Use this tool to check the applicant's credit score after collecting their personal details.",
+    "category": "Mortgage"
+}

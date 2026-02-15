@@ -1,0 +1,30 @@
+{
+  "id": "idv",
+  "name": "Identity Verification (Simple Behavioral)",
+  "personaId": "idv",
+  "voiceId": "stephen",
+  "metadata": {
+    "persona": "security-focused",
+    "language": "en-US",
+    "description": "Simple behavioral IDV agent - no workflow, just prompt-based behavior",
+    "approach": "behavioral-prompts"
+  },
+  "nodes": [
+    {
+      "id": "idv_start",
+      "label": "Start Identity Verification",
+      "type": "start"
+    },
+    {
+      "id": "idv_end",
+      "label": "End",
+      "type": "end"
+    }
+  ],
+  "edges": [
+    {
+      "from": "idv_start",
+      "to": "idv_end"
+    }
+  ]
+}

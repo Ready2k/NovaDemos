@@ -1,0 +1,15 @@
+{
+  "id": "investigation",
+  "name": "Fraud Investigation Agent",
+  "description": "Handles fraud investigations and unrecognized transactions",
+  "promptFile": "persona-investigation.txt",
+  "workflows": ["investigation"],
+  "allowedTools": ["check_transaction", "flag_fraud", "create_investigation_case"],
+  "voiceId": "stephen",
+  "metadata": {
+    "language": "en-US",
+    "region": "UK",
+    "tone": "professional-serious",
+    "specializations": ["fraud-detection", "investigation", "security"]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "id": "investigation",
+  "name": "Fraud Investigation",
+  "personaId": "investigation",
+  "voiceId": "stephen",
+  "metadata": {
+    "persona": "investigative",
+    "language": "en-US",
+    "description": "Fraud investigation and suspicious activity analysis"
+  },
+  "nodes": [
+    {
+      "id": "investigation_start",
+      "label": "Start Fraud Investigation",
+      "type": "start"
+    },
+    {
+      "id": "gather_details",
+      "label": "Gather details about suspicious activity",
+      "type": "process"
+    },
+    {
+      "id": "analyze_transaction",
+      "label": "Analyze transaction patterns and risk indicators",
+      "type": "process"
+    },
+    {
+      "id": "check_fraud_risk",
+      "label": "Check: High fraud risk detected?",
+      "type": "decision"
+    },
+    {
+      "id": "freeze_account",
+      "label": "Freeze account and escalate to fraud team",
+      "type": "end",
+      "outcome": "ACCOUNT_FROZEN"
+    },
+    {
+      "id": "investigation_complete",
+      "label": "Investigation complete - no fraud detected",
+      "type": "end",
+      "outcome": "NO_FRAUD"
+    }
+  ],
+  "edges": [
+    {
+      "from": "investigation_start",
+      "to": "gather_details"
+    },
+    {
+      "from": "gather_details",
+      "to": "analyze_transaction"
+    },
+    {
+      "from": "analyze_transaction",
+      "to": "check_fraud_risk"
+    },
+    {
+      "from": "check_fraud_risk",
+      "to": "freeze_account",
+      "label": "Yes"
+    },
+    {
+      "from": "check_fraud_risk",
+      "to": "investigation_complete",
+      "label": "No"
+    }
+  ]
+}
