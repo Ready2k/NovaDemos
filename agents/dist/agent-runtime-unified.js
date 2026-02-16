@@ -521,26 +521,51 @@ class UnifiedRuntime {
             }
             // IMPROVED: Auto-trigger with guards
             if (AUTO_TRIGGER_ENABLED && !session.autoTriggered) {
-                // CRITICAL: Auto-trigger IDV agent - ALWAYS greet on handoff, regardless of credentials
+                // CRITICAL: Auto-trigger IDV agent
                 if (this.config.agentId === 'idv') {
-                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent greeting`);
                     session.autoTriggered = true; // Mark as triggered
-                    // Simple greeting trigger - let the agent's prompt handle the rest
-                    const triggerMessage = '[System: User has been transferred to you for identity verification. Please greet them and ask for their credentials.]';
-                    // Support both text and voice modes
-                    if (this.voiceSideCar) {
-                        setTimeout(() => {
-                            this.voiceSideCar.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
-                            });
-                        }, 1500); // Delay to ensure session is fully initialized
+                    // Check if credentials were pre-provided
+                    const hasProvidedCredentials = memory?.providedAccount && memory?.providedSortCode;
+                    if (hasProvidedCredentials) {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV with provided credentials`);
+                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.providedAccount}, Sort Code: ${memory.providedSortCode}`);
+                        // Trigger with credentials so agent verifies immediately
+                        const triggerMessage = `${memory.providedAccount} ${memory.providedSortCode}`;
+                        // Support both text and voice modes
+                        if (this.voiceSideCar) {
+                            setTimeout(() => {
+                                this.voiceSideCar.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500);
+                        }
+                        else if (this.textAdapter) {
+                            setTimeout(() => {
+                                this.textAdapter.handleUserInput(sessionId, triggerMessage).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500);
+                        }
                     }
-                    else if (this.textAdapter) {
-                        setTimeout(() => {
-                            this.textAdapter.handleUserInput(sessionId, triggerMessage).catch(error => {
-                                console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
-                            });
-                        }, 1500); // Delay to ensure session is fully initialized
+                    else {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent greeting`);
+                        // Simple greeting trigger - let the agent's prompt handle the rest
+                        const triggerMessage = '[System: User has been transferred to you for identity verification. Please greet them and ask for their credentials.]';
+                        // Support both text and voice modes
+                        if (this.voiceSideCar) {
+                            setTimeout(() => {
+                                this.voiceSideCar.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500);
+                        }
+                        else if (this.textAdapter) {
+                            setTimeout(() => {
+                                this.textAdapter.handleUserInput(sessionId, triggerMessage).catch(error => {
+                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Error sending auto-trigger: ${error.message}`);
+                                });
+                            }, 1500);
+                        }
                     }
                 }
                 // CRITICAL: Auto-trigger banking agent with verified user and intent

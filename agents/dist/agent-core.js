@@ -492,6 +492,45 @@ class AgentCore {
             if (!session.graphState) {
                 session.graphState = {};
             }
+            // CRITICAL: Block if user is already verified
+            // This prevents Nova Sonic from calling perform_idv_check again after successful verification
+            if (session.graphState?.verified && session.graphState?.userName) {
+                console.error(`[AgentCore:${this.agentId}] ⚠️  IDV CALL BLOCKED: User already verified as ${session.graphState.userName}`);
+                console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
+                return {
+                    success: false,
+                    result: {
+                        content: [{
+                                text: JSON.stringify({
+                                    auth_status: 'ALREADY_VERIFIED',
+                                    customer_name: session.graphState.userName,
+                                    message: `User is already verified as ${session.graphState.userName}. Do not call perform_idv_check again. Your job is complete - the system will handle routing.`,
+                                    requiresUserInput: false
+                                })
+                            }]
+                    },
+                    error: 'User already verified - IDV complete'
+                };
+            }
+            // CRITICAL: Block if verification is in progress
+            // This prevents Nova Sonic from calling perform_idv_check twice in rapid succession
+            if (session.graphState?.idvInProgress) {
+                console.error(`[AgentCore:${this.agentId}] ⚠️  IDV CALL BLOCKED: Verification already in progress`);
+                console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
+                return {
+                    success: false,
+                    result: {
+                        content: [{
+                                text: JSON.stringify({
+                                    auth_status: 'IN_PROGRESS',
+                                    message: 'Identity verification is already in progress. Please wait for the result.',
+                                    requiresUserInput: false
+                                })
+                            }]
+                    },
+                    error: 'IDV already in progress'
+                };
+            }
             const lastCall = session.graphState.lastIdvCall;
             const DUPLICATE_WINDOW_MS = 5000; // 5 second window
             if (lastCall &&
@@ -514,6 +553,9 @@ class AgentCore {
                     error: 'Duplicate IDV call blocked - waiting for user input'
                 };
             }
+            // Set in-progress flag BEFORE executing
+            session.graphState.idvInProgress = true;
+            console.log(`[AgentCore:${this.agentId}] 🔒 Set IDV in-progress flag`);
             // Store this call for duplicate detection
             session.graphState.lastIdvCall = {
                 accountNumber: toolInput.accountNumber,
@@ -872,6 +914,11 @@ class AgentCore {
             if (session.idvAttempts >= 3) {
                 console.log(`[AgentCore:${this.agentId}] ⚠️  Max IDV attempts reached (3/3) - should return to triage`);
             }
+        }
+        // CRITICAL: Clear in-progress flag after processing result
+        if (session.graphState) {
+            session.graphState.idvInProgress = false;
+            console.log(`[AgentCore:${this.agentId}] 🔓 Cleared IDV in-progress flag`);
         }
     }
     /**

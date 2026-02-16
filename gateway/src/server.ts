@@ -543,6 +543,24 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                     // Extract target agent ID
                                     const targetId = message.toolName.replace('transfer_to_', '').replace('return_to_', '');
                                     
+                                    // CRITICAL: Extract credentials from tool input if present
+                                    // This allows users to provide credentials upfront (e.g., "check balance for account 12345678, sort code 112233")
+                                    if (targetId === 'idv' && message.input?.reason) {
+                                        const reason = message.input.reason;
+                                        // Look for account number (8 digits) and sort code (6 digits)
+                                        const accountMatch = reason.match(/\b(\d{8})\b/);
+                                        const sortCodeMatch = reason.match(/\b(\d{6})\b/);
+                                        
+                                        if (accountMatch && sortCodeMatch) {
+                                            console.log(`[Gateway] 📋 Extracted credentials from handoff: Account ${accountMatch[1]}, Sort Code ${sortCodeMatch[1]}`);
+                                            // Add to memory so IDV agent can use them
+                                            await router.updateMemory(sessionId, {
+                                                providedAccount: accountMatch[1],
+                                                providedSortCode: sortCodeMatch[1]
+                                            });
+                                        }
+                                    }
+                                    
                                     // Perform handoff immediately (no delay)
                                     (async () => {
                                         try {
@@ -627,17 +645,48 @@ wss.on('connection', async (clientWs: WebSocket) => {
                     
                     // THEN extract credentials and update memory
                     const parsed = parseUserMessage(message.text);
+                    
+                    console.log(`[Gateway] 🔍 Parsed user message:`, {
+                        accountNumber: parsed.accountNumber,
+                        sortCode: parsed.sortCode,
+                        intent: parsed.intent
+                    });
+                    
                     if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
                         const currentMemory = await router.getMemory(sessionId);
                         const updates: any = {};
-                        if (parsed.accountNumber) updates.account = parsed.accountNumber;
-                        if (parsed.sortCode) updates.sortCode = parsed.sortCode;
-                        if (parsed.intent && !currentMemory?.userIntent) updates.userIntent = parsed.intent;
+                        
+                        // CRITICAL FIX: Use providedAccount/providedSortCode keys for pre-provided credentials
+                        // These are checked by IDV agent auto-trigger logic
+                        if (parsed.accountNumber) {
+                            updates.account = parsed.accountNumber;
+                            updates.providedAccount = parsed.accountNumber; // For IDV auto-trigger
+                            console.log(`[Gateway] 📋 Extracted account number: ${parsed.accountNumber}`);
+                        }
+                        if (parsed.sortCode) {
+                            updates.sortCode = parsed.sortCode;
+                            updates.providedSortCode = parsed.sortCode; // For IDV auto-trigger
+                            console.log(`[Gateway] 📋 Extracted sort code: ${parsed.sortCode}`);
+                        }
+                        if (parsed.intent && !currentMemory?.userIntent) {
+                            updates.userIntent = parsed.intent;
+                            console.log(`[Gateway] 🎯 Extracted intent: ${parsed.intent}`);
+                        }
                         updates.lastUserMessage = message.text;
 
                         if (Object.keys(updates).length > 0) {
+                            console.log(`[Gateway] 💾 Updating memory with:`, updates);
                             await router.updateMemory(sessionId, updates);
                             const finalMemory = await router.getMemory(sessionId);
+                            
+                            console.log(`[Gateway] 📤 Final memory state:`, {
+                                account: finalMemory?.account,
+                                sortCode: finalMemory?.sortCode,
+                                providedAccount: finalMemory?.providedAccount,
+                                providedSortCode: finalMemory?.providedSortCode,
+                                userIntent: finalMemory?.userIntent
+                            });
+                            
                             if (agentWs && agentWs.readyState === WebSocket.OPEN) {
                                 console.log(`[Gateway] Sending memory_update AFTER text_input`);
                                 agentWs.send(JSON.stringify({
