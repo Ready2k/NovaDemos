@@ -16,6 +16,25 @@ interface Agent {
   port: number;
 }
 
+// Animated thinking dots component
+function ThinkingDots() {
+  const [dots, setDots] = useState(1);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => (prev % 3) + 1);
+    }, 500);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  return (
+    <span className="text-gray-400">
+      Thinking{'.'.repeat(dots)}
+    </span>
+  );
+}
+
 const AGENTS: Agent[] = [
   { id: 'triage', name: 'Triage Agent', description: 'Routes conversations to specialized agents', port: 8081 },
   { id: 'banking', name: 'Banking Agent', description: 'Handles banking operations', port: 8082 },
@@ -32,6 +51,9 @@ export default function AgentTestPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [useGateway, setUseGateway] = useState(true); // NEW: Gateway mode toggle
+  const [currentAgent, setCurrentAgent] = useState<string>('triage'); // NEW: Track current agent in gateway mode
+  const [isThinking, setIsThinking] = useState(false); // NEW: Track when agent is processing
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,37 +92,81 @@ export default function AgentTestPage() {
     const newSessionId = `test-${Date.now()}`;
     setSessionId(newSessionId);
 
-    // Connect directly to agent (bypassing gateway)
-    const wsHost = process.env.NEXT_PUBLIC_WS_URL?.replace('ws://', '').replace(':8080', '') || 'localhost';
-    const wsUrl = `ws://${wsHost}:${selectedAgent.port}/session`;
-    console.log(`[AgentTest] Connecting to ${selectedAgent.name} at ${wsUrl}`);
+    // Determine WebSocket host
+    // When running locally (localhost), connect to Docker services at 192.168.5.190
+    // When running in Docker, use localhost (services are on same network)
+    let wsHost: string;
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        // Local development - connect to Docker services
+        wsHost = '192.168.5.190';
+      } else {
+        // Running in Docker or remote - use current hostname
+        wsHost = hostname;
+      }
+    } else {
+      // Server-side rendering fallback
+      wsHost = process.env.NEXT_PUBLIC_WS_URL?.replace('ws://', '').replace(':8080', '') || 'localhost';
+    }
+    
+    let wsUrl: string;
+    let connectionMode: string;
+    
+    if (useGateway) {
+      // Gateway Mode: Connect to gateway which will route to agents
+      wsUrl = `ws://${wsHost}:8080/sonic`;
+      connectionMode = 'Gateway (Agent-to-Agent Routing)';
+      console.log(`[AgentTest] Gateway Mode: Connecting to gateway at ${wsUrl}`);
+    } else {
+      // Direct Mode: Connect directly to selected agent
+      wsUrl = `ws://${wsHost}:${selectedAgent.port}/session`;
+      connectionMode = `Direct to ${selectedAgent.name}`;
+      console.log(`[AgentTest] Direct Mode: Connecting to ${selectedAgent.name} at ${wsUrl}`);
+    }
 
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log(`[AgentTest] Connected to ${selectedAgent.name}`);
+      console.log(`[AgentTest] Connected (${connectionMode})`);
       setIsConnected(true);
       setIsConnecting(false);
 
-      // Send session init
-      ws.send(JSON.stringify({
-        type: 'session_init',
-        sessionId: newSessionId,
-        memory: {
-          // Pre-populate with test data for banking/idv agents
-          verified: selectedAgent.id === 'banking',
-          userName: selectedAgent.id === 'banking' ? 'Test User' : undefined,
-          account: selectedAgent.id === 'banking' ? '12345678' : undefined,
-          sortCode: selectedAgent.id === 'banking' ? '112233' : undefined,
-        },
-        timestamp: Date.now()
-      }));
+      if (useGateway) {
+        // Gateway mode: Select workflow (agent)
+        ws.send(JSON.stringify({
+          type: 'select_workflow',
+          workflowId: selectedAgent.id
+        }));
+        
+        setCurrentAgent(selectedAgent.id);
+        
+        setMessages(prev => [...prev, {
+          role: 'system',
+          content: `Connected via Gateway → ${selectedAgent.name} (Text Mode)`,
+          timestamp: Date.now()
+        }]);
+      } else {
+        // Direct mode: Send session init
+        ws.send(JSON.stringify({
+          type: 'session_init',
+          sessionId: newSessionId,
+          memory: {
+            // Pre-populate with test data for banking/idv agents
+            verified: selectedAgent.id === 'banking',
+            userName: selectedAgent.id === 'banking' ? 'Test User' : undefined,
+            account: selectedAgent.id === 'banking' ? '12345678' : undefined,
+            sortCode: selectedAgent.id === 'banking' ? '112233' : undefined,
+          },
+          timestamp: Date.now()
+        }));
 
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: `Connected to ${selectedAgent.name} (Text Mode - No Voice)`,
-        timestamp: Date.now()
-      }]);
+        setMessages(prev => [...prev, {
+          role: 'system',
+          content: `Connected to ${selectedAgent.name} (Direct - No Gateway)`,
+          timestamp: Date.now()
+        }]);
+      }
 
       // Trigger initial greeting from agent
       setTimeout(() => {
@@ -143,6 +209,11 @@ export default function AgentTestPage() {
                 isFinal: message.isFinal,
                 originalId: message.id
               });
+              
+              // Stop thinking animation when agent responds
+              if (message.role === 'assistant') {
+                setIsThinking(false);
+              }
               
               // Deduplicate by ID - update existing message if ID matches
               setMessages(prev => {
@@ -187,6 +258,8 @@ export default function AgentTestPage() {
             break;
 
           case 'tool_use':
+            // Agent is using a tool, show thinking state
+            setIsThinking(true);
             setMessages(prev => [...prev, {
               role: 'system',
               content: `🔧 Tool: ${message.toolName}`,
@@ -195,6 +268,7 @@ export default function AgentTestPage() {
             break;
 
           case 'tool_result':
+            // Tool completed, keep thinking state until agent responds
             setMessages(prev => [...prev, {
               role: 'system',
               content: `✅ Tool Result: ${message.toolName}`,
@@ -212,6 +286,18 @@ export default function AgentTestPage() {
 
           case 'connected':
             console.log(`[AgentTest] Session confirmed: ${message.sessionId}`);
+            break;
+            
+          case 'handoff_event':
+            // Gateway mode: Track agent handoffs
+            if (useGateway && message.target) {
+              setCurrentAgent(message.target);
+              setMessages(prev => [...prev, {
+                role: 'system',
+                content: `🔄 Handoff: Transferred to ${message.target.toUpperCase()} agent`,
+                timestamp: Date.now()
+              }]);
+            }
             break;
         }
       } catch (error) {
@@ -264,6 +350,8 @@ export default function AgentTestPage() {
     console.log(`[AgentTest] Sending:`, message);
     wsRef.current.send(JSON.stringify(message));
 
+    // Set thinking state when user sends message
+    setIsThinking(true);
     setInput('');
   };
 
@@ -282,7 +370,7 @@ export default function AgentTestPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Agent Test Console</h1>
           <p className="text-gray-400">
-            Direct text-only communication with agents (bypasses Gateway, no voice wrapper)
+            Test agent communication with Gateway Routing ON (agents hand off to each other) or OFF (direct agent access)
           </p>
         </div>
 
@@ -315,7 +403,41 @@ export default function AgentTestPage() {
               </div>
 
               {/* Connection Controls */}
-              <div className="mt-6 space-y-2">
+              <div className="mt-6 space-y-4">
+                {/* Gateway Mode Toggle */}
+                <div className="p-4 bg-gray-700 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="gateway-toggle" className="font-semibold text-sm">
+                      Gateway Routing
+                    </label>
+                    <button
+                      id="gateway-toggle"
+                      onClick={() => {
+                        if (isConnected) disconnect();
+                        setUseGateway(!useGateway);
+                      }}
+                      disabled={isConnected}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        useGateway ? "bg-green-600" : "bg-gray-600",
+                        isConnected && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          useGateway ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {useGateway 
+                      ? "✅ Agents can hand off to each other via Gateway" 
+                      : "❌ Direct connection - no agent handoffs"}
+                  </p>
+                </div>
+
                 {!isConnected ? (
                   <button
                     onClick={connect}
@@ -342,11 +464,29 @@ export default function AgentTestPage() {
                   <div>✅ Claude Sonnet (Decisions)</div>
                   <div>✅ Tools Execution</div>
                   <div>❌ Nova Sonic (Voice)</div>
-                  <div>❌ Gateway Routing</div>
+                  <div className={useGateway ? "text-green-400" : "text-gray-500"}>
+                    {useGateway ? "✅" : "❌"} Gateway Routing
+                  </div>
                 </div>
                 <div className="mt-3 text-xs text-gray-400">
-                  This mode tests agents directly without the voice wrapper, showing pure LangGraph workflow execution.
+                  {useGateway ? (
+                    <>
+                      <strong className="text-green-400">Gateway Mode:</strong> Agents can hand off conversations to each other. 
+                      Try asking Triage for your balance - it will route through IDV → Banking.
+                    </>
+                  ) : (
+                    <>
+                      <strong className="text-gray-500">Direct Mode:</strong> Each agent works independently in their specialist area only. 
+                      No handoffs between agents.
+                    </>
+                  )}
                 </div>
+                {useGateway && isConnected && (
+                  <div className="mt-3 p-2 bg-gray-800 rounded text-xs">
+                    <div className="text-gray-400">Current Agent:</div>
+                    <div className="text-green-400 font-semibold">{currentAgent.toUpperCase()}</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -362,26 +502,40 @@ export default function AgentTestPage() {
                     <p className="text-sm mt-2">Connect to an agent and start chatting</p>
                   </div>
                 ) : (
-                  messages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "p-4 rounded-lg",
-                        msg.role === 'user' && "bg-blue-600 ml-12",
-                        msg.role === 'assistant' && "bg-gray-700 mr-12",
-                        msg.role === 'system' && "bg-gray-900 text-gray-400 text-sm text-center"
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        {msg.role !== 'system' && (
-                          <div className="font-semibold text-sm opacity-75">
-                            {msg.role === 'user' ? '👤 You' : '🤖 Agent'}
-                          </div>
+                  <>
+                    {messages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "p-4 rounded-lg",
+                          msg.role === 'user' && "bg-blue-600 ml-12",
+                          msg.role === 'assistant' && "bg-gray-700 mr-12",
+                          msg.role === 'system' && "bg-gray-900 text-gray-400 text-sm text-center"
                         )}
-                        <div className="flex-1">{msg.content}</div>
+                      >
+                        <div className="flex items-start gap-3">
+                          {msg.role !== 'system' && (
+                            <div className="font-semibold text-sm opacity-75">
+                              {msg.role === 'user' ? '👤 You' : '🤖 Agent'}
+                            </div>
+                          )}
+                          <div className="flex-1">{msg.content}</div>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    ))}
+                    
+                    {/* Thinking Animation */}
+                    {isThinking && (
+                      <div className="p-4 rounded-lg bg-gray-700 mr-12">
+                        <div className="flex items-start gap-3">
+                          <div className="font-semibold text-sm opacity-75">🤖 Agent</div>
+                          <div className="flex-1">
+                            <ThinkingDots />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div ref={messagesEndRef} />
               </div>

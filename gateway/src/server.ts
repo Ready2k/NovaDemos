@@ -245,9 +245,116 @@ app.get('/api/tools', (req: Request, res: Response) => {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// Gateway Routing Endpoints for Agent-to-Agent Communication
+
+// Update session memory (called by agents via Gateway Router)
+app.post('/api/sessions/:sessionId/memory', async (req: Request, res: Response) => {
+    try {
+        const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
+        const { memory } = req.body;
+        const agentId = req.headers['x-agent-id'];
+
+        console.log(`[Gateway] Memory update request from agent ${agentId} for session ${sessionId}`);
+        console.log(`[Gateway] Memory keys: ${Object.keys(memory || {}).join(', ')}`);
+
+        const success = await router.updateMemory(sessionId, memory);
+
+        if (success) {
+            res.json({ success: true, sessionId, timestamp: Date.now() });
+        } else {
+            res.status(404).json({ success: false, error: 'Session not found' });
+        }
+    } catch (e: any) {
+        console.error('[Gateway] Memory update error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get session memory (called by agents via Gateway Router)
+app.get('/api/sessions/:sessionId/memory', async (req: Request, res: Response) => {
+    try {
+        const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
+        const agentId = req.headers['x-agent-id'];
+
+        console.log(`[Gateway] Memory retrieval request from agent ${agentId} for session ${sessionId}`);
+
+        const memory = await router.getMemory(sessionId);
+
+        if (memory) {
+            res.json({ success: true, memory, timestamp: Date.now() });
+        } else {
+            res.status(404).json({ success: false, error: 'Session not found' });
+        }
+    } catch (e: any) {
+        console.error('[Gateway] Memory retrieval error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Transfer session to another agent (called by agents via Gateway Router)
+app.post('/api/sessions/:sessionId/transfer', async (req: Request, res: Response) => {
+    try {
+        const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
+        const { targetAgent, reason } = req.body;
+        const agentId = req.headers['x-agent-id'];
+
+        console.log(`[Gateway] Transfer request from agent ${agentId}: ${sessionId} → ${targetAgent}`);
+        console.log(`[Gateway] Reason: ${reason}`);
+
+        const success = await router.transferSession(sessionId, targetAgent);
+
+        if (success) {
+            res.json({ success: true, sessionId, targetAgent, timestamp: Date.now() });
+        } else {
+            res.status(404).json({ success: false, error: 'Transfer failed' });
+        }
+    } catch (e: any) {
+        console.error('[Gateway] Transfer error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get agent status (called by agents via Gateway Router)
+app.get('/api/agents/:agentId', async (req: Request, res: Response) => {
+    try {
+        const agentId = Array.isArray(req.params.agentId) ? req.params.agentId[0] : req.params.agentId;
+        const agent = await registry.getAgent(agentId);
+
+        if (agent) {
+            res.json(agent);
+        } else {
+            res.status(404).json({ error: 'Agent not found' });
+        }
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update agent status (called by agents via Gateway Router)
+app.post('/api/agents/:agentId/status', async (req: Request, res: Response) => {
+    try {
+        const agentId = Array.isArray(req.params.agentId) ? req.params.agentId[0] : req.params.agentId;
+        const { status, details } = req.body;
+
+        console.log(`[Gateway] Agent ${agentId} status update: ${status}`);
+
+        // For now, just acknowledge - could extend to track agent status in Redis
+        res.json({ success: true, agentId, status, timestamp: Date.now() });
+    } catch (e: any) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // create HTTP and WebSocket servers
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: '/sonic' });
+const wss = new WebSocketServer({ 
+    server, 
+    path: '/sonic',
+    verifyClient: (info: any) => {
+        console.log(`[Gateway] WebSocket connection attempt from origin: ${info.origin}`);
+        return true; // Accept all connections
+    }
+});
 const activeConnections = new Map<string, WebSocket>();
 
 wss.on('connection', async (clientWs: WebSocket) => {
@@ -408,44 +515,68 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                 }
 
                                 if (message.type === 'tool_result' && handoffTools.includes(message.toolName)) {
-                                    // Only intercept if the handoff was successful
-                                    if (!message.success || message.error) {
-                                        console.log(`[Gateway] ⚠️  Handoff ${message.toolName} failed or blocked: ${message.error || 'unknown error'}`);
+                                    console.log(`[Gateway] 🔍 Tool result received for ${message.toolName}:`, JSON.stringify(message).substring(0, 300));
+                                    
+                                    // Check if handoff was blocked by circuit breaker or validation
+                                    const isBlocked = message.error && (
+                                        message.error.includes('Circuit breaker') ||
+                                        message.error.includes('blocked') ||
+                                        message.error.includes('Already called')
+                                    );
+                                    
+                                    if (isBlocked) {
+                                        console.log(`[Gateway] ⚠️  Handoff ${message.toolName} blocked: ${message.error}`);
                                         // Forward the error to client but don't intercept
                                         clientWs.send(data, { binary: isBinary });
                                         return;
                                     }
+                                    
+                                    // Handoff tools always succeed if not blocked - they just initiate the transfer
+                                    console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName} (initiating transfer)`);
 
-                                    console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName} (confirmed successful)`);
+                                    // CRITICAL: Forward tool_result to client FIRST for UI feedback
+                                    clientWs.send(data, { binary: isBinary });
 
                                     // SHIELD current agent from any more user input immediately
                                     isHandingOff = true;
 
-                                    // Wait for agent to finish speaking (if it had more to say) then swap
-                                    setTimeout(async () => {
-                                        const targetId = message.toolName.replace('transfer_to_', '').replace('return_to_', '');
-                                        const targetAgent = await registry.getAgent(targetId);
-                                        if (targetAgent) {
-                                            currentAgent = targetAgent;
-                                            try {
-                                                await connectToAgent(targetAgent);
-                                            } catch (err) {
-                                                console.error(`[Gateway] Handoff failed:`, err);
-                                                isHandingOff = false; // Reset if failed
-                                            } finally {
+                                    // Extract target agent ID
+                                    const targetId = message.toolName.replace('transfer_to_', '').replace('return_to_', '');
+                                    
+                                    // Perform handoff immediately (no delay)
+                                    (async () => {
+                                        try {
+                                            console.log(`[Gateway] 🔄 Performing handoff to: ${targetId}`);
+                                            const targetAgent = await registry.getAgent(targetId);
+                                            
+                                            if (!targetAgent) {
+                                                console.error(`[Gateway] ❌ Target agent not found: ${targetId}`);
                                                 isHandingOff = false;
+                                                return;
                                             }
-                                        } else {
+                                            
+                                            console.log(`[Gateway] ✅ Found target agent: ${targetAgent.id}`);
+                                            currentAgent = targetAgent;
+                                            
+                                            // Connect to new agent
+                                            await connectToAgent(targetAgent);
+                                            
+                                            console.log(`[Gateway] ✅ Handoff complete: ${message.toolName} → ${targetId}`);
+                                            
+                                            // Inform client of handoff
+                                            clientWs.send(JSON.stringify({
+                                                type: 'handoff_event',
+                                                target: targetId,
+                                                timestamp: Date.now()
+                                            }));
+                                            
+                                        } catch (err) {
+                                            console.error(`[Gateway] ❌ Handoff failed:`, err);
+                                        } finally {
                                             isHandingOff = false;
                                         }
-                                    }, 1500); // reduced to 1.5s for snappier transition
-
-                                    // Inform client of handoff for UI/logging
-                                    clientWs.send(JSON.stringify({
-                                        type: 'handoff_event',
-                                        target: message.toolName.replace('transfer_to_', ''),
-                                        timestamp: Date.now()
-                                    }));
+                                    })();
+                                    
                                     return;
                                 }
                                 if (message.type === 'update_memory') {

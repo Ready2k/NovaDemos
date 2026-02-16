@@ -9,7 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DecisionEvaluator = void 0;
 const client_bedrock_runtime_1 = require("@aws-sdk/client-bedrock-runtime");
 class DecisionEvaluator {
-    constructor(region = 'us-east-1', modelId = 'anthropic.claude-3-5-sonnet-20241022-v2:0') {
+    constructor(region = 'us-east-1', modelId = 'us.amazon.nova-2-lite-v1:0') {
         this.bedrockClient = new client_bedrock_runtime_1.BedrockRuntimeClient({ region });
         this.modelId = modelId;
     }

@@ -10,6 +10,7 @@
 
 import { WebSocket } from 'ws';
 import { AgentCore, AgentResponse, HandoffRequest } from './agent-core';
+import { isHandoffTool } from './handoff-tools';
 
 /**
  * Configuration for Text Adapter
@@ -221,9 +222,55 @@ export class TextAdapter {
                                 // Check for handoff in tool result
                                 if (result.success && result.result?.handoffRequest) {
                                     this.sendHandoffRequest(sessionId, result.result.handoffRequest);
+                                } else if (isHandoffTool(toolCall.toolName)) {
+                                    // CRITICAL: Don't generate follow-up response after handoff tools
+                                    // The gateway will handle the handoff and connect to the new agent
+                                    console.log(`[TextAdapter] Handoff tool ${toolCall.toolName} completed - skipping follow-up response`);
                                 } else {
+                                    // CRITICAL FIX: Add tool result to conversation history BEFORE generating follow-up
+                                    // This ensures the agent sees the tool result and doesn't call the same tool again
+                                    console.log(`[TextAdapter] Adding tool result to conversation history for ${toolCall.toolName}`);
+                                    
+                                    // Add the assistant's tool use message to history
+                                    const session = this.sessions.get(sessionId);
+                                    if (session) {
+                                        const agentSession = this.agentCore.getSession(sessionId);
+                                        if (agentSession) {
+                                            // Add assistant message with tool use
+                                            agentSession.messages.push({
+                                                role: 'assistant',
+                                                content: JSON.stringify({
+                                                    toolUse: {
+                                                        toolUseId: toolCall.toolUseId,
+                                                        name: toolCall.toolName,
+                                                        input: toolCall.input
+                                                    }
+                                                }),
+                                                timestamp: toolCall.timestamp,
+                                                metadata: { type: 'tool_use' }
+                                            });
+                                            
+                                            // Add user message with tool result
+                                            agentSession.messages.push({
+                                                role: 'user',
+                                                content: JSON.stringify({
+                                                    toolResult: {
+                                                        toolUseId: toolCall.toolUseId,
+                                                        content: result.result,
+                                                        status: result.success ? 'success' : 'error'
+                                                    }
+                                                }),
+                                                timestamp: Date.now(),
+                                                metadata: { type: 'tool_result' }
+                                            });
+                                            
+                                            console.log(`[TextAdapter] Tool result added to history, generating follow-up response`);
+                                        }
+                                    }
+                                    
                                     // Generate follow-up response after tool execution
-                                    this.agentCore.generateResponse(sessionId, `[Tool ${toolCall.toolName} completed]`)
+                                    // The agent will now see the tool result in conversation history
+                                    this.agentCore.generateResponse(sessionId, '')
                                         .then(followUpResponse => {
                                             this.sendResponse(sessionId, followUpResponse);
                                         })

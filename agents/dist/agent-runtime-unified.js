@@ -241,6 +241,7 @@ class UnifiedRuntime {
             decisionEvaluator: this.decisionEvaluator,
             graphExecutor: this.graphExecutor,
             localToolsUrl: this.config.localToolsUrl,
+            gatewayUrl: this.config.gatewayUrl,
             langfuseConfig: {
                 publicKey: process.env.LANGFUSE_PUBLIC_KEY,
                 secretKey: process.env.LANGFUSE_SECRET_KEY,

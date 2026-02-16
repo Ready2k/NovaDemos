@@ -16,6 +16,7 @@ import { PersonaConfig } from './persona-types';
 import { convertWorkflowToText } from './workflow-utils';
 import { generateHandoffTools, isHandoffTool, getTargetAgentFromTool, getPersonaIdForAgent } from './handoff-tools';
 import { generateBankingTools, isBankingTool } from './banking-tools';
+import { GatewayRouter, AgentContext, RouteRequest } from './gateway-router';
 import axios from 'axios';
 import { Langfuse, LangfuseTraceClient } from 'langfuse';
 
@@ -30,6 +31,7 @@ export interface AgentCoreConfig {
     decisionEvaluator: DecisionEvaluator;
     graphExecutor: GraphExecutor | null;
     localToolsUrl?: string;
+    gatewayUrl?: string;
     langfuseConfig?: {
         publicKey?: string;
         secretKey?: string;
@@ -167,6 +169,9 @@ export class AgentCore {
     private graphExecutor: GraphExecutor | null;
     private localToolsUrl: string;
     
+    // Gateway routing
+    private gatewayRouter: GatewayRouter | null = null;
+    
     // Session storage
     private sessions: Map<string, SessionContext> = new Map();
     
@@ -185,6 +190,16 @@ export class AgentCore {
         this.decisionEvaluator = config.decisionEvaluator;
         this.graphExecutor = config.graphExecutor;
         this.localToolsUrl = config.localToolsUrl || 'http://local-tools:9000';
+        
+        // Initialize Gateway Router if configured
+        if (config.gatewayUrl) {
+            this.gatewayRouter = new GatewayRouter({
+                gatewayUrl: config.gatewayUrl,
+                agentId: config.agentId,
+                timeout: 5000
+            });
+            console.log(`[AgentCore:${this.agentId}] Gateway Router initialized`);
+        }
         
         // Initialize Langfuse if configured
         if (config.langfuseConfig?.enabled !== false && 
@@ -414,14 +429,32 @@ export class AgentCore {
             // Get available tools
             const tools = this.getAllTools();
 
+            // Detect if this is a situation where we should force tool usage
+            // Force tool use when:
+            // 1. Triage agent + user asking for account-specific info
+            // 2. IDV agent + user provided credentials (numbers detected)
+            // 3. Banking agent + user asking for balance/transactions
+            const hasNumbers = /\d{6,}/.test(userMessage); // Detects account numbers or sort codes
+            const shouldForceToolUse = 
+                (this.agentId === 'triage' && 
+                 (userMessage.toLowerCase().includes('balance') ||
+                  userMessage.toLowerCase().includes('transaction') ||
+                  userMessage.toLowerCase().includes('payment') ||
+                  userMessage.toLowerCase().includes('dispute') ||
+                  userMessage.toLowerCase().includes('fraud'))) ||
+                (this.agentId === 'idv' && hasNumbers) ||
+                (this.agentId === 'banking' && 
+                 (userMessage.toLowerCase().includes('balance') ||
+                  userMessage.toLowerCase().includes('transaction')));
+
             // Call Claude Sonnet via Bedrock Converse API
             const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
             const bedrockClient = new BedrockRuntimeClient({ 
                 region: process.env.AWS_REGION || 'us-east-1' 
             });
 
-            const command = new ConverseCommand({
-                modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            const converseParams: any = {
+                modelId: 'us.amazon.nova-2-lite-v1:0',
                 messages: messages,
                 system: [{ text: systemPrompt }],
                 inferenceConfig: {
@@ -431,10 +464,25 @@ export class AgentCore {
                 },
                 toolConfig: tools.length > 0 ? {
                     tools: tools.map(tool => ({
-                        toolSpec: tool.toolSpec
-                    }))
+                        toolSpec: {
+                            ...tool.toolSpec,
+                            inputSchema: {
+                                json: typeof tool.toolSpec.inputSchema.json === 'string' 
+                                    ? JSON.parse(tool.toolSpec.inputSchema.json)
+                                    : tool.toolSpec.inputSchema.json
+                            }
+                        }
+                    })),
+                    // Force tool usage for routing scenarios
+                    toolChoice: shouldForceToolUse ? { any: {} } : { auto: {} }
                 } : undefined
-            });
+            };
+
+            const command = new ConverseCommand(converseParams);
+
+            if (shouldForceToolUse) {
+                console.log(`[AgentCore:${this.agentId}] 🔧 Forcing tool usage with toolChoice: any`);
+            }
 
             console.log(`[AgentCore:${this.agentId}] Calling Claude Sonnet...`);
             const response = await bedrockClient.send(command);
@@ -504,10 +552,50 @@ export class AgentCore {
 
         // Convert session messages to Claude format
         for (const msg of session.messages) {
-            messages.push({
-                role: msg.role === 'assistant' ? 'assistant' : 'user',
-                content: [{ text: msg.content }]
-            });
+            // Check if this is a tool use or tool result message
+            if (msg.metadata?.type === 'tool_use') {
+                // Parse tool use from content
+                try {
+                    const toolUseData = JSON.parse(msg.content);
+                    messages.push({
+                        role: 'assistant',
+                        content: [{
+                            toolUse: {
+                                toolUseId: toolUseData.toolUse.toolUseId,
+                                name: toolUseData.toolUse.name,
+                                input: toolUseData.toolUse.input
+                            }
+                        }]
+                    });
+                } catch (error) {
+                    console.warn(`[AgentCore:${this.agentId}] Failed to parse tool use message:`, error);
+                }
+            } else if (msg.metadata?.type === 'tool_result') {
+                // Parse tool result from content
+                try {
+                    const toolResultData = JSON.parse(msg.content);
+                    messages.push({
+                        role: 'user',
+                        content: [{
+                            toolResult: {
+                                toolUseId: toolResultData.toolResult.toolUseId,
+                                content: [{
+                                    json: toolResultData.toolResult.content
+                                }],
+                                status: toolResultData.toolResult.status
+                            }
+                        }]
+                    });
+                } catch (error) {
+                    console.warn(`[AgentCore:${this.agentId}] Failed to parse tool result message:`, error);
+                }
+            } else {
+                // Regular text message
+                messages.push({
+                    role: msg.role === 'assistant' ? 'assistant' : 'user',
+                    content: [{ text: msg.content }]
+                });
+            }
         }
 
         return messages;
@@ -1188,6 +1276,97 @@ export class AgentCore {
             context: handoffContext,
             graphState: fullGraphState
         };
+    }
+
+    /**
+     * Route session to another agent through the gateway
+     * This method uses the Gateway Router to pass context between agents
+     * 
+     * @param sessionId Session identifier
+     * @param targetAgentId Target agent identifier
+     * @param context Context to pass to target agent
+     * @returns Success status
+     */
+    public async routeToAgentViaGateway(
+        sessionId: string,
+        targetAgentId: string,
+        context?: Partial<AgentContext>
+    ): Promise<boolean> {
+        if (!this.gatewayRouter) {
+            console.warn(`[AgentCore:${this.agentId}] Gateway Router not initialized, cannot route`);
+            return false;
+        }
+
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            console.error(`[AgentCore:${this.agentId}] Session not found: ${sessionId}`);
+            return false;
+        }
+
+        // Build context from session state
+        const agentContext: AgentContext = {
+            lastAgent: this.agentId,
+            ...context
+        };
+
+        // Include verified user data if available
+        if (session.verifiedUser) {
+            agentContext.verified = true;
+            agentContext.userName = session.verifiedUser.customer_name;
+            agentContext.account = session.verifiedUser.account;
+            agentContext.sortCode = session.verifiedUser.sortCode;
+        }
+
+        // Include user intent if available
+        if (session.userIntent) {
+            agentContext.userIntent = session.userIntent;
+        }
+
+        // Include graph state
+        if (session.graphState) {
+            agentContext.graphState = session.graphState;
+        } else if (this.graphExecutor) {
+            agentContext.graphState = this.graphExecutor.getCurrentState();
+        }
+
+        // Include last user message
+        if (session.messages.length > 0) {
+            const lastUserMessage = session.messages
+                .slice()
+                .reverse()
+                .find(m => m.role === 'user');
+            if (lastUserMessage) {
+                agentContext.lastUserMessage = lastUserMessage.content;
+            }
+        }
+
+        console.log(`[AgentCore:${this.agentId}] Routing session ${sessionId} to ${targetAgentId} via gateway`);
+        console.log(`[AgentCore:${this.agentId}] Context keys: ${Object.keys(agentContext).join(', ')}`);
+
+        // Route through gateway
+        const routeRequest: RouteRequest = {
+            sessionId,
+            targetAgentId,
+            context: agentContext,
+            reason: context?.userIntent || 'Agent routing request'
+        };
+
+        const response = await this.gatewayRouter.routeToAgent(routeRequest);
+
+        if (response.success) {
+            console.log(`[AgentCore:${this.agentId}] ✅ Successfully routed to ${targetAgentId}`);
+            return true;
+        } else {
+            console.error(`[AgentCore:${this.agentId}] ❌ Failed to route to ${targetAgentId}: ${response.error}`);
+            return false;
+        }
+    }
+
+    /**
+     * Get Gateway Router instance (for direct access if needed)
+     */
+    public getGatewayRouter(): GatewayRouter | null {
+        return this.gatewayRouter;
     }
 
     /**

@@ -11,6 +11,7 @@
 import { WebSocket } from 'ws';
 import { SonicClient, SonicConfig, SonicEvent, AudioChunk } from './sonic-client';
 import { AgentCore } from './agent-core';
+import { isHandoffTool } from './handoff-tools';
 
 /**
  * Configuration for Voice Side-Car

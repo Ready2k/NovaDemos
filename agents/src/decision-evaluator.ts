@@ -22,7 +22,7 @@ export class DecisionEvaluator {
 
     constructor(
         region: string = 'us-east-1',
-        modelId: string = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+        modelId: string = 'us.amazon.nova-2-lite-v1:0'
     ) {
         this.bedrockClient = new BedrockRuntimeClient({ region });
         this.modelId = modelId;
