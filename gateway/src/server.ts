@@ -588,7 +588,10 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                         // Strict output management to prevent echo
                         if (agentWs === ws) {
+                            console.log(`[Gateway] Forwarding message from agent to client (type: ${!isBinary ? JSON.parse(data.toString()).type : 'binary'})`);
                             clientWs.send(data, { binary: isBinary });
+                        } else {
+                            console.log(`[Gateway] Skipping message from old agent connection`);
                         }
                     }
                 });

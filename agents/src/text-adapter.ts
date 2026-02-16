@@ -154,6 +154,8 @@ export class TextAdapter {
             console.log(`[TextAdapter] Calling Agent Core to generate response...`);
             const response = await this.agentCore.processUserMessage(sessionId, text);
             
+            console.log(`[TextAdapter] Received response type: ${response.type}`);
+            
             // Send response to client
             this.sendResponse(sessionId, response);
 
@@ -173,6 +175,8 @@ export class TextAdapter {
             console.warn(`[TextAdapter] Cannot send response: Session not found: ${sessionId}`);
             return;
         }
+
+        console.log(`[TextAdapter] Sending response type: ${response.type}, content length: ${response.content?.length || 0}`);
 
         try {
             switch (response.type) {

@@ -661,16 +661,26 @@ export class UnifiedRuntime {
                         const intent = memory.userIntent || 'check my balance';
                         const triggerMessage = `I want to ${intent}`;
 
-                        if (this.voiceSideCar) {
+                        // Use appropriate adapter based on mode
+                        const adapter = this.voiceSideCar || this.textAdapter;
+                        
+                        if (adapter) {
                             // CRITICAL: Increased delay to ensure session is fully initialized
                             setTimeout(() => {
                                 console.log(`[UnifiedRuntime:${this.config.agentId}] 🎯 Sending auto-trigger message: "${triggerMessage}"`);
                                 
-                                this.voiceSideCar!.handleTextInput(sessionId, triggerMessage, true).catch(error => {
-                                    console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ Error sending auto-trigger: ${error.message}`);
-                                    console.error(`[UnifiedRuntime:${this.config.agentId}] Stack:`, error.stack);
-                                });
+                                if (this.voiceSideCar) {
+                                    this.voiceSideCar.handleTextInput(sessionId, triggerMessage, true).catch(error => {
+                                        console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ Error sending auto-trigger: ${error.message}`);
+                                    });
+                                } else if (this.textAdapter) {
+                                    this.textAdapter.handleUserInput(sessionId, triggerMessage).catch(error => {
+                                        console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ Error sending auto-trigger: ${error.message}`);
+                                    });
+                                }
                             }, 2000); // Increased to 2 seconds for safety
+                        } else {
+                            console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ No adapter available for auto-trigger`);
                         }
                     }
                 }
