@@ -584,7 +584,9 @@ export default function AgentTestPage() {
               {/* Status */}
               <div className="mt-4 text-sm text-gray-400 text-center">
                 {isConnected ? (
-                  <span className="text-green-400">● Connected to {selectedAgent.name}</span>
+                  <span className="text-green-400">
+                    ● Connected to {useGateway ? `${currentAgent.charAt(0).toUpperCase() + currentAgent.slice(1)} Agent` : selectedAgent.name}
+                  </span>
                 ) : (
                   <span className="text-gray-500">○ Not connected</span>
                 )}
