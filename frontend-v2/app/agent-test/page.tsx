@@ -210,6 +210,26 @@ export default function AgentTestPage() {
                 originalId: message.id
               });
               
+              // Filter out internal system messages
+              const isSystemMessage = message.text.startsWith('[SYSTEM:') || 
+                                     message.text.startsWith('[System:') ||
+                                     message.text.startsWith('I want to '); // Auto-trigger messages
+              
+              if (isSystemMessage) {
+                console.log(`[AgentTest] Filtering out system message`);
+                return; // Don't display system messages
+              }
+              
+              // Clean up agent messages - remove [STEP: ...] prefixes
+              let cleanText = message.text;
+              if (message.role === 'assistant') {
+                // Remove all [STEP: xxx] patterns
+                cleanText = cleanText.replace(/\[STEP:\s*[^\]]+\]\s*/g, '');
+                // Remove any remaining workflow markers
+                cleanText = cleanText.replace(/\[WORKFLOW:\s*[^\]]+\]\s*/g, '');
+                cleanText = cleanText.trim();
+              }
+              
               // Stop thinking animation when agent responds
               if (message.role === 'assistant') {
                 setIsThinking(false);
@@ -227,7 +247,7 @@ export default function AgentTestPage() {
                   const updated = [...prev];
                   updated[existingIndex] = {
                     ...updated[existingIndex],
-                    content: message.text,
+                    content: cleanText,
                     timestamp: message.timestamp || Date.now()
                   };
                   return updated;
@@ -235,7 +255,7 @@ export default function AgentTestPage() {
                   // ADDITIONAL CHECK: Look for duplicate content from same role
                   const duplicateIndex = prev.findIndex(m => 
                     m.role === message.role && 
-                    m.content === message.text &&
+                    m.content === cleanText &&
                     Date.now() - m.timestamp < 5000 // Within 5 seconds
                   );
                   
@@ -249,12 +269,13 @@ export default function AgentTestPage() {
                   return [...prev, {
                     id: messageId,
                     role: message.role,
-                    content: message.text,
+                    content: cleanText,
                     timestamp: message.timestamp || Date.now()
                   } as any];
                 }
               });
             }
+            break;
             break;
 
           case 'tool_use':
