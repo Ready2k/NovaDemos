@@ -432,9 +432,14 @@ export class AgentCore {
             // Detect if this is a situation where we should force tool usage
             // Force tool use when:
             // 1. Triage agent + user asking for account-specific info
-            // 2. IDV agent + user provided credentials (numbers detected)
+            // 2. IDV agent + user provided BOTH account number AND sort code (8 digits + 6 digits)
             // 3. Banking agent + user asking for balance/transactions
-            const hasNumbers = /\d{6,}/.test(userMessage); // Detects account numbers or sort codes
+            
+            // For IDV: Only force if we have both 8-digit and 6-digit numbers
+            const has8Digits = /\b\d{8}\b/.test(userMessage);
+            const has6Digits = /\b\d{6}\b/.test(userMessage);
+            const hasBothCredentials = has8Digits && has6Digits;
+            
             const shouldForceToolUse = 
                 (this.agentId === 'triage' && 
                  (userMessage.toLowerCase().includes('balance') ||
@@ -442,7 +447,7 @@ export class AgentCore {
                   userMessage.toLowerCase().includes('payment') ||
                   userMessage.toLowerCase().includes('dispute') ||
                   userMessage.toLowerCase().includes('fraud'))) ||
-                (this.agentId === 'idv' && hasNumbers) ||
+                (this.agentId === 'idv' && hasBothCredentials) || // Only force if BOTH credentials present
                 (this.agentId === 'banking' && 
                  (userMessage.toLowerCase().includes('balance') ||
                   userMessage.toLowerCase().includes('transaction')));
