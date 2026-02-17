@@ -983,10 +983,12 @@ export class SonicClient {
                 return;
             }
 
+            // CRITICAL FIX: Only block rapid duplicates (< 500ms) to prevent accidental double-clicks
+            // Users should be able to intentionally send the same message multiple times
             const now = Date.now();
             const lastSent = (this as any)._lastSentText || { text: '', time: 0 };
-            if (lastSent.text === text && (now - lastSent.time) < 2000) {
-                console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
+            if (lastSent.text === text && (now - lastSent.time) < 500) {
+                console.warn(`[SonicClient] Ignoring rapid duplicate text input (< 500ms): "${text}" -- for session ${this.sessionId}`);
                 return;
             }
             (this as any)._lastSentText = { text, time: now };

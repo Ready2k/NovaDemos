@@ -452,7 +452,6 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                     }
                                 }
 
-                                // Identity Synthesis: Intercept IDV results to update central memory
                                 if (message.type === 'tool_result' && message.toolName === 'perform_idv_check') {
                                     // Parse the nested result structure
                                     let idvResult = message.result;
@@ -468,14 +467,18 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                     
                                     if (message.success && idvResult?.auth_status === 'VERIFIED') {
                                         console.log(`[Gateway] ✅ Detected successful IDV. Syncing memory and triggering auto-route to banking.`);
-                                        console.log(`[Gateway]    Customer: ${idvResult.customer_name}, Account: ${idvResult.account}`);
+                                        console.log(`[Gateway]    Customer: ${idvResult.customer_name}`);
+                                        
+                                        // Get current memory to retrieve providedAccount/providedSortCode
+                                        const currentMemory = await router.getMemory(sessionId);
                                         
                                         // Update memory with verified credentials
+                                        // Use providedAccount/providedSortCode from memory since IDV result doesn't include them
                                         await router.updateMemory(sessionId, {
                                             verified: true,
                                             userName: idvResult.customer_name,
-                                            account: idvResult.account,
-                                            sortCode: idvResult.sortCode
+                                            account: currentMemory?.providedAccount || currentMemory?.account,
+                                            sortCode: currentMemory?.providedSortCode || currentMemory?.sortCode
                                         });
 
                                         // VERIFIED STATE GATE: Automatically route to banking after successful verification

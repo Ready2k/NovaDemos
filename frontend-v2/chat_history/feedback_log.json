@@ -320,5 +320,19 @@
     "score": 0,
     "name": "user-feedback",
     "timestamp": "2026-01-30T15:26:53.085Z"
+  },
+  {
+    "sessionId": "cdafdc0e-78bb-41a4-b142-dc7d9585b867",
+    "traceId": "cdafdc0e-78bb-41a4-b142-dc7d9585b867",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-02-17T13:23:13.255Z"
+  },
+  {
+    "sessionId": "b9a30ded-49b4-4fae-a223-471ddbaf73b5",
+    "traceId": "b9a30ded-49b4-4fae-a223-471ddbaf73b5",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-02-17T13:23:32.227Z"
   }
 ]

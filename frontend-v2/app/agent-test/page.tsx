@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { useAudioProcessor } from '@/lib/hooks/useAudioProcessor';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -93,18 +94,11 @@ export default function AgentTestPage() {
     setSessionId(newSessionId);
 
     // Determine WebSocket host
-    // When running locally (localhost), connect to Docker services at 192.168.5.190
-    // When running in Docker, use localhost (services are on same network)
     let wsHost: string;
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname;
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        // Local development - connect to Docker services
-        wsHost = '192.168.5.190';
-      } else {
-        // Running in Docker or remote - use current hostname
-        wsHost = hostname;
-      }
+      // Use current hostname (localhost for local dev, actual hostname for remote)
+      wsHost = hostname;
     } else {
       // Server-side rendering fallback
       wsHost = process.env.NEXT_PUBLIC_WS_URL?.replace('ws://', '').replace(':8080', '') || 'localhost';

@@ -66,13 +66,13 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
     console.log(`[LocalTools] Calling AgentCore Gateway: ${actualToolName}`);
     console.log(`[LocalTools] Input parameters:`, JSON.stringify(input, null, 2));
     
-    // Transform input field names for AgentCore compatibility
-    // AgentCore expects 'accountId' but our tools use 'accountNumber'
-    let transformedInput = { ...input };
-    if (input.accountNumber && !input.accountId) {
+    // Transform input field names based on tool requirements
+    // Balance tool expects 'accountId' but IDV expects 'accountNumber'
+    const transformedInput = { ...input };
+    if (toolName === 'agentcore_balance' && input.accountNumber && !input.accountId) {
         transformedInput.accountId = input.accountNumber;
         delete transformedInput.accountNumber;
-        console.log(`[LocalTools] Transformed accountNumber → accountId for AgentCore`);
+        console.log(`[LocalTools] Transformed accountNumber → accountId for balance tool`);
     }
     
     // Create JSON-RPC 2.0 payload

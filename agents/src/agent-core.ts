@@ -1853,15 +1853,16 @@ You: "I'll connect you to our banking specialist right away."
                 return idvTools;
                 
             case 'banking':
-                // Banking agent: Banking tools + handoff tools
-                // Can perform banking operations and return to triage
+                // Banking agent: Banking tools ONLY (NO handoff tools)
+                // After completing task, agent should ask if user needs anything else
+                // Gateway will handle routing back to triage if needed
                 const bankingOnlyTools = bankingTools.filter(t => 
                     t.toolSpec.name === 'agentcore_balance' ||
                     t.toolSpec.name === 'get_account_transactions' ||
                     t.toolSpec.name === 'uk_branch_lookup'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: Banking + Handoff (${bankingOnlyTools.length + handoffTools.length} tools)`);
-                return [...handoffTools, ...bankingOnlyTools];
+                console.log(`[AgentCore:${this.agentId}] Tool access: Banking only (${bankingOnlyTools.length} tools) - NO handoff tools`);
+                return bankingOnlyTools;
                 
             case 'mortgage':
                 // Mortgage agent: Mortgage tools + handoff tools

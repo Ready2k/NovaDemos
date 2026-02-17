@@ -11,6 +11,7 @@
  * Gateway registration, and graceful shutdown.
  */
 
+import 'dotenv/config';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
@@ -897,7 +898,13 @@ export class UnifiedRuntime {
         console.log(`[UnifiedRuntime:${this.config.agentId}] Registering with Gateway: ${gatewayUrl}`);
 
         try {
-            const agentUrl = `ws://agent-${this.config.agentId}:${this.config.agentPort}`;
+            // Determine agent URL based on gateway URL
+            // If gateway is localhost, use localhost for agent too (local mode)
+            // Otherwise use Docker hostname (Docker mode)
+            const isLocalMode = gatewayUrl.includes('localhost') || gatewayUrl.includes('127.0.0.1');
+            const agentUrl = isLocalMode 
+                ? `ws://localhost:${this.config.agentPort}`
+                : `ws://agent-${this.config.agentId}:${this.config.agentPort}`;
 
             const response = await axios.post(`${gatewayUrl}/api/agents/register`, {
                 id: this.config.agentId,
