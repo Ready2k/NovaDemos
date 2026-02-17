@@ -52,11 +52,24 @@ export default function AgentTestPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [useGateway, setUseGateway] = useState(true); // NEW: Gateway mode toggle
-  const [currentAgent, setCurrentAgent] = useState<string>('triage'); // NEW: Track current agent in gateway mode
-  const [isThinking, setIsThinking] = useState(false); // NEW: Track when agent is processing
+  const [useGateway, setUseGateway] = useState(true);
+  const [useVoiceMode, setUseVoiceMode] = useState(false); // NEW: Voice mode toggle
+  const [currentAgent, setCurrentAgent] = useState<string>('triage');
+  const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Audio processor for voice mode
+  const audioProcessor = useAudioProcessor({
+    onAudioData: (audioData) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && useVoiceMode) {
+        // Send audio data as binary
+        wsRef.current.send(audioData);
+      }
+    },
+    inputSampleRate: 16000,   // Microphone input at 16kHz
+    outputSampleRate: 24000,  // Nova Sonic output at 24kHz
+  });
 
   // Auto-scroll to bottom ONLY when user sends a message or on first message
   // Don't auto-scroll on agent responses to avoid disrupting reading
@@ -137,7 +150,7 @@ export default function AgentTestPage() {
         
         setMessages(prev => [...prev, {
           role: 'system',
-          content: `Connected via Gateway → ${selectedAgent.name} (Text Mode)`,
+          content: `Connected via Gateway → ${selectedAgent.name} (${useVoiceMode ? 'Voice' : 'Text'} Mode)`,
           timestamp: Date.now()
         }]);
       } else {
@@ -174,11 +187,17 @@ export default function AgentTestPage() {
       }, 500);
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       try {
-        // Skip binary messages (audio data) - check both Blob and ArrayBuffer
+        // Handle binary audio data in voice mode
         if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-          console.log('[AgentTest] Skipping binary audio data');
+          if (useVoiceMode) {
+            console.log('[AgentTest] Received binary audio data');
+            const audioData = event.data instanceof Blob 
+              ? await event.data.arrayBuffer() 
+              : event.data;
+            await audioProcessor.playAudio(audioData);
+          }
           return;
         }
 
@@ -453,6 +472,40 @@ export default function AgentTestPage() {
                   </p>
                 </div>
 
+                {/* Voice Mode Toggle */}
+                <div className="p-4 bg-gray-700 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="voice-toggle" className="font-semibold text-sm">
+                      Voice Mode
+                    </label>
+                    <button
+                      id="voice-toggle"
+                      onClick={() => {
+                        if (isConnected) disconnect();
+                        setUseVoiceMode(!useVoiceMode);
+                      }}
+                      disabled={isConnected}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        useVoiceMode ? "bg-purple-600" : "bg-gray-600",
+                        isConnected && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          useVoiceMode ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {useVoiceMode 
+                      ? "🎤 Audio input/output enabled" 
+                      : "⌨️ Text-only mode"}
+                  </p>
+                </div>
+
                 {!isConnected ? (
                   <button
                     onClick={connect}
@@ -557,22 +610,67 @@ export default function AgentTestPage() {
 
               {/* Input */}
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  disabled={!isConnected}
-                  placeholder={isConnected ? "Type a message..." : "Connect to an agent first"}
-                  className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!isConnected || !input.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-                >
-                  Send
-                </button>
+                {useVoiceMode ? (
+                  /* Voice Mode Controls */
+                  <>
+                    <button
+                      onClick={async () => {
+                        if (!audioProcessor.isRecording) {
+                          await audioProcessor.initialize();
+                          await audioProcessor.startRecording();
+                        } else {
+                          audioProcessor.stopRecording();
+                        }
+                      }}
+                      disabled={!isConnected}
+                      className={cn(
+                        "flex-1 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2",
+                        audioProcessor.isRecording 
+                          ? "bg-red-600 hover:bg-red-700 text-white" 
+                          : "bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-600"
+                      )}
+                    >
+                      {audioProcessor.isRecording ? (
+                        <>
+                          <span className="inline-block w-3 h-3 bg-white rounded-full animate-pulse"></span>
+                          Stop Recording
+                        </>
+                      ) : (
+                        <>
+                          🎤 Start Recording
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => audioProcessor.setMuted(!audioProcessor.isMuted)}
+                      disabled={!isConnected}
+                      className="bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 text-white px-4 py-3 rounded-lg transition-colors"
+                      title={audioProcessor.isMuted ? "Unmute" : "Mute"}
+                    >
+                      {audioProcessor.isMuted ? "🔇" : "🔊"}
+                    </button>
+                  </>
+                ) : (
+                  /* Text Mode Controls */
+                  <>
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      disabled={!isConnected}
+                      placeholder={isConnected ? "Type a message..." : "Connect to an agent first"}
+                      className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={!isConnected || !input.trim()}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                    >
+                      Send
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Status */}
