@@ -32,8 +32,8 @@ class VoiceSideCar {
             throw new Error(`Voice session already exists: ${sessionId}`);
         }
         try {
-            // Initialize Agent Core session
-            this.agentCore.initializeSession(sessionId, memory);
+            // Initialize Agent Core session with voice/hybrid mode for speech formatting
+            this.agentCore.initializeSession(sessionId, memory, 'hybrid');
             // Create SonicClient for this session
             const sonicClient = new sonic_client_1.SonicClient(this.sonicConfig);
             // Store session
@@ -254,7 +254,10 @@ class VoiceSideCar {
                     }));
                     break;
                 default:
-                    console.warn(`[VoiceSideCar] Unknown event type: ${event.type}`);
+                    // CRITICAL: Don't forward unknown events to prevent JSON errors
+                    // Nova Sonic may send internal events (TEXT, AUDIO, TOOL, etc.) that aren't in our SonicEvent type
+                    // These raw events should be silently filtered to prevent the client from receiving unexpected message formats
+                    console.log(`[VoiceSideCar] Filtered unknown event type: ${event.type} (not forwarding to client)`);
             }
         }
         catch (error) {

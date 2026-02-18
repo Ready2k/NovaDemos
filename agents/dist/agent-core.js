@@ -19,6 +19,7 @@ const banking_tools_1 = require("./banking-tools");
 const gateway_router_1 = require("./gateway-router");
 const axios_1 = __importDefault(require("axios"));
 const langfuse_1 = require("langfuse");
+const speech_formatter_1 = require("./speech-formatter");
 /**
  * Agent Core - Voice-agnostic business logic
  */
@@ -75,8 +76,8 @@ class AgentCore {
     /**
      * Initialize a new session
      */
-    initializeSession(sessionId, memory) {
-        console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId}`);
+    initializeSession(sessionId, memory, mode) {
+        console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId} (mode: ${mode || 'unknown'})`);
         console.log(`[AgentCore:${this.agentId}] Memory received:`, JSON.stringify(memory, null, 2));
         const session = {
             sessionId,
@@ -85,7 +86,8 @@ class AgentCore {
             currentNode: this.workflowDef?.nodes?.find((n) => n.type === 'start')?.id,
             totalTokens: 0,
             inputTokens: 0,
-            outputTokens: 0
+            outputTokens: 0,
+            mode: mode || 'text' // Default to text mode if not specified
         };
         // Create Langfuse trace for this session (Requirement 11.2)
         if (this.langfuseEnabled && this.langfuse) {
@@ -330,8 +332,21 @@ class AgentCore {
                             };
                         }
                         if (content.text) {
-                            const responseText = content.text;
+                            let responseText = content.text;
                             console.log(`[AgentCore:${this.agentId}] Claude response: "${responseText.substring(0, 100)}..."`);
+                            // CRITICAL: Format text for speech in voice mode
+                            // This is part of the "Text-to-Voice Wrapper" that makes text agents work as voice agents
+                            // Only format if this session is in voice/hybrid mode
+                            const session = this.sessions.get(sessionId);
+                            if (session?.mode === 'voice' || session?.mode === 'hybrid') {
+                                const originalText = responseText;
+                                responseText = (0, speech_formatter_1.formatTextForSpeech)(responseText);
+                                if (originalText !== responseText) {
+                                    console.log(`[AgentCore:${this.agentId}] 🎤 Speech formatting applied:`);
+                                    console.log(`[AgentCore:${this.agentId}]    Original: "${originalText.substring(0, 80)}..."`);
+                                    console.log(`[AgentCore:${this.agentId}]    Formatted: "${responseText.substring(0, 80)}..."`);
+                                }
+                            }
                             // Store assistant response
                             this.trackAssistantResponse(sessionId, responseText);
                             return {

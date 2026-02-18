@@ -538,9 +538,21 @@ class SonicClient {
                     }
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
-                const resultString = typeof resultData.result === 'string'
-                    ? resultData.result
-                    : JSON.stringify(resultData.result);
+                // Unwrap AgentCore result format if present
+                let unwrappedResult = resultData.result;
+                if (unwrappedResult?.content && Array.isArray(unwrappedResult.content) && unwrappedResult.content[0]?.text) {
+                    try {
+                        // Try to parse the inner JSON text
+                        unwrappedResult = JSON.parse(unwrappedResult.content[0].text);
+                    }
+                    catch (e) {
+                        // If not JSON, use the text as-is
+                        unwrappedResult = unwrappedResult.content[0].text;
+                    }
+                }
+                const resultString = typeof unwrappedResult === 'string'
+                    ? unwrappedResult
+                    : JSON.stringify(unwrappedResult);
                 const injectedContent = `[SYSTEM] Tool '${resultData.toolUseId}' output:\n${resultString}\n[INSTRUCTION] user has NOT spoken. Proceed with workflow based on this tool result immediately.`;
                 const textInputEvent = {
                     event: {
@@ -941,10 +953,12 @@ class SonicClient {
                 console.warn(`[SonicClient] Ignoring hallucinated interruption signal: "${text}"`);
                 return;
             }
+            // CRITICAL FIX: Only block rapid duplicates (< 500ms) to prevent accidental double-clicks
+            // Users should be able to intentionally send the same message multiple times
             const now = Date.now();
             const lastSent = this._lastSentText || { text: '', time: 0 };
-            if (lastSent.text === text && (now - lastSent.time) < 2000) {
-                console.warn(`[SonicClient] Ignoring duplicate text input: "${text}"`);
+            if (lastSent.text === text && (now - lastSent.time) < 500) {
+                console.warn(`[SonicClient] Ignoring rapid duplicate text input (< 500ms): "${text}" -- for session ${this.sessionId}`);
                 return;
             }
             this._lastSentText = { text, time: now };

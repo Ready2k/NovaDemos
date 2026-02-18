@@ -7,6 +7,56 @@ exports.extractAccountDetails = extractAccountDetails;
 exports.extractIntent = extractIntent;
 exports.parseUserMessage = parseUserMessage;
 /**
+ * Convert spoken numbers to digits
+ * Examples:
+ * - "one two three" → "123"
+ * - "one, two, three, four" → "1234"
+ * - "eight-digit account number is one, two, three" → "eight-digit account number is 123"
+ * - "one one two two three three" → "112233"
+ */
+function convertSpokenNumbersToDigits(text) {
+    const numberMap = {
+        'zero': '0', 'oh': '0',
+        'one': '1',
+        'two': '2', 'to': '2', 'too': '2',
+        'three': '3',
+        'four': '4', 'for': '4',
+        'five': '5',
+        'six': '6',
+        'seven': '7',
+        'eight': '8',
+        'nine': '9'
+    };
+    // Replace spoken numbers with digits, concatenating consecutive numbers
+    let result = text.toLowerCase();
+    // Split by whitespace and punctuation, but keep track of positions
+    const words = result.split(/\s+/);
+    const converted = [];
+    let digitBuffer = [];
+    for (let i = 0; i < words.length; i++) {
+        // Clean the word (remove punctuation)
+        const cleaned = words[i].replace(/[^\w]/g, '');
+        if (numberMap[cleaned]) {
+            // This is a spoken number - add to digit buffer
+            digitBuffer.push(numberMap[cleaned]);
+        }
+        else {
+            // Not a number - flush digit buffer if any
+            if (digitBuffer.length > 0) {
+                converted.push(digitBuffer.join(''));
+                digitBuffer = [];
+            }
+            // Add the non-number word
+            converted.push(words[i]);
+        }
+    }
+    // Flush any remaining digits
+    if (digitBuffer.length > 0) {
+        converted.push(digitBuffer.join(''));
+    }
+    return converted.join(' ');
+}
+/**
  * Extract account number and sort code from user message
  * Supports various formats:
  * - "account 12345678 sort code 112233"
@@ -14,18 +64,22 @@ exports.parseUserMessage = parseUserMessage;
  * - "account number is 12345678 and sort code is 112233"
  * - "12345678" (just account number)
  * - "112233" (just sort code)
+ * - "one two three four five six seven eight" (spoken numbers)
  *
  * CRITICAL: Now supports PARTIAL matches - can extract just account OR just sort code
  */
 function extractAccountDetails(message) {
+    // First, convert spoken numbers to digits
+    const converted = convertSpokenNumbersToDigits(message);
+    console.log(`[IntentParser] Converted: "${message}" → "${converted}"`);
     const result = {
         hasAccountDetails: false
     };
     // Normalize message
-    const normalized = message.toLowerCase().replace(/[^\w\s]/g, ' ');
+    const normalized = converted.toLowerCase().replace(/[^\w\s]/g, ' ');
     // Pattern 1: "account 12345678 sort code 112233"
     const pattern1 = /account\s*(?:number|id|no)?\s*(\d{8})\s*(?:and|with)?\s*sort\s*code\s*(\d{6})/i;
-    const match1 = message.match(pattern1);
+    const match1 = converted.match(pattern1);
     if (match1) {
         result.accountNumber = match1[1];
         result.sortCode = match1[2];
@@ -34,7 +88,7 @@ function extractAccountDetails(message) {
     }
     // Pattern 2: "sort code 112233 account 12345678" (reversed order)
     const pattern2 = /sort\s*code\s*(\d{6})\s*(?:and|with)?\s*account\s*(?:number|id|no)?\s*(\d{8})/i;
-    const match2 = message.match(pattern2);
+    const match2 = converted.match(pattern2);
     if (match2) {
         result.sortCode = match2[1];
         result.accountNumber = match2[2];
@@ -43,7 +97,7 @@ function extractAccountDetails(message) {
     }
     // Pattern 3: "12345678, 112233" or "12345678 112233" (numbers only)
     const pattern3 = /\b(\d{8})\s*[,\s]\s*(\d{6})\b/;
-    const match3 = message.match(pattern3);
+    const match3 = converted.match(pattern3);
     if (match3) {
         result.accountNumber = match3[1];
         result.sortCode = match3[2];
@@ -52,7 +106,7 @@ function extractAccountDetails(message) {
     }
     // Pattern 4: "my account is 12345678 and sort code is 112233"
     const pattern4 = /(?:my\s+)?account\s+(?:is\s+)?(\d{8})\s+(?:and\s+)?(?:my\s+)?sort\s*code\s+(?:is\s+)?(\d{6})/i;
-    const match4 = message.match(pattern4);
+    const match4 = converted.match(pattern4);
     if (match4) {
         result.accountNumber = match4[1];
         result.sortCode = match4[2];
@@ -60,8 +114,8 @@ function extractAccountDetails(message) {
         return result;
     }
     // Pattern 5: Just look for 8-digit and 6-digit numbers (both present)
-    const eightDigit = message.match(/\b(\d{8})\b/);
-    const sixDigit = message.match(/\b(\d{6})\b/);
+    const eightDigit = converted.match(/\b(\d{8})\b/);
+    const sixDigit = converted.match(/\b(\d{6})\b/);
     if (eightDigit && sixDigit) {
         result.accountNumber = eightDigit[1];
         result.sortCode = sixDigit[1];
@@ -71,7 +125,7 @@ function extractAccountDetails(message) {
     // CRITICAL NEW PATTERNS: Handle partial matches
     // Pattern 6: Just account number (8 digits) with context
     const accountOnly = /(?:account|acc|acct)\s*(?:number|no|num|#)?\s*(?:is\s+)?(\d{8})\b/i;
-    const matchAccount = message.match(accountOnly);
+    const matchAccount = converted.match(accountOnly);
     if (matchAccount) {
         result.accountNumber = matchAccount[1];
         // Don't set hasAccountDetails=true since we only have partial
@@ -79,7 +133,7 @@ function extractAccountDetails(message) {
     }
     // Pattern 7: Just sort code (6 digits) with context
     const sortOnly = /(?:sort\s*code|sortcode)\s*(?:is\s+)?(\d{6})\b/i;
-    const matchSort = message.match(sortOnly);
+    const matchSort = converted.match(sortOnly);
     if (matchSort) {
         result.sortCode = matchSort[1];
         // Don't set hasAccountDetails=true since we only have partial

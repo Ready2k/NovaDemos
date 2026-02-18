@@ -672,21 +672,45 @@ export class UnifiedRuntime {
                     }
                 }
 
-                // CRITICAL: Auto-trigger banking agent with verified user and intent
+                // CRITICAL: Auto-trigger banking agent with verified user
+                // ALWAYS trigger, even if credentials are missing - the agent can ask for them
                 if (this.config.agentId === 'banking' && memory) {
+                    console.log(`[UnifiedRuntime:${this.config.agentId}] 🔍 Checking banking auto-trigger conditions:`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.verified: ${memory.verified}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.userName: ${memory.userName}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.account: ${memory.account}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.sortCode: ${memory.sortCode}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.userIntent: ${memory.userIntent}`);
+                    console.log(`[UnifiedRuntime:${this.config.agentId}]    session.autoTriggered: ${session.autoTriggered}`);
+                    
                     const hasVerifiedUser = memory.verified && memory.userName;
                     const hasIntent = memory.userIntent;
                     const hasAccountDetails = memory.account && memory.sortCode;
 
-                    if (hasVerifiedUser && (hasIntent || hasAccountDetails)) {
+                    // CHANGED: Trigger if verified user exists, regardless of credentials
+                    // The banking agent prompt will check for missing credentials and ask for them
+                    if (hasVerifiedUser) {
                         console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering Banking agent (first time only)`);
                         console.log(`[UnifiedRuntime:${this.config.agentId}]    User: ${memory.userName}, Intent: ${hasIntent ? memory.userIntent : 'check balance'}`);
-                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account}, Sort Code: ${memory.sortCode}`);
+                        console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.account || 'MISSING'}, Sort Code: ${memory.sortCode || 'MISSING'}`);
 
                         session.autoTriggered = true; // Mark as triggered
 
-                        const intent = memory.userIntent || 'check my balance';
-                        const triggerMessage = `I want to ${intent}`;
+                        // Build trigger message based on what we have
+                        let triggerMessage: string;
+                        if (hasIntent && hasAccountDetails) {
+                            // We have everything - proceed with intent
+                            triggerMessage = `I want to ${memory.userIntent}`;
+                        } else if (hasIntent && !hasAccountDetails) {
+                            // We have intent but missing credentials - ask for them
+                            triggerMessage = `[SYSTEM: User wants to ${memory.userIntent} but credentials are missing. Ask for account number and sort code.]`;
+                        } else if (!hasIntent && hasAccountDetails) {
+                            // We have credentials but no intent - ask what they want
+                            triggerMessage = `[SYSTEM: User has provided credentials. Ask how you can help them.]`;
+                        } else {
+                            // Missing both - ask for everything
+                            triggerMessage = `[SYSTEM: User is verified but missing credentials and intent. Greet them and ask for account details.]`;
+                        }
 
                         // Use appropriate adapter based on mode
                         const adapter = this.voiceSideCar || this.textAdapter;
@@ -709,6 +733,8 @@ export class UnifiedRuntime {
                         } else {
                             console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ No adapter available for auto-trigger`);
                         }
+                    } else {
+                        console.log(`[UnifiedRuntime:${this.config.agentId}] ⏸️  Banking agent NOT auto-triggered: User not verified (verified=${memory.verified}, userName=${memory.userName})`);
                     }
                 }
             } else if (!AUTO_TRIGGER_ENABLED && DEBUG) {

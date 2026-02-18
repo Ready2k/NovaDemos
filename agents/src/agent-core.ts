@@ -19,6 +19,7 @@ import { generateBankingTools, isBankingTool } from './banking-tools';
 import { GatewayRouter, AgentContext, RouteRequest } from './gateway-router';
 import axios from 'axios';
 import { Langfuse, LangfuseTraceClient } from 'langfuse';
+import { formatTextForSpeech } from './speech-formatter';
 
 /**
  * Configuration for Agent Core
@@ -60,6 +61,7 @@ export interface SessionContext {
     lastToolCallTime?: number; // Track last tool call timestamp
     idvAttempts?: number; // Track IDV verification attempts (max 3)
     lastIdvFailure?: string; // Track last IDV failure reason
+    mode?: 'voice' | 'text' | 'hybrid'; // Track session mode for speech formatting
 }
 
 /**
@@ -227,8 +229,8 @@ export class AgentCore {
     /**
      * Initialize a new session
      */
-    public initializeSession(sessionId: string, memory?: any): SessionContext {
-        console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId}`);
+    public initializeSession(sessionId: string, memory?: any, mode?: 'voice' | 'text' | 'hybrid'): SessionContext {
+        console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId} (mode: ${mode || 'unknown'})`);
         console.log(`[AgentCore:${this.agentId}] Memory received:`, JSON.stringify(memory, null, 2));
         
         const session: SessionContext = {
@@ -238,7 +240,8 @@ export class AgentCore {
             currentNode: this.workflowDef?.nodes?.find((n: any) => n.type === 'start')?.id,
             totalTokens: 0,
             inputTokens: 0,
-            outputTokens: 0
+            outputTokens: 0,
+            mode: mode || 'text' // Default to text mode if not specified
         };
         
         // Create Langfuse trace for this session (Requirement 11.2)
@@ -516,8 +519,23 @@ export class AgentCore {
                         }
 
                         if (content.text) {
-                            const responseText = content.text;
+                            let responseText = content.text;
                             console.log(`[AgentCore:${this.agentId}] Claude response: "${responseText.substring(0, 100)}..."`);
+
+                            // CRITICAL: Format text for speech in voice mode
+                            // This is part of the "Text-to-Voice Wrapper" that makes text agents work as voice agents
+                            // Only format if this session is in voice/hybrid mode
+                            const session = this.sessions.get(sessionId);
+                            if (session?.mode === 'voice' || session?.mode === 'hybrid') {
+                                const originalText = responseText;
+                                responseText = formatTextForSpeech(responseText);
+                                
+                                if (originalText !== responseText) {
+                                    console.log(`[AgentCore:${this.agentId}] 🎤 Speech formatting applied:`);
+                                    console.log(`[AgentCore:${this.agentId}]    Original: "${originalText.substring(0, 80)}..."`);
+                                    console.log(`[AgentCore:${this.agentId}]    Formatted: "${responseText.substring(0, 80)}..."`);
+                                }
+                            }
 
                             // Store assistant response
                             this.trackAssistantResponse(sessionId, responseText);

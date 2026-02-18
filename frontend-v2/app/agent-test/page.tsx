@@ -188,25 +188,25 @@ export default function AgentTestPage() {
     };
 
     ws.onmessage = async (event) => {
+      // Handle binary audio data in voice mode
+      if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+        if (useVoiceMode) {
+          console.log('[AgentTest] Received binary audio data');
+          const audioData = event.data instanceof Blob 
+            ? await event.data.arrayBuffer() 
+            : event.data;
+          await audioProcessor.playAudio(audioData);
+        }
+        return;
+      }
+
+      // Skip if data is not a string (additional safety check)
+      if (typeof event.data !== 'string') {
+        console.log('[AgentTest] Skipping non-string data:', typeof event.data);
+        return;
+      }
+
       try {
-        // Handle binary audio data in voice mode
-        if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
-          if (useVoiceMode) {
-            console.log('[AgentTest] Received binary audio data');
-            const audioData = event.data instanceof Blob 
-              ? await event.data.arrayBuffer() 
-              : event.data;
-            await audioProcessor.playAudio(audioData);
-          }
-          return;
-        }
-
-        // Skip if data is not a string (additional safety check)
-        if (typeof event.data !== 'string') {
-          console.log('[AgentTest] Skipping non-string data:', typeof event.data);
-          return;
-        }
-
         const message = JSON.parse(event.data);
         console.log(`[AgentTest] Received:`, message.type, message);
 
@@ -289,7 +289,6 @@ export default function AgentTestPage() {
               });
             }
             break;
-            break;
 
           case 'tool_use':
             // Agent is using a tool, show thinking state
@@ -333,9 +332,24 @@ export default function AgentTestPage() {
               }]);
             }
             break;
+            
+          default:
+            // Silently ignore unknown message types (e.g., raw Nova Sonic events, metadata, etc.)
+            // These are filtered at the gateway/agent level but log them for debugging
+            console.log(`[AgentTest] Ignoring unknown message type: ${message.type}`);
+            break;
         }
       } catch (error) {
         console.error('[AgentTest] Error parsing message:', error);
+        console.error('[AgentTest] Raw message data:', event.data);
+        console.error('[AgentTest] Message preview:', typeof event.data === 'string' ? event.data.substring(0, 200) : 'not a string');
+        
+        // Show error in UI
+        setMessages(prev => [...prev, {
+          role: 'system',
+          content: `❌ Error: Invalid JSON message format`,
+          timestamp: Date.now()
+        }]);
       }
     };
 

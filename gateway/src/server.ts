@@ -450,6 +450,67 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         const first = transcriptDedupe.values().next().value;
                                         if (first) transcriptDedupe.delete(first);
                                     }
+                                    
+                                    // CRITICAL: Extract credentials from user transcripts in voice mode
+                                    // In voice mode, user speech comes as transcript messages, not text_input
+                                    if (message.role === 'user' && message.text && message.isFinal) {
+                                        console.log(`[Gateway] 🎤 User transcript (final): "${message.text}"`);
+                                        
+                                        const parsed = parseUserMessage(message.text);
+                                        
+                                        console.log(`[Gateway] 🔍 Parsed user transcript:`, {
+                                            accountNumber: parsed.accountNumber,
+                                            sortCode: parsed.sortCode,
+                                            intent: parsed.intent
+                                        });
+                                        
+                                        if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
+                                            const currentMemory = await router.getMemory(sessionId);
+                                            const updates: any = {};
+                                            
+                                            if (parsed.accountNumber) {
+                                                updates.account = parsed.accountNumber;
+                                                updates.providedAccount = parsed.accountNumber;
+                                                console.log(`[Gateway] 📋 Extracted account from voice: ${parsed.accountNumber}`);
+                                            }
+                                            if (parsed.sortCode) {
+                                                updates.sortCode = parsed.sortCode;
+                                                updates.providedSortCode = parsed.sortCode;
+                                                console.log(`[Gateway] 📋 Extracted sort code from voice: ${parsed.sortCode}`);
+                                            }
+                                            if (parsed.intent && !currentMemory?.userIntent) {
+                                                updates.userIntent = parsed.intent;
+                                                console.log(`[Gateway] 🎯 Extracted intent from voice: ${parsed.intent}`);
+                                            }
+                                            updates.lastUserMessage = message.text;
+
+                                            if (Object.keys(updates).length > 0) {
+                                                console.log(`[Gateway] 💾 Updating memory from voice transcript:`, updates);
+                                                await router.updateMemory(sessionId, updates);
+                                                
+                                                const finalMemory = await router.getMemory(sessionId);
+                                                console.log(`[Gateway] 📤 Memory after voice update:`, {
+                                                    account: finalMemory?.account,
+                                                    sortCode: finalMemory?.sortCode,
+                                                    providedAccount: finalMemory?.providedAccount,
+                                                    providedSortCode: finalMemory?.providedSortCode,
+                                                    userIntent: finalMemory?.userIntent
+                                                });
+                                                
+                                                // Send memory update to agent
+                                                if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                                                    console.log(`[Gateway] Sending memory_update to agent after voice transcript`);
+                                                    agentWs.send(JSON.stringify({
+                                                        type: 'memory_update',
+                                                        sessionId,
+                                                        memory: finalMemory,
+                                                        graphState: finalMemory?.graphState,
+                                                        timestamp: Date.now()
+                                                    }));
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 if (message.type === 'tool_result' && message.toolName === 'perform_idv_check') {
@@ -472,6 +533,13 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         // Get current memory to retrieve providedAccount/providedSortCode
                                         const currentMemory = await router.getMemory(sessionId);
                                         
+                                        console.log(`[Gateway] 📋 Current memory before update:`, {
+                                            providedAccount: currentMemory?.providedAccount,
+                                            providedSortCode: currentMemory?.providedSortCode,
+                                            account: currentMemory?.account,
+                                            sortCode: currentMemory?.sortCode
+                                        });
+                                        
                                         // Update memory with verified credentials
                                         // Use providedAccount/providedSortCode from memory since IDV result doesn't include them
                                         await router.updateMemory(sessionId, {
@@ -479,6 +547,15 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                             userName: idvResult.customer_name,
                                             account: currentMemory?.providedAccount || currentMemory?.account,
                                             sortCode: currentMemory?.providedSortCode || currentMemory?.sortCode
+                                        });
+                                        
+                                        // Verify memory was updated
+                                        const updatedMemory = await router.getMemory(sessionId);
+                                        console.log(`[Gateway] 📋 Memory after update:`, {
+                                            verified: updatedMemory?.verified,
+                                            userName: updatedMemory?.userName,
+                                            account: updatedMemory?.account,
+                                            sortCode: updatedMemory?.sortCode
                                         });
 
                                         // VERIFIED STATE GATE: Automatically route to banking after successful verification
@@ -605,11 +682,34 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                     return;
                                 }
                             }
-                        } catch (e) { }
+                        } catch (e) { 
+                            // JSON parsing failed - this might be a raw Nova Sonic event
+                            // Log the error but don't crash
+                            console.warn(`[Gateway] Failed to parse agent message:`, e);
+                        }
 
                         // Strict output management to prevent echo
                         if (agentWs === ws) {
-                            console.log(`[Gateway] Forwarding message from agent to client (type: ${!isBinary ? JSON.parse(data.toString()).type : 'binary'})`);
+                            // CRITICAL: Filter out raw Nova Sonic events before forwarding to client
+                            // These events have uppercase types like TEXT, AUDIO, TOOL and aren't in our message format
+                            if (!isBinary) {
+                                try {
+                                    const parsed = JSON.parse(data.toString());
+                                    // Filter out raw Nova Sonic event types (uppercase)
+                                    const rawNovaEventTypes = ['TEXT', 'AUDIO', 'TOOL', 'CONTENT_START', 'CONTENT_END'];
+                                    if (rawNovaEventTypes.includes(parsed.type)) {
+                                        console.log(`[Gateway] Filtered raw Nova Sonic event: ${parsed.type} (not forwarding to client)`);
+                                        return; // Don't forward this event
+                                    }
+                                    console.log(`[Gateway] Forwarding message from agent to client (type: ${parsed.type})`);
+                                } catch (e) {
+                                    console.warn(`[Gateway] Could not parse message for filtering:`, e);
+                                    // If we can't parse it, don't forward it to prevent client errors
+                                    return;
+                                }
+                            } else {
+                                console.log(`[Gateway] Forwarding binary message from agent to client`);
+                            }
                             clientWs.send(data, { binary: isBinary });
                         } else {
                             console.log(`[Gateway] Skipping message from old agent connection`);
