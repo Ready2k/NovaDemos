@@ -356,7 +356,7 @@ export class UnifiedRuntime {
 
             this.voiceSideCar = new VoiceSideCar(voiceSideCarConfig);
             console.log(`[UnifiedRuntime:${this.config.agentId}] ✅ Voice Side-Car initialized`);
-            
+
             if (this.config.mode === 'hybrid') {
                 console.log(`[UnifiedRuntime:${this.config.agentId}] ℹ️  Hybrid mode: Voice adapter handles both voice and text input`);
             }
@@ -429,30 +429,44 @@ export class UnifiedRuntime {
         let sessionId: string | null = null;
 
         // Handle messages
-        ws.on('message', async (data: Buffer) => {
+        ws.on('message', async (data: Buffer, isBinary: boolean) => {
             try {
                 // Determine if this is binary (audio) or text (JSON)
-                const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B; // 0x7B is '{'
+                // Use the protocol flag if available, fallback to manual check
+                const isActuallyBinary = isBinary || (data.length > 0 && data[0] !== 0x7B);
 
-                if (isBinary) {
+                if (isActuallyBinary) {
                     // Binary data - audio chunk (don't log in production)
                     if (DEBUG && sessionId) {
                         console.log(`[UnifiedRuntime:${this.config.agentId}] 🎤 Audio chunk: ${data.length} bytes`);
                     }
-                    
+
                     if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
                         await this.handleMessage(sessionId, data, true);
                     }
                 } else {
                     // Text data - JSON message
                     let message;
+                    let isJson = false;
                     try {
-                        message = JSON.parse(data.toString());
+                        const dataStr = data.toString();
+                        if (dataStr.trim().startsWith('{')) {
+                            message = JSON.parse(dataStr);
+                            isJson = message && typeof message === 'object' && message.type;
+                        }
                     } catch (parseError: any) {
+                        // If it looked like JSON but failed to parse, it might be audio
+                        // or just malformed text. We'll try to treat it as audio if we're in voice mode.
+                        if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
+                            console.warn(`[UnifiedRuntime:${this.config.agentId}] Message started with { but not valid JSON, treating as raw data`);
+                            await this.handleMessage(sessionId, data, true);
+                            return;
+                        }
+
                         console.error(`[UnifiedRuntime:${this.config.agentId}] Failed to parse JSON message: ${parseError.message}`);
                         console.error(`[UnifiedRuntime:${this.config.agentId}] Raw data (first 100 chars): ${data.toString().substring(0, 100)}`);
-                        
-                        // Send error to client if we have a session
+
+                        // Only send error if we're certain it's supposed to be text
                         if (sessionId) {
                             ws.send(JSON.stringify({
                                 type: 'error',
@@ -460,7 +474,16 @@ export class UnifiedRuntime {
                                 details: parseError.message
                             }));
                         }
-                        return; // Skip this message
+                        return;
+                    }
+
+                    if (!isJson) {
+                        // Fallback: if not JSON, but not binary, treat as audio if in voice mode
+                        if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
+                            await this.handleMessage(sessionId, data, true);
+                            return;
+                        }
+                        return;
                     }
 
                     // Only log important message types in production
@@ -577,13 +600,13 @@ export class UnifiedRuntime {
             // If session already exists, ensure complete cleanup
             if (this.sessions.has(sessionId)) {
                 console.warn(`[UnifiedRuntime:${this.config.agentId}] Session ${sessionId} already exists. Performing full cleanup...`);
-                
+
                 // Wait for cleanup to complete
                 await this.handleDisconnect(sessionId);
-                
+
                 // Add small delay to ensure cleanup is complete
                 await new Promise(resolve => setTimeout(resolve, 100));
-                
+
                 // Verify session is gone
                 if (this.sessions.has(sessionId)) {
                     throw new Error(`Failed to cleanup existing session: ${sessionId}`);
@@ -627,14 +650,14 @@ export class UnifiedRuntime {
 
                     // Check if credentials were pre-provided
                     const hasProvidedCredentials = memory?.providedAccount && memory?.providedSortCode;
-                    
+
                     if (hasProvidedCredentials) {
                         console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV with provided credentials`);
                         console.log(`[UnifiedRuntime:${this.config.agentId}]    Account: ${memory.providedAccount}, Sort Code: ${memory.providedSortCode}`);
-                        
+
                         // Trigger with credentials so agent verifies immediately
                         const triggerMessage = `${memory.providedAccount} ${memory.providedSortCode}`;
-                        
+
                         // Support both text and voice modes
                         if (this.voiceSideCar) {
                             setTimeout(() => {
@@ -651,7 +674,7 @@ export class UnifiedRuntime {
                         }
                     } else {
                         console.log(`[UnifiedRuntime:${this.config.agentId}] 🚀 Auto-triggering IDV agent greeting`);
-                        
+
                         // Simple greeting trigger - let the agent's prompt handle the rest
                         const triggerMessage = '[System: User has been transferred to you for identity verification. Please greet them and ask for their credentials.]';
 
@@ -682,7 +705,7 @@ export class UnifiedRuntime {
                     console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.sortCode: ${memory.sortCode}`);
                     console.log(`[UnifiedRuntime:${this.config.agentId}]    memory.userIntent: ${memory.userIntent}`);
                     console.log(`[UnifiedRuntime:${this.config.agentId}]    session.autoTriggered: ${session.autoTriggered}`);
-                    
+
                     const hasVerifiedUser = memory.verified && memory.userName;
                     const hasIntent = memory.userIntent;
                     const hasAccountDetails = memory.account && memory.sortCode;
@@ -714,12 +737,12 @@ export class UnifiedRuntime {
 
                         // Use appropriate adapter based on mode
                         const adapter = this.voiceSideCar || this.textAdapter;
-                        
+
                         if (adapter) {
                             // CRITICAL: Increased delay to ensure session is fully initialized
                             setTimeout(() => {
                                 console.log(`[UnifiedRuntime:${this.config.agentId}] 🎯 Sending auto-trigger message: "${triggerMessage}"`);
-                                
+
                                 if (this.voiceSideCar) {
                                     this.voiceSideCar.handleTextInput(sessionId, triggerMessage, true).catch(error => {
                                         console.error(`[UnifiedRuntime:${this.config.agentId}] ❌ Error sending auto-trigger: ${error.message}`);
@@ -760,7 +783,7 @@ export class UnifiedRuntime {
                 details: error.message,
                 fatal: true
             }));
-            
+
             throw error;
         }
     }
@@ -778,10 +801,10 @@ export class UnifiedRuntime {
         // Circuit breaker: Check error rate
         if (session.errorCount && session.errorCount >= MAX_SESSION_ERRORS) {
             const timeSinceLastError = Date.now() - (session.lastError || 0);
-            
+
             if (timeSinceLastError < ERROR_WINDOW_MS) {
                 console.error(`[UnifiedRuntime:${this.config.agentId}] 🔴 Circuit breaker: Too many errors (${session.errorCount}) for session ${sessionId}`);
-                
+
                 // Send error to client before closing
                 if (session.ws.readyState === session.ws.OPEN) {
                     session.ws.send(JSON.stringify({
@@ -791,10 +814,10 @@ export class UnifiedRuntime {
                         fatal: true
                     }));
                 }
-                
+
                 // Close session
                 await this.handleDisconnect(sessionId);
-                
+
                 return;
             } else {
                 // Reset error count after window expires
@@ -860,11 +883,11 @@ export class UnifiedRuntime {
             }
         } catch (error: any) {
             console.error(`[UnifiedRuntime:${this.config.agentId}] Error handling message: ${error.message}`);
-            
+
             // Track error for circuit breaker
             session.errorCount = (session.errorCount || 0) + 1;
             session.lastError = Date.now();
-            
+
             // Send error to client
             if (session.ws.readyState === session.ws.OPEN) {
                 session.ws.send(JSON.stringify({
@@ -928,7 +951,7 @@ export class UnifiedRuntime {
             // If gateway is localhost, use localhost for agent too (local mode)
             // Otherwise use Docker hostname (Docker mode)
             const isLocalMode = gatewayUrl.includes('localhost') || gatewayUrl.includes('127.0.0.1');
-            const agentUrl = isLocalMode 
+            const agentUrl = isLocalMode
                 ? `ws://localhost:${this.config.agentPort}`
                 : `ws://agent-${this.config.agentId}:${this.config.agentPort}`;
 

@@ -352,10 +352,13 @@ class VoiceSideCar {
             // Send tool result back to SonicClient
             await session.sonicClient.sendToolResult(toolData.toolUseId, result.result, !result.success);
             // Forward tool result to client
+            // CRITICAL: Include 'input' so the gateway can extract account credentials
+            // from perform_idv_check calls and store them in session memory before handoff
             session.ws.send(JSON.stringify({
                 type: 'tool_result',
                 toolName: toolData.toolName,
                 toolUseId: toolData.toolUseId,
+                input: toolInput,
                 result: result.result,
                 success: result.success,
                 error: result.error,

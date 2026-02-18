@@ -340,11 +340,12 @@ class UnifiedRuntime {
         }
         let sessionId = null;
         // Handle messages
-        ws.on('message', async (data) => {
+        ws.on('message', async (data, isBinary) => {
             try {
                 // Determine if this is binary (audio) or text (JSON)
-                const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B; // 0x7B is '{'
-                if (isBinary) {
+                // Use the protocol flag if available, fallback to manual check
+                const isActuallyBinary = isBinary || (data.length > 0 && data[0] !== 0x7B);
+                if (isActuallyBinary) {
                     // Binary data - audio chunk (don't log in production)
                     if (DEBUG && sessionId) {
                         console.log(`[UnifiedRuntime:${this.config.agentId}] 🎤 Audio chunk: ${data.length} bytes`);
@@ -356,13 +357,25 @@ class UnifiedRuntime {
                 else {
                     // Text data - JSON message
                     let message;
+                    let isJson = false;
                     try {
-                        message = JSON.parse(data.toString());
+                        const dataStr = data.toString();
+                        if (dataStr.trim().startsWith('{')) {
+                            message = JSON.parse(dataStr);
+                            isJson = message && typeof message === 'object' && message.type;
+                        }
                     }
                     catch (parseError) {
+                        // If it looked like JSON but failed to parse, it might be audio
+                        // or just malformed text. We'll try to treat it as audio if we're in voice mode.
+                        if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
+                            console.warn(`[UnifiedRuntime:${this.config.agentId}] Message started with { but not valid JSON, treating as raw data`);
+                            await this.handleMessage(sessionId, data, true);
+                            return;
+                        }
                         console.error(`[UnifiedRuntime:${this.config.agentId}] Failed to parse JSON message: ${parseError.message}`);
                         console.error(`[UnifiedRuntime:${this.config.agentId}] Raw data (first 100 chars): ${data.toString().substring(0, 100)}`);
-                        // Send error to client if we have a session
+                        // Only send error if we're certain it's supposed to be text
                         if (sessionId) {
                             ws.send(JSON.stringify({
                                 type: 'error',
@@ -370,7 +383,15 @@ class UnifiedRuntime {
                                 details: parseError.message
                             }));
                         }
-                        return; // Skip this message
+                        return;
+                    }
+                    if (!isJson) {
+                        // Fallback: if not JSON, but not binary, treat as audio if in voice mode
+                        if (sessionId && (this.config.mode === 'voice' || this.config.mode === 'hybrid')) {
+                            await this.handleMessage(sessionId, data, true);
+                            return;
+                        }
+                        return;
                     }
                     // Only log important message types in production
                     if (DEBUG || ['session_init', 'error', 'handoff', 'memory_update'].includes(message.type)) {

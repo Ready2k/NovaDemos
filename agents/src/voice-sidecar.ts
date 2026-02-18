@@ -447,10 +447,13 @@ export class VoiceSideCar {
             );
 
             // Forward tool result to client
+            // CRITICAL: Include 'input' so the gateway can extract account credentials
+            // from perform_idv_check calls and store them in session memory before handoff
             session.ws.send(JSON.stringify({
                 type: 'tool_result',
                 toolName: toolData.toolName,
                 toolUseId: toolData.toolUseId,
+                input: toolInput,
                 result: result.result,
                 success: result.success,
                 error: result.error,
@@ -463,17 +466,17 @@ export class VoiceSideCar {
             if (agentSession?.graphState?.pendingHandoff) {
                 const pendingHandoff = agentSession.graphState.pendingHandoff;
                 console.log(`[VoiceSideCar] 🚀 Detected pending handoff from Verified State Gate: ${pendingHandoff.targetAgent}`);
-                
+
                 // Create handoff request
                 const handoffRequest = {
                     targetAgentId: pendingHandoff.targetAgent,
                     context: pendingHandoff.context,
                     graphState: agentSession.graphState
                 };
-                
+
                 // Clear pending handoff
                 delete agentSession.graphState.pendingHandoff;
-                
+
                 // Forward handoff request to Gateway
                 session.ws.send(JSON.stringify({
                     type: 'handoff_request',
@@ -482,7 +485,7 @@ export class VoiceSideCar {
                     graphState: handoffRequest.graphState,
                     timestamp: Date.now()
                 }));
-                
+
                 console.log(`[VoiceSideCar] ✅ Sent automatic handoff request to Gateway`);
             }
 

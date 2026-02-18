@@ -54,18 +54,18 @@ function loadTools() {
 // Call AgentCore Gateway
 async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?: string): Promise<any> {
     const aws4 = require('aws4');
-    
+
     // Map tool names to gateway targets
     const toolMapping: { [key: string]: string } = {
         'agentcore_balance': 'get-Balance___get_Balance',
         'get_account_transactions': 'get-TransactionalHistory___get_TransactionHistory',
         'perform_idv_check': 'perform-idv-check___perform_idv_check'
     };
-    
+
     const actualToolName = gatewayTarget || toolMapping[toolName] || toolName;
     console.log(`[LocalTools] Calling AgentCore Gateway: ${actualToolName}`);
     console.log(`[LocalTools] Input parameters:`, JSON.stringify(input, null, 2));
-    
+
     // Transform input field names based on tool requirements
     // Balance tool expects 'accountId' but IDV expects 'accountNumber'
     const transformedInput = { ...input };
@@ -74,7 +74,7 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
         delete transformedInput.accountNumber;
         console.log(`[LocalTools] Transformed accountNumber → accountId for balance tool`);
     }
-    
+
     // Create JSON-RPC 2.0 payload
     const payload = {
         jsonrpc: "2.0",
@@ -85,12 +85,12 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
             arguments: transformedInput
         }
     };
-    
+
     console.log(`[LocalTools] Payload:`, JSON.stringify(payload, null, 2));
-    
+
     const url = new URL(AGENTCORE_GATEWAY_URL);
     const body = JSON.stringify(payload);
-    
+
     // Create AWS request object for signing
     const request = {
         host: url.hostname,
@@ -99,21 +99,22 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
         service: 'bedrock-agentcore',
         region: AWS_REGION,
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, application/x-ndjson'
         },
         body: body
     };
-    
+
     // Sign the request with AWS credentials
     const signedRequest = aws4.sign(request, {
         accessKeyId: AWS_ACCESS_KEY_ID,
         secretAccessKey: AWS_SECRET_ACCESS_KEY
     });
-    
+
     console.log(`[LocalTools] Making signed request to AgentCore Gateway...`);
     console.log(`[LocalTools] Request URL: ${AGENTCORE_GATEWAY_URL}`);
     console.log(`[LocalTools] Request headers:`, Object.keys(signedRequest.headers));
-    
+
     // Make the signed request
     let response;
     try {
@@ -131,35 +132,67 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
         });
         throw fetchError;
     }
-    
+
     console.log(`[LocalTools] AgentCore response status: ${response.status}`);
-    
+
     if (!response.ok) {
         const text = await response.text();
         console.error(`[LocalTools] AgentCore request failed: ${text}`);
         throw new Error(`AgentCore Gateway Request Failed (${response.status}): ${text}`);
     }
-    
-    const data: any = await response.json();
-    console.log(`[LocalTools] AgentCore raw response:`, JSON.stringify(data, null, 2));
-    
+
+    // AgentCore MCP endpoint returns NDJSON (newline-delimited JSON)
+    // Each line is a separate JSON-RPC message. We need to find the result line.
+    const rawText = await response.text();
+    console.log(`[LocalTools] AgentCore raw response text:`, rawText.substring(0, 500));
+
+    // Parse NDJSON: split by newlines and parse each non-empty line
+    const lines = rawText.split('\n').filter(line => line.trim().length > 0);
+    let data: any = null;
+
+    for (const line of lines) {
+        try {
+            const parsed = JSON.parse(line);
+            // Look for the JSON-RPC result message (has 'result' or 'error' field)
+            if (parsed.result !== undefined || parsed.error !== undefined) {
+                data = parsed;
+                break;
+            }
+        } catch (e) {
+            // Skip lines that aren't valid JSON (e.g. SSE event prefixes)
+            console.log(`[LocalTools] Skipping non-JSON line: ${line.substring(0, 100)}`);
+        }
+    }
+
+    // Fallback: try parsing the whole response as a single JSON object
+    if (!data) {
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            console.error(`[LocalTools] Failed to parse AgentCore response as JSON:`, rawText.substring(0, 200));
+            throw new Error(`Failed to parse AgentCore response: ${rawText.substring(0, 200)}`);
+        }
+    }
+
+    console.log(`[LocalTools] AgentCore parsed response:`, JSON.stringify(data, null, 2));
+
     // Check for JSON-RPC errors
     if (data.error) {
         console.error(`[LocalTools] AgentCore tool execution error:`, data.error);
-        throw new Error(`Tool Execution Error: ${data.error.message}`);
+        throw new Error(`Tool Execution Error: ${data.error.message || JSON.stringify(data.error)}`);
     }
-    
+
     // Extract result from response
     if (data.body && data.body.responseBody) {
         console.log(`[LocalTools] Found responseBody:`, data.body.responseBody);
         return data.body.responseBody;
     }
-    
+
     if (data.result) {
         console.log(`[LocalTools] Found result:`, data.result);
         return data.result;
     }
-    
+
     throw new Error('No valid result found in AgentCore response');
 }
 
@@ -219,7 +252,7 @@ app.post('/tools/execute', async (req, res) => {
 // Mock data for testing
 function getMockData(toolName: string, input: any): any {
     console.log(`[LocalTools] 🧪 Using mock data for ${toolName}`);
-    
+
     switch (toolName) {
         case 'perform_idv_check':
             // Valid test account
@@ -248,7 +281,7 @@ function getMockData(toolName: string, input: any): any {
                     })
                 }]
             };
-            
+
         case 'agentcore_balance':
             if (input.accountNumber === '12345678' && input.sortCode === '112233') {
                 return {
@@ -271,7 +304,7 @@ function getMockData(toolName: string, input: any): any {
                     })
                 }]
             };
-            
+
         case 'get_account_transactions':
             if (input.accountNumber === '12345678' && input.sortCode === '112233') {
                 return {
@@ -415,7 +448,7 @@ function getMockData(toolName: string, input: any): any {
                     })
                 }]
             };
-            
+
         default:
             throw new Error(`No mock data available for ${toolName}`);
     }
@@ -424,26 +457,26 @@ function getMockData(toolName: string, input: any): any {
 // Tool execution logic
 async function executeTool(toolName: string, input: any): Promise<any> {
     console.log(`[LocalTools] Executing tool: ${toolName}`, input);
-    
+
     // Banking tools - Use mock data if enabled, otherwise AgentCore
     if (toolName === 'perform_idv_check' || toolName === 'agentcore_balance' || toolName === 'get_account_transactions') {
         // Get tool definition to find gatewayTarget
         const toolDef = tools.get(toolName);
         const gatewayTarget = toolDef?.gatewayTarget;
-        
+
         // Use mock data if enabled
         if (USE_MOCK_DATA) {
             return getMockData(toolName, input);
         }
-        
+
         if (!hasAgentCoreCredentials) {
             throw new Error(`AgentCore credentials not configured. Cannot execute ${toolName}. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables or enable USE_MOCK_DATA=true.`);
         }
-        
+
         console.log(`[LocalTools] Calling AgentCore Gateway for ${toolName}...`);
         const result = await callAgentCoreGateway(toolName, input, gatewayTarget);
         console.log(`[LocalTools] AgentCore result:`, result);
-        
+
         // Parse the result if it's a string
         if (typeof result === 'string') {
             try {
@@ -455,7 +488,7 @@ async function executeTool(toolName: string, input: any): Promise<any> {
         }
         return result;
     }
-    
+
     // Simple built-in tools
     switch (toolName) {
         case 'calculator':

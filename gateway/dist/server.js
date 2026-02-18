@@ -581,12 +581,15 @@ wss.on('connection', async (clientWs) => {
                                             sortCode: currentMemory?.sortCode
                                         });
                                         // Update memory with verified credentials
-                                        // Use providedAccount/providedSortCode from memory since IDV result doesn't include them
+                                        // Priority: providedAccount (pre-extracted from voice) → account (from memory) → message.input (from tool call)
+                                        const resolvedAccount = currentMemory?.providedAccount || currentMemory?.account || message.input?.accountNumber;
+                                        const resolvedSortCode = currentMemory?.providedSortCode || currentMemory?.sortCode || message.input?.sortCode;
+                                        console.log(`[Gateway] 📋 Resolved credentials: account=${resolvedAccount}, sortCode=${resolvedSortCode}`);
                                         await router.updateMemory(sessionId, {
                                             verified: true,
                                             userName: idvResult.customer_name,
-                                            account: currentMemory?.providedAccount || currentMemory?.account,
-                                            sortCode: currentMemory?.providedSortCode || currentMemory?.sortCode
+                                            account: resolvedAccount,
+                                            sortCode: resolvedSortCode
                                         });
                                         // Verify memory was updated
                                         const updatedMemory = await router.getMemory(sessionId);
@@ -665,6 +668,21 @@ wss.on('connection', async (clientWs) => {
                                                 providedSortCode: sortCodeMatch[1]
                                             });
                                         }
+                                        // Extract user intent from the handoff reason so banking agent
+                                        // knows what to do immediately after IDV completes
+                                        const currentMem = await router.getMemory(sessionId);
+                                        if (!currentMem?.userIntent) {
+                                            const parsed = (0, intent_parser_1.parseUserMessage)(reason);
+                                            if (parsed.intent) {
+                                                await router.updateMemory(sessionId, { userIntent: parsed.intent });
+                                                console.log(`[Gateway] 🎯 Extracted intent from handoff reason: ${parsed.intent}`);
+                                            }
+                                            else {
+                                                // Fallback: store the raw reason as intent so banking agent has context
+                                                await router.updateMemory(sessionId, { userIntent: reason });
+                                                console.log(`[Gateway] 🎯 Stored raw handoff reason as intent: ${reason}`);
+                                            }
+                                        }
                                     }
                                     // Perform handoff immediately (no delay)
                                     (async () => {
@@ -714,19 +732,21 @@ wss.on('connection', async (clientWs) => {
                             // These events have uppercase types like TEXT, AUDIO, TOOL and aren't in our message format
                             if (!isBinary) {
                                 try {
-                                    const parsed = JSON.parse(data.toString());
-                                    // Filter out raw Nova Sonic event types (uppercase)
-                                    const rawNovaEventTypes = ['TEXT', 'AUDIO', 'TOOL', 'CONTENT_START', 'CONTENT_END'];
-                                    if (rawNovaEventTypes.includes(parsed.type)) {
-                                        console.log(`[Gateway] Filtered raw Nova Sonic event: ${parsed.type} (not forwarding to client)`);
-                                        return; // Don't forward this event
+                                    const dataStr = data.toString();
+                                    if (dataStr.trim().startsWith('{')) {
+                                        const parsed = JSON.parse(dataStr);
+                                        // Filter out raw Nova Sonic event types (uppercase)
+                                        const rawNovaEventTypes = ['TEXT', 'AUDIO', 'TOOL', 'CONTENT_START', 'CONTENT_END'];
+                                        if (parsed.type && rawNovaEventTypes.includes(parsed.type)) {
+                                            console.log(`[Gateway] Filtered raw Nova Sonic event: ${parsed.type} (not forwarding to client)`);
+                                            return; // Don't forward this event
+                                        }
+                                        console.log(`[Gateway] Forwarding message from agent to client (type: ${parsed.type})`);
                                     }
-                                    console.log(`[Gateway] Forwarding message from agent to client (type: ${parsed.type})`);
                                 }
                                 catch (e) {
-                                    console.warn(`[Gateway] Could not parse message for filtering:`, e);
-                                    // If we can't parse it, don't forward it to prevent client errors
-                                    return;
+                                    console.warn(`[Gateway] Could not parse message for filtering, treating as raw data:`, e);
+                                    // If we can't parse it, we'll just fall through and forward it as raw data
                                 }
                             }
                             else {
@@ -750,11 +770,26 @@ wss.on('connection', async (clientWs) => {
             }
         });
     };
-    clientWs.on('message', async (data) => {
+    clientWs.on('message', async (data, isBinary) => {
         try {
-            const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B;
+            // Defensively attempt to parse JSON
+            let message = null;
+            let isJson = false;
             if (!isBinary) {
-                const message = JSON.parse(data.toString());
+                try {
+                    const dataStr = data.toString();
+                    // Only even attempt to parse if it starts with {
+                    if (dataStr.trim().startsWith('{')) {
+                        message = JSON.parse(dataStr);
+                        isJson = message && typeof message === 'object' && message.type;
+                    }
+                }
+                catch (e) {
+                    // Not valid JSON - might be audio data that looks like JSON or malformed text
+                    // We'll just fall through and treat it as raw data
+                }
+            }
+            if (isJson) {
                 console.log(`[Gateway] Received JSON message from client:`, message.type);
                 // Proactive extraction of credentials and intent
                 if (message.type === 'text_input' && message.text) {

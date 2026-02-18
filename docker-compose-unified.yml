@@ -269,6 +269,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - USE_MOCK_DATA=${USE_MOCK_DATA:-false}
     volumes:
       # Mount backend/tools directory which contains all banking tools (agentcore_balance.json, etc.)
       - ./backend/tools:/app/tools:ro

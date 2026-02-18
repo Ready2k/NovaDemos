@@ -59,6 +59,7 @@ export class SonicClient {
     private recentOutputs: string[] = [];
     private contentStages: Map<string, string> = new Map(); // Track generation stage by ID
     private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
+    private activeContentNames: Set<string> = new Set(); // Track active content blocks from the model
     private currentTurnTranscript: string = ''; // Accumulate text for the current turn
     private currentTurnId: string | null = null; // Stable ID for the current assistant turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
@@ -67,6 +68,14 @@ export class SonicClient {
     // Auto-Nudge State
     private hasCommittedToTool: boolean = false;
     private hasCalledTool: boolean = false;
+
+    // Deduplication: Nova Sonic emits speculative + final toolUse events for the same tool.
+    // IMPORTANT: Nova Sonic requires a result for EVERY toolUse it emits, even speculative ones.
+    // Strategy: execute only the first toolUse per tool name, but when the result arrives,
+    // also send it back for any pending duplicate toolUseIds.
+    private dispatchedToolUseIds: Set<string> = new Set();
+    private dispatchedToolNames: Set<string> = new Set(); // Track by name within a turn
+    private pendingDuplicateToolUseIds: Map<string, string[]> = new Map(); // toolName -> [duplicate toolUseIds]
 
     // Langfuse Tracing
     private langfuse: Langfuse;
@@ -87,6 +96,7 @@ export class SonicClient {
     private inputQueue: Buffer[] = [];
     private textQueue: string[] = [];
     private toolResultQueue: any[] = [];
+    private systemPromptQueue: string[] = [];
     // private streamController: any = null;
     private sessionConfig: { systemPrompt?: string; speechPrompt?: string; voiceId?: string; tools?: any[] } = {};
 
@@ -159,13 +169,16 @@ export class SonicClient {
         // Update config
         this.sessionConfig.systemPrompt = systemPrompt;
 
+        // Queue for live stream update
+        this.systemPromptQueue.push(systemPrompt);
+
         // Send configuration update to active session
         // Nova Sonic will use the new system prompt for subsequent turns
-        console.log(`[SonicClient:${this.id}] 🔄 System prompt updated for active session (length: ${systemPrompt.length} chars)`);
+        console.log(`[SonicClient:${this.id}] 🔄 System prompt update queued for active session (length: ${systemPrompt.length} chars)`);
         console.log(`[SonicClient:${this.id}] Updated prompt preview: ${systemPrompt.substring(0, 200)}...`);
 
-        // Note: The updated prompt will be used on the next user input
-        // Nova Sonic doesn't support mid-turn prompt updates
+        // Note: The updated prompt will be used on the next interaction
+        // Nova Sonic accepts system text blocks throughout the session
     }
 
     private loadDefaultPrompt(): string {
@@ -562,14 +575,63 @@ export class SonicClient {
         console.log('[SonicClient] Primed audio content with silence');
 
         while (this.isProcessing) {
+            // Check for system prompt updates
+            if (this.systemPromptQueue.length > 0) {
+                const newSystemPrompt = this.systemPromptQueue.shift()!;
+                console.log(`[SonicClient] Processing system prompt update (${newSystemPrompt.length} chars)`);
+
+                const systemUpdateId = `system-update-${Date.now()}`;
+
+                // 1. Content Start (SYSTEM)
+                const systemContentStart = {
+                    event: {
+                        contentStart: {
+                            promptName: promptName,
+                            contentName: systemUpdateId,
+                            type: "TEXT",
+                            interactive: false,
+                            role: "SYSTEM",
+                            textInputConfiguration: {
+                                mediaType: "text/plain"
+                            }
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStart)) } };
+
+                // 2. Text Input
+                const systemTextInput = {
+                    event: {
+                        textInput: {
+                            promptName: promptName,
+                            contentName: systemUpdateId,
+                            content: newSystemPrompt
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemTextInput)) } };
+
+                // 3. Content End
+                const systemContentEnd = {
+                    event: {
+                        contentEnd: {
+                            promptName: promptName,
+                            contentName: systemUpdateId
+                        }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentEnd)) } };
+                console.log(`[SonicClient] ✓ System prompt update sent to active stream`);
+            }
+
             // Check for tool results first (priority over text/audio)
             if (this.toolResultQueue.length > 0) {
-                const resultData = this.toolResultQueue.shift()!;
-                console.log('[SonicClient] Processing tool result:', resultData.toolUseId);
-                console.log('[SonicClient] Tool result data:', JSON.stringify(resultData.result));
+                // CRITICAL FIX: Group all pending results to avoid rapid content switching
+                // sequences (Audio -> Text -> Audio -> Text -> Audio) which crashes Nova Sonic.
+                const resultsToProcess = [...this.toolResultQueue];
+                this.toolResultQueue = [];
 
-                // BACK TO BASICS: The "native" toolResult event is unstable/undocumented for Nova Sonic.
-                // We fallback to injecting results as USER TEXT but with system-style formatting.
+                console.log(`[SonicClient] Processing ${resultsToProcess.length} tool results in a single batch`);
 
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
@@ -583,12 +645,12 @@ export class SonicClient {
                     };
                     yield { chunk: { bytes: Buffer.from(JSON.stringify(audioEndEvent)) } };
                     this.currentContentName = undefined;
-                    // Small delay to ensure model processes the end
-                    await new Promise(resolve => setTimeout(resolve, 20));
+                    // Small delay to ensure state transition
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 }
 
-                // 2. Send Tool Result as Text Content (Simulated User Message)
-                const textContentName = `tool-result-${resultData.toolUseId}`;
+                // 2. Start SINGLE Text Content for the batch
+                const textContentName = `tool-results-${Date.now()}`;
                 const textStartEvent = {
                     event: {
                         contentStart: {
@@ -605,38 +667,44 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
 
-                // Unwrap AgentCore result format if present
-                let unwrappedResult = resultData.result;
-                if (unwrappedResult?.content && Array.isArray(unwrappedResult.content) && unwrappedResult.content[0]?.text) {
-                    try {
-                        // Try to parse the inner JSON text
-                        unwrappedResult = JSON.parse(unwrappedResult.content[0].text);
-                    } catch (e) {
-                        // If not JSON, use the text as-is
-                        unwrappedResult = unwrappedResult.content[0].text;
+                // 3. Build combined content for all results
+                let combinedInjectedContent = "[SYSTEM] Tool results received:\n\n";
+
+                for (const resultData of resultsToProcess) {
+                    // Unwrap AgentCore result format if present
+                    let unwrappedResult = resultData.result;
+                    if (unwrappedResult?.content && Array.isArray(unwrappedResult.content) && unwrappedResult.content[0]?.text) {
+                        try {
+                            // Try to parse the inner JSON text
+                            unwrappedResult = JSON.parse(unwrappedResult.content[0].text);
+                        } catch (e) {
+                            unwrappedResult = unwrappedResult.content[0].text;
+                        }
                     }
+
+                    const resultString = typeof unwrappedResult === 'string'
+                        ? unwrappedResult
+                        : JSON.stringify(unwrappedResult);
+
+                    combinedInjectedContent += `Tool ID: ${resultData.toolUseId}\nResult: ${resultString}\n\n`;
                 }
 
-                const resultString = typeof unwrappedResult === 'string'
-                    ? unwrappedResult
-                    : JSON.stringify(unwrappedResult);
-
-                const injectedContent = `[SYSTEM] Tool '${resultData.toolUseId}' output:\n${resultString}\n[INSTRUCTION] user has NOT spoken. Proceed with workflow based on this tool result immediately.`;
+                combinedInjectedContent += "[INSTRUCTION] The above tools have finished execution. User has NOT spoken yet. Proceed with the workflow based on ONLY these results immediately.";
 
                 const textInputEvent = {
                     event: {
                         textInput: {
                             promptName: promptName,
                             contentName: textContentName,
-                            content: injectedContent
+                            content: combinedInjectedContent
                         }
                     }
                 };
 
-                console.log('[SonicClient] Sending tool result as TEXT input:', resultData.toolUseId);
+                console.log('[SonicClient] Sending batch tool results as TEXT input');
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textInputEvent)) } };
 
-                // 3. Text Content End
+                // 4. End Text Content
                 const textEnd = {
                     event: {
                         contentEnd: {
@@ -646,48 +714,44 @@ export class SonicClient {
                     }
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textEnd)) } };
-                console.log('[SonicClient] Text-based tool result sequence completed');
+                console.log('[SonicClient] Batch tool result sequence completed');
 
-                // 4. Send Silent Audio (Required by Nova Sonic if no other audio is present)
-                if (!this.currentContentName) {
-                    const silenceContentName = `audio-silence-tool-${Date.now()}`;
-                    this.currentContentName = silenceContentName;
+                // 5. Re-establish Audio Content (Eager)
+                const silenceContentName = `audio-silence-tool-${Date.now()}`;
+                this.currentContentName = silenceContentName;
 
-                    // Start Silence Audio
-                    const silenceStartEvent = {
-                        event: {
-                            contentStart: {
-                                promptName: promptName,
-                                contentName: silenceContentName,
-                                type: "AUDIO",
-                                interactive: true,
-                                role: "USER",
-                                audioInputConfiguration: {
-                                    mediaType: "audio/lpcm",
-                                    sampleRateHertz: 16000,
-                                    sampleSizeBits: 16,
-                                    channelCount: 1,
-                                    audioType: "SPEECH",
-                                    encoding: "base64"
-                                }
+                const silenceStartEvent = {
+                    event: {
+                        contentStart: {
+                            promptName: promptName,
+                            contentName: silenceContentName,
+                            type: "AUDIO",
+                            interactive: true,
+                            role: "USER",
+                            audioInputConfiguration: {
+                                mediaType: "audio/lpcm",
+                                sampleRateHertz: 16000,
+                                sampleSizeBits: 16,
+                                channelCount: 1,
+                                audioType: "SPEECH",
+                                encoding: "base64"
                             }
                         }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
 
-                    // Send Silence Data
-                    const silenceInputEvent = {
-                        event: {
-                            audioInput: {
-                                promptName: promptName,
-                                contentName: silenceContentName,
-                                content: this.SILENCE_FRAME.toString('base64')
-                            }
+                const silenceInputEvent = {
+                    event: {
+                        audioInput: {
+                            promptName: promptName,
+                            contentName: silenceContentName,
+                            content: this.SILENCE_FRAME.toString('base64')
                         }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
-                    console.log('[SonicClient] Primed silence after tool result:', silenceContentName);
-                }
+                    }
+                };
+                yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
+                console.log('[SonicClient] Primed silence after batch tool result:', silenceContentName);
             }
 
             // Check for text input first (priority)
@@ -700,6 +764,15 @@ export class SonicClient {
                 console.log('[SonicClient] User text input received. Resetting transcript state.');
                 this.currentTurnTranscript = '';
                 this.isTurnComplete = true;
+
+                // Clear tool deduplication for real user turns only.
+                // System injections (Auto-Nudge) must not clear this — they fire mid-turn.
+                const isSystemInjectionText = text.includes('[SYSTEM_INJECTION]');
+                if (!isSystemInjectionText) {
+                    this.dispatchedToolUseIds.clear();
+                    this.pendingDuplicateToolUseIds.clear();
+                    this.dispatchedToolNames.clear();
+                }
 
                 // 1. End current Audio Content (if open)
                 if (this.currentContentName) {
@@ -1041,7 +1114,23 @@ export class SonicClient {
             console.warn(`[SonicClient] ⚠️ Cannot send tool result: Session not active or processing stopped. (ID: ${this.sessionId})`);
             return;
         }
+        // Queue the primary result
         this.toolResultQueue.push({ toolUseId, result, isError });
+
+        // CRITICAL: Nova Sonic requires a result for every toolUse it emits, including
+        // speculative duplicates. Find the tool name for this toolUseId and replay the
+        // result for any pending duplicate IDs.
+        for (const [toolName, dupeIds] of this.pendingDuplicateToolUseIds.entries()) {
+            if (dupeIds.length > 0 && this.dispatchedToolUseIds.has(toolUseId)) {
+                // This result is for a tool we tracked duplicates for
+                for (const dupeId of dupeIds) {
+                    console.log(`[SonicClient] 🔁 Replaying result for duplicate toolUseId: ${dupeId} (tool: ${toolName})`);
+                    this.toolResultQueue.push({ toolUseId: dupeId, result, isError });
+                }
+                this.pendingDuplicateToolUseIds.delete(toolName);
+                break;
+            }
+        }
     }
 
     /**
@@ -1091,6 +1180,16 @@ export class SonicClient {
         console.log(`[SonicClient] User text input received. Resetting transcript for new response.`);
         this.currentTurnTranscript = '';
         this.isTurnComplete = true; // Mark previous turn as complete
+
+        // Clear tool deduplication for the new agent turn.
+        // IMPORTANT: Do NOT clear for system injections (e.g. Auto-Nudge) — those are internal
+        // nudges mid-turn, not real user messages. Clearing here would allow Nova Sonic's
+        // speculative second toolUse event to bypass deduplication and crash the stream.
+        if (!isSystemInjection) {
+            this.dispatchedToolUseIds.clear();
+            this.pendingDuplicateToolUseIds.clear();
+            this.dispatchedToolNames.clear();
+        }
 
         // Emit transcript event for manual UI messages (if not skipped)
         if (!skipTranscript && text.length > 0) {
@@ -1163,39 +1262,70 @@ export class SonicClient {
 
                     if (eventData.toolUse) {
                         const tu = eventData.toolUse;
+
+                        // CRITICAL FIX: If we've already seen this EXACT toolUseId, ignore it.
+                        // Nova Sonic sometimes delivers the same toolUse event multiple times.
+                        if (this.dispatchedToolUseIds.has(tu.toolUseId)) {
+                            console.log(`[SonicClient] ⚠️  Ignoring already dispatched toolUseId: ${tu.toolUseId} (tool: ${tu.toolName})`);
+                            continue;
+                        }
+
                         console.log(`[SonicClient] 🔧 NATIVE TOOL USE DETECTED: ${tu.toolName} (ID: ${tu.toolUseId})`);
                         console.log(`[SonicClient] Tool Use Data:`, JSON.stringify(tu, null, 2));
 
-                        // Langfuse: Track tool invocation as a span
-                        if (this.trace) {
-                            const toolSpan = this.trace.span({
-                                name: `tool-${tu.toolName}`,
-                                input: tu.content,
-                                startTime: new Date(),
-                                metadata: {
-                                    toolUseId: tu.toolUseId,
-                                    toolName: tu.toolName
-                                }
-                            });
+                        // DEDUPLICATION: Nova Sonic emits speculative + final toolUse events.
+                        // Both have different toolUseIds but represent the same logical call.
+                        // CRITICAL: Nova Sonic requires a result for EVERY toolUse it emits.
+                        // So we suppress double-execution but track the duplicate IDs so we
+                        // can send the result back for them when the first result arrives.
+                        if (this.dispatchedToolNames.has(tu.toolName)) {
+                            console.log(`[SonicClient] ⚠️  DUPLICATE toolUse queued (no re-execute): ${tu.toolName} (ID: ${tu.toolUseId})`);
+                            // Track this duplicate ID — we'll replay the result for it
+                            const dupes = this.pendingDuplicateToolUseIds.get(tu.toolName) || [];
+                            dupes.push(tu.toolUseId);
+                            this.pendingDuplicateToolUseIds.set(tu.toolName, dupes);
+                        } else {
+                            this.dispatchedToolNames.add(tu.toolName);
+                            this.dispatchedToolUseIds.add(tu.toolUseId);
 
-                            // End immediately since we don't track tool results separately yet
-                            toolSpan.end({
-                                output: "Tool invoked"
-                            });
+                            // Langfuse: Track tool invocation as a span
+                            if (this.trace) {
+                                const toolSpan = this.trace.span({
+                                    name: `tool-${tu.toolName}`,
+                                    input: tu.content,
+                                    startTime: new Date(),
+                                    metadata: {
+                                        toolUseId: tu.toolUseId,
+                                        toolName: tu.toolName
+                                    }
+                                });
 
-                            console.log(`[SonicClient] Langfuse: Tracked tool invocation for ${tu.toolName}`);
+                                // End immediately since we don't track tool results separately yet
+                                toolSpan.end({
+                                    output: "Tool invoked"
+                                });
+
+                                console.log(`[SonicClient] Langfuse: Tracked tool invocation for ${tu.toolName}`);
+                            }
+
+                            this.hasCalledTool = true; // Mark tool as called for Auto-Nudge logic
+
+                            this.eventCallback?.({
+                                type: 'toolUse',
+                                data: tu
+                            });
                         }
-
-                        this.hasCalledTool = true; // Mark tool as called for Auto-Nudge logic
-
-                        this.eventCallback?.({
-                            type: 'toolUse',
-                            data: tu
-                        });
                     }
 
                     if (eventData.contentStart) {
                         const contentId = eventData.contentStart.contentId;
+                        const contentName = eventData.contentStart.contentName;
+
+                        // Track active content blocks
+                        if (contentName) {
+                            this.activeContentNames.add(contentName);
+                        }
+
                         let stage = 'UNKNOWN';
                         if (eventData.contentStart.additionalModelFields) {
                             try {
@@ -1244,6 +1374,22 @@ export class SonicClient {
                             // Reset Auto-Nudge State
                             this.hasCommittedToTool = false;
                             this.hasCalledTool = false;
+                            this.activeContentNames.clear(); // Clear tracking for new turn
+
+                            // Reset tool deduplication ONLY when a genuine new user turn starts.
+                            // Nova Sonic's speculative execution cycles through TOOL→ASSISTANT→TOOL
+                            // within a single agent turn. Clearing on every role change would let the
+                            // second (final) tool call through. Only clear when:
+                            //   - Role switches TO user (real new input)
+                            //   - A completed turn's TEXT block starts (isTurnComplete path)
+                            const isNewUserTurn = normalizedRole === 'user' ||
+                                (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
+                            if (isNewUserTurn) {
+                                this.dispatchedToolUseIds.clear();
+                                this.pendingDuplicateToolUseIds.clear();
+                                this.dispatchedToolNames.clear();
+                                console.log(`[SonicClient] 🔄 Tool deduplication state cleared (new user turn)`);
+                            }
                         } else if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
                             // If we are NOT resetting, but getting new text, log why
                             console.log(`[SonicClient] EXPLICITLY NOT RESETTING transcript. Appending new TEXT block to existing turn.`);
@@ -1434,7 +1580,14 @@ export class SonicClient {
                     }
 
                     if (eventData.contentEnd) {
-                        console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
+                        const contentName = eventData.contentEnd.contentName;
+                        console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason}) Content: ${contentName}`);
+
+                        // Remove from active blocks
+                        if (contentName) {
+                            this.activeContentNames.delete(contentName);
+                        }
+
 
                         // Pass event to callback
                         this.eventCallback?.({
@@ -1443,17 +1596,35 @@ export class SonicClient {
                         });
 
                         // AUTO-NUDGE EXECUTION
-                        // If model stopped speaking (END_TURN or PARTIAL_TURN) and promised a tool but didn't call it
-                        if ((eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'PARTIAL_TURN') &&
+                        // If model stopped speaking (END_TURN) and promised a tool but didn't call it
+                        if (eventData.contentEnd.stopReason === 'END_TURN' &&
                             this.currentRole === 'ASSISTANT' &&
                             this.hasCommittedToTool &&
                             !this.hasCalledTool) {
 
-                            console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
+                            // CRITICAL FIX: Do not nudge on SPECULATIVE turns.
+                            // Speculative turns are just previews. If we nudge now, we interrupt the model
+                            // before it can send the FINAL version of the text and the AUDIO.
+                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                            if (stage === 'SPECULATIVE') {
+                                console.log(`[SonicClient] Model ended speculative turn (${eventData.contentEnd.stopReason}). Waiting for FINAL version before nudging.`);
+                                return;
+                            }
+
+                            // CRITICAL FIX: Do not nudge if other assistant content blocks (like AUDIO) are still active.
+                            // This prevents cutting off the speech playback.
+                            if (this.activeContentNames.size > 0 && this.currentRole === 'ASSISTANT') {
+                                console.log(`[SonicClient] Delaying Auto-Nudge: ${this.activeContentNames.size} block(s) still active (${Array.from(this.activeContentNames).join(', ')}).`);
+                                return;
+                            }
+
+
+                            console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call (${stage} turn).`);
                             this.hasCommittedToTool = false; // Prevent double trigger
 
                             // Programmatic Prompt Injection (Only if session is still active)
                             if (this.sessionId && this.isProcessing) {
+                                console.log('[SonicClient] Injecting Auto-Nudge hint...');
                                 this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
                             } else {
                                 console.warn('[SonicClient] Skipping Auto-Nudge injection - Session is inactive');

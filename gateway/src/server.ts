@@ -347,8 +347,8 @@ app.post('/api/agents/:agentId/status', async (req: Request, res: Response) => {
 
 // create HTTP and WebSocket servers
 const server = createServer(app);
-const wss = new WebSocketServer({ 
-    server, 
+const wss = new WebSocketServer({
+    server,
     path: '/sonic',
     verifyClient: (info: any) => {
         console.log(`[Gateway] WebSocket connection attempt from origin: ${info.origin}`);
@@ -412,7 +412,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                     router.getMemory(sessionId).then(async (memory) => {
                         console.log(`[Gateway] Sending session_init to ${agent.id} with memory:`, JSON.stringify(memory).substring(0, 200));
-                        
+
                         ws.send(JSON.stringify({ type: 'session_init', sessionId, traceId, memory: memory || {}, graphState: memory?.graphState, timestamp: Date.now() }));
 
                         // CRITICAL: Wait for agent to initialize session before flushing buffer
@@ -450,7 +450,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         const first = transcriptDedupe.values().next().value;
                                         if (first) transcriptDedupe.delete(first);
                                     }
-                                    
+
                                     // CRITICAL: Extract credentials from user transcripts in voice mode (async, non-blocking)
                                     // In voice mode, user speech comes as transcript messages, not text_input
                                     if (message.role === 'user' && message.text && message.isFinal) {
@@ -458,19 +458,19 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         (async () => {
                                             try {
                                                 console.log(`[Gateway] 🎤 User transcript (final): "${message.text}"`);
-                                                
+
                                                 const parsed = parseUserMessage(message.text);
-                                                
+
                                                 console.log(`[Gateway] 🔍 Parsed user transcript:`, {
                                                     accountNumber: parsed.accountNumber,
                                                     sortCode: parsed.sortCode,
                                                     intent: parsed.intent
                                                 });
-                                                
+
                                                 if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
                                                     const currentMemory = await router.getMemory(sessionId);
                                                     const updates: any = {};
-                                                    
+
                                                     if (parsed.accountNumber) {
                                                         updates.account = parsed.accountNumber;
                                                         updates.providedAccount = parsed.accountNumber;
@@ -490,7 +490,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                                     if (Object.keys(updates).length > 0) {
                                                         console.log(`[Gateway] 💾 Updating memory from voice transcript:`, updates);
                                                         await router.updateMemory(sessionId, updates);
-                                                        
+
                                                         const finalMemory = await router.getMemory(sessionId);
                                                         console.log(`[Gateway] 📤 Memory after voice update:`, {
                                                             account: finalMemory?.account,
@@ -499,7 +499,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                                             providedSortCode: finalMemory?.providedSortCode,
                                                             userIntent: finalMemory?.userIntent
                                                         });
-                                                        
+
                                                         // Send memory update to agent
                                                         if (agentWs && agentWs.readyState === WebSocket.OPEN) {
                                                             console.log(`[Gateway] Sending memory_update to agent after voice transcript`);
@@ -523,7 +523,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                 if (message.type === 'tool_result' && message.toolName === 'perform_idv_check') {
                                     // Parse the nested result structure
                                     let idvResult = message.result;
-                                    
+
                                     // Handle nested content structure: {content: [{text: "..."}]}
                                     if (idvResult?.content && Array.isArray(idvResult.content) && idvResult.content[0]?.text) {
                                         try {
@@ -532,30 +532,35 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                             console.warn(`[Gateway] Failed to parse IDV result text:`, e);
                                         }
                                     }
-                                    
+
                                     if (message.success && idvResult?.auth_status === 'VERIFIED') {
                                         console.log(`[Gateway] ✅ Detected successful IDV. Syncing memory and triggering auto-route to banking.`);
                                         console.log(`[Gateway]    Customer: ${idvResult.customer_name}`);
-                                        
+
                                         // Get current memory to retrieve providedAccount/providedSortCode
                                         const currentMemory = await router.getMemory(sessionId);
-                                        
+
                                         console.log(`[Gateway] 📋 Current memory before update:`, {
                                             providedAccount: currentMemory?.providedAccount,
                                             providedSortCode: currentMemory?.providedSortCode,
                                             account: currentMemory?.account,
                                             sortCode: currentMemory?.sortCode
                                         });
-                                        
+
                                         // Update memory with verified credentials
-                                        // Use providedAccount/providedSortCode from memory since IDV result doesn't include them
+                                        // Priority: providedAccount (pre-extracted from voice) → account (from memory) → message.input (from tool call)
+                                        const resolvedAccount = currentMemory?.providedAccount || currentMemory?.account || message.input?.accountNumber;
+                                        const resolvedSortCode = currentMemory?.providedSortCode || currentMemory?.sortCode || message.input?.sortCode;
+
+                                        console.log(`[Gateway] 📋 Resolved credentials: account=${resolvedAccount}, sortCode=${resolvedSortCode}`);
+
                                         await router.updateMemory(sessionId, {
                                             verified: true,
                                             userName: idvResult.customer_name,
-                                            account: currentMemory?.providedAccount || currentMemory?.account,
-                                            sortCode: currentMemory?.providedSortCode || currentMemory?.sortCode
+                                            account: resolvedAccount,
+                                            sortCode: resolvedSortCode
                                         });
-                                        
+
                                         // Verify memory was updated
                                         const updatedMemory = await router.getMemory(sessionId);
                                         console.log(`[Gateway] 📋 Memory after update:`, {
@@ -568,7 +573,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         // VERIFIED STATE GATE: Automatically route to banking after successful verification
                                         // This implements the "state gate" pattern where the system handles routing
                                         console.log(`[Gateway] 🚪 VERIFIED STATE GATE: Auto-routing to banking agent`);
-                                        
+
                                         // Wait for IDV agent to finish speaking, then route to banking
                                         setTimeout(async () => {
                                             const bankingAgent = await registry.getAgent('banking');
@@ -577,7 +582,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                                 isHandingOff = true;
                                                 try {
                                                     await connectToAgent(bankingAgent);
-                                                    
+
                                                     // Inform client of automatic handoff
                                                     clientWs.send(JSON.stringify({
                                                         type: 'handoff_event',
@@ -603,21 +608,21 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                                 if (message.type === 'tool_result' && handoffTools.includes(message.toolName)) {
                                     console.log(`[Gateway] 🔍 Tool result received for ${message.toolName}:`, JSON.stringify(message).substring(0, 300));
-                                    
+
                                     // Check if handoff was blocked by circuit breaker or validation
                                     const isBlocked = message.error && (
                                         message.error.includes('Circuit breaker') ||
                                         message.error.includes('blocked') ||
                                         message.error.includes('Already called')
                                     );
-                                    
+
                                     if (isBlocked) {
                                         console.log(`[Gateway] ⚠️  Handoff ${message.toolName} blocked: ${message.error}`);
                                         // Forward the error to client but don't intercept
                                         clientWs.send(data, { binary: isBinary });
                                         return;
                                     }
-                                    
+
                                     // Handoff tools always succeed if not blocked - they just initiate the transfer
                                     console.log(`[Gateway] 🔄 INTERCEPTED HANDOFF: ${message.toolName} (initiating transfer)`);
 
@@ -629,7 +634,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                                     // Extract target agent ID
                                     const targetId = message.toolName.replace('transfer_to_', '').replace('return_to_', '');
-                                    
+
                                     // CRITICAL: Extract credentials from tool input if present
                                     // This allows users to provide credentials upfront (e.g., "check balance for account 12345678, sort code 112233")
                                     if (targetId === 'idv' && message.input?.reason) {
@@ -637,7 +642,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         // Look for account number (8 digits) and sort code (6 digits)
                                         const accountMatch = reason.match(/\b(\d{8})\b/);
                                         const sortCodeMatch = reason.match(/\b(\d{6})\b/);
-                                        
+
                                         if (accountMatch && sortCodeMatch) {
                                             console.log(`[Gateway] 📋 Extracted credentials from handoff: Account ${accountMatch[1]}, Sort Code ${sortCodeMatch[1]}`);
                                             // Add to memory so IDV agent can use them
@@ -646,42 +651,57 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                                 providedSortCode: sortCodeMatch[1]
                                             });
                                         }
+
+                                        // Extract user intent from the handoff reason so banking agent
+                                        // knows what to do immediately after IDV completes
+                                        const currentMem = await router.getMemory(sessionId);
+                                        if (!currentMem?.userIntent) {
+                                            const parsed = parseUserMessage(reason);
+                                            if (parsed.intent) {
+                                                await router.updateMemory(sessionId, { userIntent: parsed.intent });
+                                                console.log(`[Gateway] 🎯 Extracted intent from handoff reason: ${parsed.intent}`);
+                                            } else {
+                                                // Fallback: store the raw reason as intent so banking agent has context
+                                                await router.updateMemory(sessionId, { userIntent: reason });
+                                                console.log(`[Gateway] 🎯 Stored raw handoff reason as intent: ${reason}`);
+                                            }
+                                        }
                                     }
-                                    
+
                                     // Perform handoff immediately (no delay)
                                     (async () => {
                                         try {
                                             console.log(`[Gateway] 🔄 Performing handoff to: ${targetId}`);
                                             const targetAgent = await registry.getAgent(targetId);
-                                            
+
                                             if (!targetAgent) {
                                                 console.error(`[Gateway] ❌ Target agent not found: ${targetId}`);
                                                 isHandingOff = false;
                                                 return;
                                             }
-                                            
+
                                             console.log(`[Gateway] ✅ Found target agent: ${targetAgent.id}`);
                                             currentAgent = targetAgent;
-                                            
+
                                             // Connect to new agent
                                             await connectToAgent(targetAgent);
-                                            
+
                                             console.log(`[Gateway] ✅ Handoff complete: ${message.toolName} → ${targetId}`);
-                                            
+
                                             // Inform client of handoff
                                             clientWs.send(JSON.stringify({
                                                 type: 'handoff_event',
                                                 target: targetId,
                                                 timestamp: Date.now()
                                             }));
-                                            
+
                                         } catch (err) {
                                             console.error(`[Gateway] ❌ Handoff failed:`, err);
                                         } finally {
                                             isHandingOff = false;
                                         }
                                     })();
-                                    
+
                                     return;
                                 }
                                 if (message.type === 'update_memory') {
@@ -689,7 +709,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                     return;
                                 }
                             }
-                        } catch (e) { 
+                        } catch (e) {
                             // JSON parsing failed - this might be a raw Nova Sonic event
                             // Log the error but don't crash
                             console.warn(`[Gateway] Failed to parse agent message:`, e);
@@ -701,18 +721,20 @@ wss.on('connection', async (clientWs: WebSocket) => {
                             // These events have uppercase types like TEXT, AUDIO, TOOL and aren't in our message format
                             if (!isBinary) {
                                 try {
-                                    const parsed = JSON.parse(data.toString());
-                                    // Filter out raw Nova Sonic event types (uppercase)
-                                    const rawNovaEventTypes = ['TEXT', 'AUDIO', 'TOOL', 'CONTENT_START', 'CONTENT_END'];
-                                    if (rawNovaEventTypes.includes(parsed.type)) {
-                                        console.log(`[Gateway] Filtered raw Nova Sonic event: ${parsed.type} (not forwarding to client)`);
-                                        return; // Don't forward this event
+                                    const dataStr = data.toString();
+                                    if (dataStr.trim().startsWith('{')) {
+                                        const parsed = JSON.parse(dataStr);
+                                        // Filter out raw Nova Sonic event types (uppercase)
+                                        const rawNovaEventTypes = ['TEXT', 'AUDIO', 'TOOL', 'CONTENT_START', 'CONTENT_END'];
+                                        if (parsed.type && rawNovaEventTypes.includes(parsed.type)) {
+                                            console.log(`[Gateway] Filtered raw Nova Sonic event: ${parsed.type} (not forwarding to client)`);
+                                            return; // Don't forward this event
+                                        }
+                                        console.log(`[Gateway] Forwarding message from agent to client (type: ${parsed.type})`);
                                     }
-                                    console.log(`[Gateway] Forwarding message from agent to client (type: ${parsed.type})`);
                                 } catch (e) {
-                                    console.warn(`[Gateway] Could not parse message for filtering:`, e);
-                                    // If we can't parse it, don't forward it to prevent client errors
-                                    return;
+                                    console.warn(`[Gateway] Could not parse message for filtering, treating as raw data:`, e);
+                                    // If we can't parse it, we'll just fall through and forward it as raw data
                                 }
                             } else {
                                 console.log(`[Gateway] Forwarding binary message from agent to client`);
@@ -724,25 +746,41 @@ wss.on('connection', async (clientWs: WebSocket) => {
                     }
                 });
 
-                ws.on('close', () => { 
+                ws.on('close', () => {
                     console.log(`[Gateway] Agent WebSocket closed for session: ${sessionId}`);
-                    if (agentWs === ws) agentWs = null; 
+                    if (agentWs === ws) agentWs = null;
                 });
             } catch (error) { reject(error); }
         });
     };
 
-    clientWs.on('message', async (data: Buffer) => {
+    clientWs.on('message', async (data: any, isBinary: boolean) => {
         try {
-            const isBinary = Buffer.isBuffer(data) && data.length > 0 && data[0] !== 0x7B;
+            // Defensively attempt to parse JSON
+            let message: any = null;
+            let isJson = false;
+
             if (!isBinary) {
-                const message = JSON.parse(data.toString());
+                try {
+                    const dataStr = data.toString();
+                    // Only even attempt to parse if it starts with {
+                    if (dataStr.trim().startsWith('{')) {
+                        message = JSON.parse(dataStr);
+                        isJson = message && typeof message === 'object' && message.type;
+                    }
+                } catch (e) {
+                    // Not valid JSON - might be audio data that looks like JSON or malformed text
+                    // We'll just fall through and treat it as raw data
+                }
+            }
+
+            if (isJson) {
                 console.log(`[Gateway] Received JSON message from client:`, message.type);
 
                 // Proactive extraction of credentials and intent
                 if (message.type === 'text_input' && message.text) {
                     console.log(`[Gateway] Text input received: "${message.text}"`);
-                    
+
                     // CRITICAL FIX: Forward text_input to agent FIRST, before memory update
                     // This ensures the agent receives and can process the user's message
                     if (agentWs && agentWs.readyState === WebSocket.OPEN && !isHandingOff) {
@@ -752,20 +790,20 @@ wss.on('connection', async (clientWs: WebSocket) => {
                         console.log(`[Gateway] Buffering text_input (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
                         messageQueue.push({ data, isBinary });
                     }
-                    
+
                     // THEN extract credentials and update memory
                     const parsed = parseUserMessage(message.text);
-                    
+
                     console.log(`[Gateway] 🔍 Parsed user message:`, {
                         accountNumber: parsed.accountNumber,
                         sortCode: parsed.sortCode,
                         intent: parsed.intent
                     });
-                    
+
                     if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
                         const currentMemory = await router.getMemory(sessionId);
                         const updates: any = {};
-                        
+
                         // CRITICAL FIX: Use providedAccount/providedSortCode keys for pre-provided credentials
                         // These are checked by IDV agent auto-trigger logic
                         if (parsed.accountNumber) {
@@ -788,7 +826,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                             console.log(`[Gateway] 💾 Updating memory with:`, updates);
                             await router.updateMemory(sessionId, updates);
                             const finalMemory = await router.getMemory(sessionId);
-                            
+
                             console.log(`[Gateway] 📤 Final memory state:`, {
                                 account: finalMemory?.account,
                                 sortCode: finalMemory?.sortCode,
@@ -796,7 +834,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                 providedSortCode: finalMemory?.providedSortCode,
                                 userIntent: finalMemory?.userIntent
                             });
-                            
+
                             if (agentWs && agentWs.readyState === WebSocket.OPEN) {
                                 console.log(`[Gateway] Sending memory_update AFTER text_input`);
                                 agentWs.send(JSON.stringify({
@@ -809,7 +847,7 @@ wss.on('connection', async (clientWs: WebSocket) => {
                             }
                         }
                     }
-                    
+
                     // IMPORTANT: Return here to prevent duplicate forwarding below
                     return;
                 }
@@ -862,31 +900,31 @@ wss.on('connection', async (clientWs: WebSocket) => {
     clientWs.on('close', async (code, reason) => {
         console.log(`[Gateway] Client WebSocket closed: code=${code}, reason=${reason?.toString() || 'none'}, sessionId=${sessionId}`);
         activeConnections.delete(sessionId);
-        
+
         // CRITICAL FIX: Add grace period for agent to finish processing
         // Don't close agent WebSocket immediately - give it time to complete operations
-        if (agentWs) { 
+        if (agentWs) {
             console.log(`[Gateway] Waiting 10 seconds for agent to finish processing before closing...`);
-            
+
             // Set a flag to prevent new messages from being forwarded
             isHandingOff = true;
-            
+
             // Wait for agent to finish processing (or timeout after 10 seconds)
             setTimeout(() => {
                 console.log(`[Gateway] Grace period expired, closing agent WebSocket for session: ${sessionId}`);
-                try { 
+                try {
                     if (agentWs && agentWs.readyState === WebSocket.OPEN) {
-                        agentWs.close(); 
+                        agentWs.close();
                     }
-                } catch (e) { 
+                } catch (e) {
                     console.error(`[Gateway] Error closing agent WebSocket:`, e);
                 }
             }, 10000); // 10 second grace period
         }
-        
+
         // Clean up session after grace period + buffer
-        setTimeout(async () => { 
-            await router.deleteSession(sessionId); 
+        setTimeout(async () => {
+            await router.deleteSession(sessionId);
         }, 70000); // 70 seconds total (10s grace + 60s buffer)
     });
 
