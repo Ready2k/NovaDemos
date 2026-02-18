@@ -451,65 +451,72 @@ wss.on('connection', async (clientWs: WebSocket) => {
                                         if (first) transcriptDedupe.delete(first);
                                     }
                                     
-                                    // CRITICAL: Extract credentials from user transcripts in voice mode
+                                    // CRITICAL: Extract credentials from user transcripts in voice mode (async, non-blocking)
                                     // In voice mode, user speech comes as transcript messages, not text_input
                                     if (message.role === 'user' && message.text && message.isFinal) {
-                                        console.log(`[Gateway] 🎤 User transcript (final): "${message.text}"`);
-                                        
-                                        const parsed = parseUserMessage(message.text);
-                                        
-                                        console.log(`[Gateway] 🔍 Parsed user transcript:`, {
-                                            accountNumber: parsed.accountNumber,
-                                            sortCode: parsed.sortCode,
-                                            intent: parsed.intent
-                                        });
-                                        
-                                        if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
-                                            const currentMemory = await router.getMemory(sessionId);
-                                            const updates: any = {};
-                                            
-                                            if (parsed.accountNumber) {
-                                                updates.account = parsed.accountNumber;
-                                                updates.providedAccount = parsed.accountNumber;
-                                                console.log(`[Gateway] 📋 Extracted account from voice: ${parsed.accountNumber}`);
-                                            }
-                                            if (parsed.sortCode) {
-                                                updates.sortCode = parsed.sortCode;
-                                                updates.providedSortCode = parsed.sortCode;
-                                                console.log(`[Gateway] 📋 Extracted sort code from voice: ${parsed.sortCode}`);
-                                            }
-                                            if (parsed.intent && !currentMemory?.userIntent) {
-                                                updates.userIntent = parsed.intent;
-                                                console.log(`[Gateway] 🎯 Extracted intent from voice: ${parsed.intent}`);
-                                            }
-                                            updates.lastUserMessage = message.text;
-
-                                            if (Object.keys(updates).length > 0) {
-                                                console.log(`[Gateway] 💾 Updating memory from voice transcript:`, updates);
-                                                await router.updateMemory(sessionId, updates);
+                                        // Run credential extraction asynchronously without blocking message forwarding
+                                        (async () => {
+                                            try {
+                                                console.log(`[Gateway] 🎤 User transcript (final): "${message.text}"`);
                                                 
-                                                const finalMemory = await router.getMemory(sessionId);
-                                                console.log(`[Gateway] 📤 Memory after voice update:`, {
-                                                    account: finalMemory?.account,
-                                                    sortCode: finalMemory?.sortCode,
-                                                    providedAccount: finalMemory?.providedAccount,
-                                                    providedSortCode: finalMemory?.providedSortCode,
-                                                    userIntent: finalMemory?.userIntent
+                                                const parsed = parseUserMessage(message.text);
+                                                
+                                                console.log(`[Gateway] 🔍 Parsed user transcript:`, {
+                                                    accountNumber: parsed.accountNumber,
+                                                    sortCode: parsed.sortCode,
+                                                    intent: parsed.intent
                                                 });
                                                 
-                                                // Send memory update to agent
-                                                if (agentWs && agentWs.readyState === WebSocket.OPEN) {
-                                                    console.log(`[Gateway] Sending memory_update to agent after voice transcript`);
-                                                    agentWs.send(JSON.stringify({
-                                                        type: 'memory_update',
-                                                        sessionId,
-                                                        memory: finalMemory,
-                                                        graphState: finalMemory?.graphState,
-                                                        timestamp: Date.now()
-                                                    }));
+                                                if (parsed.accountNumber || parsed.sortCode || parsed.intent) {
+                                                    const currentMemory = await router.getMemory(sessionId);
+                                                    const updates: any = {};
+                                                    
+                                                    if (parsed.accountNumber) {
+                                                        updates.account = parsed.accountNumber;
+                                                        updates.providedAccount = parsed.accountNumber;
+                                                        console.log(`[Gateway] 📋 Extracted account from voice: ${parsed.accountNumber}`);
+                                                    }
+                                                    if (parsed.sortCode) {
+                                                        updates.sortCode = parsed.sortCode;
+                                                        updates.providedSortCode = parsed.sortCode;
+                                                        console.log(`[Gateway] 📋 Extracted sort code from voice: ${parsed.sortCode}`);
+                                                    }
+                                                    if (parsed.intent && !currentMemory?.userIntent) {
+                                                        updates.userIntent = parsed.intent;
+                                                        console.log(`[Gateway] 🎯 Extracted intent from voice: ${parsed.intent}`);
+                                                    }
+                                                    updates.lastUserMessage = message.text;
+
+                                                    if (Object.keys(updates).length > 0) {
+                                                        console.log(`[Gateway] 💾 Updating memory from voice transcript:`, updates);
+                                                        await router.updateMemory(sessionId, updates);
+                                                        
+                                                        const finalMemory = await router.getMemory(sessionId);
+                                                        console.log(`[Gateway] 📤 Memory after voice update:`, {
+                                                            account: finalMemory?.account,
+                                                            sortCode: finalMemory?.sortCode,
+                                                            providedAccount: finalMemory?.providedAccount,
+                                                            providedSortCode: finalMemory?.providedSortCode,
+                                                            userIntent: finalMemory?.userIntent
+                                                        });
+                                                        
+                                                        // Send memory update to agent
+                                                        if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                                                            console.log(`[Gateway] Sending memory_update to agent after voice transcript`);
+                                                            agentWs.send(JSON.stringify({
+                                                                type: 'memory_update',
+                                                                sessionId,
+                                                                memory: finalMemory,
+                                                                graphState: finalMemory?.graphState,
+                                                                timestamp: Date.now()
+                                                            }));
+                                                        }
+                                                    }
                                                 }
+                                            } catch (error) {
+                                                console.error(`[Gateway] Error extracting credentials from transcript:`, error);
                                             }
-                                        }
+                                        })();
                                     }
                                 }
 

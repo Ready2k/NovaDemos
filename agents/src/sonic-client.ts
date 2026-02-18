@@ -354,7 +354,10 @@ export class SonicClient {
                         temperature: 0.7
                     },
                     turnDetectionConfiguration: {
-                        // endpointingSensitivity: "HIGH" // Let Nova default handle it
+                        // LOW sensitivity = longer wait before ending turn (better for slow/deliberate speech)
+                        // HIGH sensitivity = shorter wait (better for fast natural speech)
+                        // For banking credentials, use LOW to avoid cutting off digit sequences
+                        endpointingSensitivity: "LOW"
                     }
                 }
             }
