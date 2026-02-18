@@ -195,6 +195,35 @@ class AgentCore {
         this.sessions.delete(sessionId);
     }
     /**
+     * Store user message in history without generating a response
+     * Used by streaming adapters (like VoiceSideCar) to sync transcripts
+     */
+    trackUserMessage(sessionId, message) {
+        const session = this.sessions.get(sessionId);
+        if (!session)
+            return;
+        // Store user message
+        session.messages.push({
+            role: 'user',
+            content: message,
+            timestamp: Date.now()
+        });
+        // Track in Langfuse
+        if (session.langfuseTrace) {
+            try {
+                session.langfuseTrace.event({
+                    name: 'user-input-sync',
+                    input: message,
+                    metadata: {
+                        timestamp: Date.now(),
+                        messageIndex: session.messages.length - 1
+                    }
+                });
+            }
+            catch (e) { }
+        }
+    }
+    /**
      * Process a user message (text input)
      * This is called by adapters when they receive user input
      */
@@ -835,6 +864,21 @@ class AgentCore {
                 input: toolInput
             });
             const result = response.data.result;
+            // CRITICAL: Pin account details to session if they were provided in toolInput
+            // This ensures state persistence even for non-IDV banking calls
+            const session = this.sessions.get(sessionId);
+            if (session && toolInput) {
+                if (!session.graphState)
+                    session.graphState = {};
+                if (toolInput.accountNumber && !session.graphState.account) {
+                    session.graphState.account = toolInput.accountNumber;
+                    console.log(`[AgentCore:${this.agentId}] pinned account: ${toolInput.accountNumber}`);
+                }
+                if (toolInput.sortCode && !session.graphState.sortCode) {
+                    session.graphState.sortCode = toolInput.sortCode;
+                    console.log(`[AgentCore:${this.agentId}] pinned sort code: ${toolInput.sortCode}`);
+                }
+            }
             // Handle IDV check - store verified user in session
             if (toolName === 'perform_idv_check') {
                 this.handleIdvResult(sessionId, result, toolInput);

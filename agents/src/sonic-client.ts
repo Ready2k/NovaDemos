@@ -60,6 +60,7 @@ export class SonicClient {
     private contentStages: Map<string, string> = new Map(); // Track generation stage by ID
     private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
     private activeContentNames: Set<string> = new Set(); // Track active content blocks from the model
+    private pendingSystemPromptUpdate: string | null = null; // Store pending system prompt update for injection
     private currentTurnTranscript: string = ''; // Accumulate text for the current turn
     private currentTurnId: string | null = null; // Stable ID for the current assistant turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
@@ -575,53 +576,11 @@ export class SonicClient {
         console.log('[SonicClient] Primed audio content with silence');
 
         while (this.isProcessing) {
-            // Check for system prompt updates
+            // Check for system prompt updates - drain the queue but DON'T send them as turns yet
+            // They will be prepended to the next USER turn (text input or tool result)
             if (this.systemPromptQueue.length > 0) {
-                const newSystemPrompt = this.systemPromptQueue.shift()!;
-                console.log(`[SonicClient] Processing system prompt update (${newSystemPrompt.length} chars)`);
-
-                const systemUpdateId = `system-update-${Date.now()}`;
-
-                // 1. Content Start (SYSTEM)
-                const systemContentStart = {
-                    event: {
-                        contentStart: {
-                            promptName: promptName,
-                            contentName: systemUpdateId,
-                            type: "TEXT",
-                            interactive: false,
-                            role: "SYSTEM",
-                            textInputConfiguration: {
-                                mediaType: "text/plain"
-                            }
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStart)) } };
-
-                // 2. Text Input
-                const systemTextInput = {
-                    event: {
-                        textInput: {
-                            promptName: promptName,
-                            contentName: systemUpdateId,
-                            content: newSystemPrompt
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemTextInput)) } };
-
-                // 3. Content End
-                const systemContentEnd = {
-                    event: {
-                        contentEnd: {
-                            promptName: promptName,
-                            contentName: systemUpdateId
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentEnd)) } };
-                console.log(`[SonicClient] ✓ System prompt update sent to active stream`);
+                this.pendingSystemPromptUpdate = this.systemPromptQueue.shift()!;
+                console.log(`[SonicClient] Captured pending system prompt update (${this.pendingSystemPromptUpdate.length} chars)`);
             }
 
             // Check for tool results first (priority over text/audio)
@@ -669,6 +628,15 @@ export class SonicClient {
 
                 // 3. Build combined content for all results
                 let combinedInjectedContent = "[SYSTEM] Tool results received:\n\n";
+
+                // INTEGRATED FIX: Prepend any pending system prompt update to the tool results
+                // This ensures the model sees the updated context (like IDV status) 
+                // at the EXACT same time it sees the tool results.
+                if (this.pendingSystemPromptUpdate) {
+                    combinedInjectedContent = `[SYSTEM_UPDATE]\nYour current instructions and context have been updated:\n\n${this.pendingSystemPromptUpdate}\n\n[SYSTEM] Tool results received:\n\n`;
+                    console.log(`[SonicClient] Prepending pending system prompt update to tool result batch`);
+                    this.pendingSystemPromptUpdate = null;
+                }
 
                 for (const resultData of resultsToProcess) {
                     // Unwrap AgentCore result format if present
@@ -806,12 +774,21 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
 
+                let contentToSubmit = text;
+
+                // INTEGRATED FIX: Prepend any pending system prompt update to the text input
+                if (this.pendingSystemPromptUpdate) {
+                    contentToSubmit = `[SYSTEM_UPDATE]\nYour instructions have been updated:\n\n${this.pendingSystemPromptUpdate}\n\n[USER INPUT]:\n${text}`;
+                    console.log(`[SonicClient] Prepending pending system prompt update to user text input`);
+                    this.pendingSystemPromptUpdate = null;
+                }
+
                 const textInputEvent = {
                     event: {
                         textInput: {
                             promptName: promptName,
                             contentName: textContentName,
-                            content: text
+                            content: contentToSubmit
                         }
                     }
                 };

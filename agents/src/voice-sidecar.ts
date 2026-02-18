@@ -12,6 +12,7 @@ import { WebSocket } from 'ws';
 import { SonicClient, SonicConfig, SonicEvent, AudioChunk } from './sonic-client';
 import { AgentCore } from './agent-core';
 import { isHandoffTool } from './handoff-tools';
+import { isBankingTool } from './banking-tools';
 
 /**
  * Configuration for Voice Side-Car
@@ -379,15 +380,17 @@ export class VoiceSideCar {
         }));
 
         // CRITICAL: Store messages in Agent Core for conversation history
-        if (role === 'user') {
-            // Process user message through Agent Core
-            this.agentCore.processUserMessage(session.sessionId, text)
-                .catch(error => {
-                    console.error(`[VoiceSideCar] Error processing user message: ${error.message}`);
-                });
-        } else if (role === 'assistant' && transcriptData.isFinal) {
+        // Only record FINAL transcripts to history to avoid speculative duplicates
+        const isFinal = transcriptData.isFinal !== undefined ? transcriptData.isFinal : true;
+
+        if (role === 'user' && isFinal) {
+            // Sync user message to history WITHOUT triggering a new generation
+            this.agentCore.trackUserMessage(session.sessionId, text);
+            console.log(`[VoiceSideCar] Synced FINAL User transcript to history: "${text.substring(0, 30)}..."`);
+        } else if (role === 'assistant' && isFinal) {
             // Store final assistant responses in conversation history
             this.agentCore.trackAssistantResponse(session.sessionId, text);
+            console.log(`[VoiceSideCar] Synced FINAL Assistant transcript to history: "${text.substring(0, 30)}..."`);
         }
     }
 
@@ -446,9 +449,19 @@ export class VoiceSideCar {
                 !result.success
             );
 
+            // CRITICAL: Refresh system prompt in SonicClient from AgentCore
+            // Only if NOT handing off, and only for state-changing tools.
+            const agentSession = this.agentCore.getSession(session.sessionId);
+            const isHandingOff = !!agentSession?.graphState?.pendingHandoff;
+            const isBanking = isBankingTool(toolData.toolName);
+
+            if (!isHandingOff && isBanking) {
+                const updatedSystemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
+                session.sonicClient.updateSystemPrompt(updatedSystemPrompt);
+                console.log(`[VoiceSideCar] 🔄 Refreshed system prompt after state-changing banking tool (${toolData.toolName})`);
+            }
+
             // Forward tool result to client
-            // CRITICAL: Include 'input' so the gateway can extract account credentials
-            // from perform_idv_check calls and store them in session memory before handoff
             session.ws.send(JSON.stringify({
                 type: 'tool_result',
                 toolName: toolData.toolName,
@@ -461,42 +474,32 @@ export class VoiceSideCar {
             }));
 
             // CRITICAL: Check for pending handoff from Verified State Gate
-            // After successful IDV verification, agent core sets pendingHandoff in graphState
-            const agentSession = this.agentCore.getSession(session.sessionId);
             if (agentSession?.graphState?.pendingHandoff) {
                 const pendingHandoff = agentSession.graphState.pendingHandoff;
                 console.log(`[VoiceSideCar] 🚀 Detected pending handoff from Verified State Gate: ${pendingHandoff.targetAgent}`);
 
-                // Create handoff request
-                const handoffRequest = {
-                    targetAgentId: pendingHandoff.targetAgent,
-                    context: pendingHandoff.context,
-                    graphState: agentSession.graphState
-                };
-
-                // Clear pending handoff
+                // SHIELD: Clear locally so we don't trigger twice
                 delete agentSession.graphState.pendingHandoff;
 
-                // Forward handoff request to Gateway
-                session.ws.send(JSON.stringify({
-                    type: 'handoff_request',
-                    targetAgentId: handoffRequest.targetAgentId,
-                    context: handoffRequest.context,
-                    graphState: handoffRequest.graphState,
-                    timestamp: Date.now()
-                }));
-
-                console.log(`[VoiceSideCar] ✅ Sent automatic handoff request to Gateway`);
+                // DELAY: Give the agent 2 seconds to finish speaking the confirmation
+                // of successful verification before actually handing off.
+                setTimeout(() => {
+                    console.log(`[VoiceSideCar] 🚀 Executing delayed automatic handoff to ${pendingHandoff.targetAgent}`);
+                    session.ws.send(JSON.stringify({
+                        type: 'handoff_request',
+                        targetAgentId: pendingHandoff.targetAgent,
+                        context: pendingHandoff.context,
+                        graphState: agentSession.graphState,
+                        timestamp: Date.now()
+                    }));
+                }, 2000);
             }
 
-            // Check if this is a handoff tool and the result contains a handoff request
-            // Requirement 9.4: Send handoff_request to Gateway (via adapter)
+            // Check for explicit handoff from tool result
             if (result.success && result.result?.handoffRequest) {
                 const handoffRequest = result.result.handoffRequest;
+                console.log(`[VoiceSideCar] 🔄 Forwarding explicit handoff request: ${handoffRequest.targetAgentId}`);
 
-                console.log(`[VoiceSideCar] 🔄 Forwarding handoff request: ${handoffRequest.targetAgentId}`);
-
-                // Forward handoff request to client (which will forward to Gateway)
                 session.ws.send(JSON.stringify({
                     type: 'handoff_request',
                     targetAgentId: handoffRequest.targetAgentId,
@@ -505,7 +508,6 @@ export class VoiceSideCar {
                     timestamp: Date.now()
                 }));
             }
-
         } catch (error: any) {
             console.error(`[VoiceSideCar] ❌ Tool execution error: ${error.message}`);
 

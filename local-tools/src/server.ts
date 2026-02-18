@@ -67,12 +67,16 @@ async function callAgentCoreGateway(toolName: string, input: any, gatewayTarget?
     console.log(`[LocalTools] Input parameters:`, JSON.stringify(input, null, 2));
 
     // Transform input field names based on tool requirements
-    // Balance tool expects 'accountId' but IDV expects 'accountNumber'
+    // Some tools expect 'accountId', some 'accountNumber'. 
+    // We try to provide what the tool definition or gateway expects.
     const transformedInput = { ...input };
-    if (toolName === 'agentcore_balance' && input.accountNumber && !input.accountId) {
+
+    // Check if we need to map accountNumber to accountId
+    // This happens if the user provides accountNumber but the gateway/tool expects accountId
+    if (input.accountNumber && !input.accountId) {
+        // If it's a known tool that needs accountId, or if it's not and we just want to be safe
         transformedInput.accountId = input.accountNumber;
-        delete transformedInput.accountNumber;
-        console.log(`[LocalTools] Transformed accountNumber → accountId for balance tool`);
+        console.log(`[LocalTools] 🔄 Providing accountId from accountNumber for ${toolName}`);
     }
 
     // Create JSON-RPC 2.0 payload
@@ -458,13 +462,10 @@ function getMockData(toolName: string, input: any): any {
 async function executeTool(toolName: string, input: any): Promise<any> {
     console.log(`[LocalTools] Executing tool: ${toolName}`, input);
 
-    // Banking tools - Use mock data if enabled, otherwise AgentCore
-    if (toolName === 'perform_idv_check' || toolName === 'agentcore_balance' || toolName === 'get_account_transactions') {
-        // Get tool definition to find gatewayTarget
-        const toolDef = tools.get(toolName);
-        const gatewayTarget = toolDef?.gatewayTarget;
+    const toolDef = tools.get(toolName);
 
-        // Use mock data if enabled
+    // 1. Dynamic Routing: If tool has a gatewayTarget, it's an AgentCore Gateway tool
+    if (toolDef && toolDef.gatewayTarget) {
         if (USE_MOCK_DATA) {
             return getMockData(toolName, input);
         }
@@ -473,8 +474,8 @@ async function executeTool(toolName: string, input: any): Promise<any> {
             throw new Error(`AgentCore credentials not configured. Cannot execute ${toolName}. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables or enable USE_MOCK_DATA=true.`);
         }
 
-        console.log(`[LocalTools] Calling AgentCore Gateway for ${toolName}...`);
-        const result = await callAgentCoreGateway(toolName, input, gatewayTarget);
+        console.log(`[LocalTools] Dynamic Route → AgentCore Gateway (${toolDef.gatewayTarget})`);
+        const result = await callAgentCoreGateway(toolName, input, toolDef.gatewayTarget);
         console.log(`[LocalTools] AgentCore result:`, result);
 
         // Parse the result if it's a string
@@ -489,7 +490,7 @@ async function executeTool(toolName: string, input: any): Promise<any> {
         return result;
     }
 
-    // Simple built-in tools
+    // 2. Built-in tool implementations (non-AgentCore tools)
     switch (toolName) {
         case 'calculator':
             return executeCalculator(input);

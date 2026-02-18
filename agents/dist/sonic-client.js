@@ -518,15 +518,17 @@ class SonicClient {
                 const newSystemPrompt = this.systemPromptQueue.shift();
                 console.log(`[SonicClient] Processing system prompt update (${newSystemPrompt.length} chars)`);
                 const systemUpdateId = `system-update-${Date.now()}`;
-                // 1. Content Start (SYSTEM)
+                // CRITICAL FIX: Use USER role for mid-stream updates.
+                // Bedrock Nova Sonic only allows ONE 'SYSTEM' role block per prompt.
+                // Sending a second one causes a 'Duplicate SYSTEM content' error and kills the stream.
                 const systemContentStart = {
                     event: {
                         contentStart: {
                             promptName: promptName,
                             contentName: systemUpdateId,
                             type: "TEXT",
-                            interactive: false,
-                            role: "SYSTEM",
+                            interactive: true, // Internal directive but follows USER role rules
+                            role: "USER",
                             textInputConfiguration: {
                                 mediaType: "text/plain"
                             }
@@ -540,7 +542,8 @@ class SonicClient {
                         textInput: {
                             promptName: promptName,
                             contentName: systemUpdateId,
-                            content: newSystemPrompt
+                            // Wrap in a tag so the model knows it's an administrative update
+                            content: `[SYSTEM_UPDATE]\nYour current instructions and context have been updated:\n\n${newSystemPrompt}`
                         }
                     }
                 };
@@ -555,7 +558,7 @@ class SonicClient {
                     }
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentEnd)) } };
-                console.log(`[SonicClient] ✓ System prompt update sent to active stream`);
+                console.log(`[SonicClient] ✓ System prompt update sent to active stream (as USER block)`);
             }
             // Check for tool results first (priority over text/audio)
             if (this.toolResultQueue.length > 0) {

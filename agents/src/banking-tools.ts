@@ -106,7 +106,17 @@ export function generateBankingTools(): BankingTool[] {
  * Check if a tool name is a banking tool
  */
 export function isBankingTool(toolName: string): boolean {
-    return ['perform_idv_check', 'agentcore_balance', 'get_account_transactions', 'uk_branch_lookup'].includes(toolName);
+    const bankingTools = [
+        'perform_idv_check',
+        'agentcore_balance',
+        'get_account_transactions',
+        'uk_branch_lookup',
+        'create_dispute_case',
+        'update_dispute_case',
+        'lookup_merchant_alias',
+        'manage_recent_interactions'
+    ];
+    return bankingTools.includes(toolName);
 }
 
 /**

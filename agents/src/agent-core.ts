@@ -170,16 +170,16 @@ export class AgentCore {
     private decisionEvaluator: DecisionEvaluator;
     private graphExecutor: GraphExecutor | null;
     private localToolsUrl: string;
-    
+
     // Gateway routing
     private gatewayRouter: GatewayRouter | null = null;
-    
+
     // Session storage
     private sessions: Map<string, SessionContext> = new Map();
-    
+
     // Persona prompt (loaded from persona config)
     private personaPrompt: string = '';
-    
+
     // Langfuse observability
     private langfuse: Langfuse | null = null;
     private langfuseEnabled: boolean = false;
@@ -192,7 +192,7 @@ export class AgentCore {
         this.decisionEvaluator = config.decisionEvaluator;
         this.graphExecutor = config.graphExecutor;
         this.localToolsUrl = config.localToolsUrl || 'http://local-tools:9000';
-        
+
         // Initialize Gateway Router if configured
         if (config.gatewayUrl) {
             this.gatewayRouter = new GatewayRouter({
@@ -202,10 +202,10 @@ export class AgentCore {
             });
             console.log(`[AgentCore:${this.agentId}] Gateway Router initialized`);
         }
-        
+
         // Initialize Langfuse if configured
-        if (config.langfuseConfig?.enabled !== false && 
-            config.langfuseConfig?.publicKey && 
+        if (config.langfuseConfig?.enabled !== false &&
+            config.langfuseConfig?.publicKey &&
             config.langfuseConfig?.secretKey) {
             try {
                 this.langfuse = new Langfuse({
@@ -222,7 +222,7 @@ export class AgentCore {
         } else {
             console.log(`[AgentCore:${this.agentId}] Langfuse observability disabled`);
         }
-        
+
         console.log(`[AgentCore:${this.agentId}] Initialized`);
     }
 
@@ -232,7 +232,7 @@ export class AgentCore {
     public initializeSession(sessionId: string, memory?: any, mode?: 'voice' | 'text' | 'hybrid'): SessionContext {
         console.log(`[AgentCore:${this.agentId}] Initializing session: ${sessionId} (mode: ${mode || 'unknown'})`);
         console.log(`[AgentCore:${this.agentId}] Memory received:`, JSON.stringify(memory, null, 2));
-        
+
         const session: SessionContext = {
             sessionId,
             startTime: Date.now(),
@@ -243,7 +243,7 @@ export class AgentCore {
             outputTokens: 0,
             mode: mode || 'text' // Default to text mode if not specified
         };
-        
+
         // Create Langfuse trace for this session (Requirement 11.2)
         if (this.langfuseEnabled && this.langfuse) {
             try {
@@ -264,7 +264,7 @@ export class AgentCore {
                 console.warn(`[AgentCore:${this.agentId}] Failed to create Langfuse trace: ${error.message}`);
             }
         }
-        
+
         // Restore verified user from memory if available
         if (memory && memory.verified) {
             session.verifiedUser = {
@@ -275,32 +275,32 @@ export class AgentCore {
             };
             console.log(`[AgentCore:${this.agentId}] Restored verified user: ${memory.userName}`);
         }
-        
+
         // Store user intent from memory
         if (memory && memory.userIntent) {
             session.userIntent = memory.userIntent;
             console.log(`[AgentCore:${this.agentId}] Stored user intent: ${memory.userIntent}`);
         }
-        
+
         // Hydrate graph state from memory if available
         if (memory && memory.graphState && this.graphExecutor) {
             console.log(`[AgentCore:${this.agentId}] Hydrating graph state from memory`);
             this.graphExecutor.hydrateState(memory.graphState);
-            
+
             // CRITICAL: Store graphState in session so it's available in system prompt
             session.graphState = memory.graphState;
-            
+
             if (memory.graphState.currentNodeId) {
                 session.currentNode = memory.graphState.currentNodeId;
                 console.log(`[AgentCore:${this.agentId}] Resuming from node: ${memory.graphState.currentNodeId}`);
             }
-            
+
             // Log account details if present
             if (memory.graphState.account || memory.graphState.sortCode) {
                 console.log(`[AgentCore:${this.agentId}] Account details from memory: ${memory.graphState.account || 'N/A'}, ${memory.graphState.sortCode || 'N/A'}`);
             }
         }
-        
+
         // CRITICAL: Also check for account details directly in memory (not just graphState)
         if (memory && (memory.account || memory.sortCode)) {
             if (!session.graphState) {
@@ -314,7 +314,7 @@ export class AgentCore {
             }
             console.log(`[AgentCore:${this.agentId}] Stored account details from memory: ${memory.account || 'N/A'}, ${memory.sortCode || 'N/A'}`);
         }
-        
+
         this.sessions.set(sessionId, session);
         return session;
     }
@@ -331,9 +331,9 @@ export class AgentCore {
      */
     public endSession(sessionId: string): void {
         console.log(`[AgentCore:${this.agentId}] Ending session: ${sessionId}`);
-        
+
         const session = this.sessions.get(sessionId);
-        
+
         // Track session end in Langfuse (Requirement 11.2)
         if (session?.langfuseTrace) {
             try {
@@ -357,8 +357,38 @@ export class AgentCore {
                 console.warn(`[AgentCore:${this.agentId}] Failed to update Langfuse trace: ${error.message}`);
             }
         }
-        
+
         this.sessions.delete(sessionId);
+    }
+
+    /**
+     * Store user message in history without generating a response
+     * Used by streaming adapters (like VoiceSideCar) to sync transcripts
+     */
+    public trackUserMessage(sessionId: string, message: string): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
+
+        // Store user message
+        session.messages.push({
+            role: 'user',
+            content: message,
+            timestamp: Date.now()
+        });
+
+        // Track in Langfuse
+        if (session.langfuseTrace) {
+            try {
+                session.langfuseTrace.event({
+                    name: 'user-input-sync',
+                    input: message,
+                    metadata: {
+                        timestamp: Date.now(),
+                        messageIndex: session.messages.length - 1
+                    }
+                });
+            } catch (e) { }
+        }
     }
 
     /**
@@ -374,7 +404,7 @@ export class AgentCore {
                 error: 'Session not found'
             };
         }
-        
+
         // Track user input in Langfuse (Requirement 11.3)
         if (session.langfuseTrace) {
             try {
@@ -390,14 +420,14 @@ export class AgentCore {
                 console.warn(`[AgentCore:${this.agentId}] Failed to track user input: ${error.message}`);
             }
         }
-        
+
         // Store user message
         session.messages.push({
             role: 'user',
             content: message,
             timestamp: Date.now()
         });
-        
+
         // Generate response using Claude Sonnet
         return await this.generateResponse(sessionId, message);
     }
@@ -437,28 +467,28 @@ export class AgentCore {
             // 1. Triage agent + user asking for account-specific info
             // 2. IDV agent + user provided BOTH account number AND sort code (8 digits + 6 digits)
             // 3. Banking agent + user asking for balance/transactions
-            
+
             // For IDV: Only force if we have both 8-digit and 6-digit numbers
             const has8Digits = /\b\d{8}\b/.test(userMessage);
             const has6Digits = /\b\d{6}\b/.test(userMessage);
             const hasBothCredentials = has8Digits && has6Digits;
-            
-            const shouldForceToolUse = 
-                (this.agentId === 'triage' && 
-                 (userMessage.toLowerCase().includes('balance') ||
-                  userMessage.toLowerCase().includes('transaction') ||
-                  userMessage.toLowerCase().includes('payment') ||
-                  userMessage.toLowerCase().includes('dispute') ||
-                  userMessage.toLowerCase().includes('fraud'))) ||
+
+            const shouldForceToolUse =
+                (this.agentId === 'triage' &&
+                    (userMessage.toLowerCase().includes('balance') ||
+                        userMessage.toLowerCase().includes('transaction') ||
+                        userMessage.toLowerCase().includes('payment') ||
+                        userMessage.toLowerCase().includes('dispute') ||
+                        userMessage.toLowerCase().includes('fraud'))) ||
                 (this.agentId === 'idv' && hasBothCredentials) || // Only force if BOTH credentials present
-                (this.agentId === 'banking' && 
-                 (userMessage.toLowerCase().includes('balance') ||
-                  userMessage.toLowerCase().includes('transaction')));
+                (this.agentId === 'banking' &&
+                    (userMessage.toLowerCase().includes('balance') ||
+                        userMessage.toLowerCase().includes('transaction')));
 
             // Call Claude Sonnet via Bedrock Converse API
             const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
-            const bedrockClient = new BedrockRuntimeClient({ 
-                region: process.env.AWS_REGION || 'us-east-1' 
+            const bedrockClient = new BedrockRuntimeClient({
+                region: process.env.AWS_REGION || 'us-east-1'
             });
 
             const converseParams: any = {
@@ -475,7 +505,7 @@ export class AgentCore {
                         toolSpec: {
                             ...tool.toolSpec,
                             inputSchema: {
-                                json: typeof tool.toolSpec.inputSchema.json === 'string' 
+                                json: typeof tool.toolSpec.inputSchema.json === 'string'
                                     ? JSON.parse(tool.toolSpec.inputSchema.json)
                                     : tool.toolSpec.inputSchema.json
                             }
@@ -504,7 +534,7 @@ export class AgentCore {
                     for (const content of message.content) {
                         if (content.toolUse) {
                             console.log(`[AgentCore:${this.agentId}] Claude requested tool: ${content.toolUse.name}`);
-                            
+
                             // Return tool call response
                             return {
                                 type: 'tool_call',
@@ -529,7 +559,7 @@ export class AgentCore {
                             if (session?.mode === 'voice' || session?.mode === 'hybrid') {
                                 const originalText = responseText;
                                 responseText = formatTextForSpeech(responseText);
-                                
+
                                 if (originalText !== responseText) {
                                     console.log(`[AgentCore:${this.agentId}] 🎤 Speech formatting applied:`);
                                     console.log(`[AgentCore:${this.agentId}]    Original: "${originalText.substring(0, 80)}..."`);
@@ -649,26 +679,26 @@ export class AgentCore {
                 error: 'Session not found'
             };
         }
-        
+
         // Circuit Breaker: Prevent infinite tool loops
         const MAX_TOOL_CALLS_PER_TOOL = 5; // Max calls for same tool
         const TOOL_CALL_WINDOW_MS = 30000; // 30 second window
-        
+
         // Initialize tool call tracking if not exists
         if (!session.toolCallCounts) {
             session.toolCallCounts = new Map();
         }
-        
+
         // Get current count for this tool
         const currentCount = session.toolCallCounts.get(toolName) || 0;
         const now = Date.now();
-        
+
         // Reset counts if outside the time window
         if (session.lastToolCallTime && (now - session.lastToolCallTime) > TOOL_CALL_WINDOW_MS) {
             console.log(`[AgentCore:${this.agentId}] Resetting tool call counts (window expired)`);
             session.toolCallCounts.clear();
         }
-        
+
         // Check if we've exceeded the limit
         if (currentCount >= MAX_TOOL_CALLS_PER_TOOL) {
             console.error(`[AgentCore:${this.agentId}] ⚠️  CIRCUIT BREAKER TRIGGERED: Tool ${toolName} called ${currentCount} times in ${TOOL_CALL_WINDOW_MS}ms`);
@@ -678,13 +708,13 @@ export class AgentCore {
                 error: `Circuit breaker triggered: Tool ${toolName} has been called too many times (${currentCount}/${MAX_TOOL_CALLS_PER_TOOL}). This usually indicates the tool is returning invalid results. Please check the tool configuration and try again.`
             };
         }
-        
+
         // Increment count and update timestamp
         session.toolCallCounts.set(toolName, currentCount + 1);
         session.lastToolCallTime = now;
-        
+
         console.log(`[AgentCore:${this.agentId}] Executing tool: ${toolName} (call ${currentCount + 1}/${MAX_TOOL_CALLS_PER_TOOL})`);
-        
+
         // CRITICAL: Block Multiple Handoff Calls in Same Turn
         // Prevents agents from calling multiple transfer tools (e.g., transfer_to_idv then transfer_to_banking)
         // This enforces the "one handoff per turn" rule
@@ -692,13 +722,13 @@ export class AgentCore {
             // Check if another handoff tool was already called in this turn
             const handoffToolsCalledThisTurn = Array.from(session.toolCallCounts?.keys() || [])
                 .filter(key => isHandoffTool(key) && key !== toolName);
-            
+
             if (handoffToolsCalledThisTurn.length > 0) {
                 console.error(`[AgentCore:${this.agentId}] ❌ BLOCKED: Multiple handoff calls in same turn`);
                 console.error(`[AgentCore:${this.agentId}]    Already called: ${handoffToolsCalledThisTurn.join(', ')}`);
                 console.error(`[AgentCore:${this.agentId}]    Attempted: ${toolName}`);
                 console.error(`[AgentCore:${this.agentId}]    Rule: Only ONE handoff tool per turn allowed`);
-                
+
                 return {
                     success: false,
                     result: null,
@@ -706,7 +736,7 @@ export class AgentCore {
                 };
             }
         }
-        
+
         // CRITICAL: Duplicate IDV Call Blocking
         // Prevent LLM from calling perform_idv_check multiple times with same parameters
         // This ensures the agent waits for user input between retry attempts
@@ -715,13 +745,13 @@ export class AgentCore {
             if (!session.graphState) {
                 session.graphState = {};
             }
-            
+
             // CRITICAL: Block if user is already verified
             // This prevents Nova Sonic from calling perform_idv_check again after successful verification
             if (session.graphState?.verified && session.graphState?.userName) {
                 console.error(`[AgentCore:${this.agentId}] ⚠️  IDV CALL BLOCKED: User already verified as ${session.graphState.userName}`);
                 console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
-                
+
                 return {
                     success: false,
                     result: {
@@ -737,13 +767,13 @@ export class AgentCore {
                     error: 'User already verified - IDV complete'
                 };
             }
-            
+
             // CRITICAL: Block if verification is in progress
             // This prevents Nova Sonic from calling perform_idv_check twice in rapid succession
             if (session.graphState?.idvInProgress) {
                 console.error(`[AgentCore:${this.agentId}] ⚠️  IDV CALL BLOCKED: Verification already in progress`);
                 console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
-                
+
                 return {
                     success: false,
                     result: {
@@ -758,18 +788,18 @@ export class AgentCore {
                     error: 'IDV already in progress'
                 };
             }
-            
+
             const lastCall = session.graphState.lastIdvCall;
             const DUPLICATE_WINDOW_MS = 5000; // 5 second window
-            
-            if (lastCall && 
+
+            if (lastCall &&
                 lastCall.accountNumber === toolInput.accountNumber &&
                 lastCall.sortCode === toolInput.sortCode &&
                 (now - lastCall.timestamp) < DUPLICATE_WINDOW_MS) {
-                
+
                 console.error(`[AgentCore:${this.agentId}] ⚠️  DUPLICATE IDV CALL BLOCKED: Same credentials called ${now - lastCall.timestamp}ms ago`);
                 console.error(`[AgentCore:${this.agentId}] Account: ${toolInput.accountNumber}, Sort Code: ${toolInput.sortCode}`);
-                
+
                 return {
                     success: false,
                     result: {
@@ -784,26 +814,26 @@ export class AgentCore {
                     error: 'Duplicate IDV call blocked - waiting for user input'
                 };
             }
-            
+
             // Set in-progress flag BEFORE executing
             session.graphState.idvInProgress = true;
             console.log(`[AgentCore:${this.agentId}] 🔒 Set IDV in-progress flag`);
-            
+
             // Store this call for duplicate detection
             session.graphState.lastIdvCall = {
                 accountNumber: toolInput.accountNumber,
                 sortCode: toolInput.sortCode,
                 timestamp: now
             };
-            
+
             console.log(`[AgentCore:${this.agentId}] IDV call recorded for duplicate detection`);
         }
-        
+
         try {
             // Step 1: Detect tool type (Requirement 8.1)
             const toolType = this.detectToolType(toolName);
             console.log(`[AgentCore:${this.agentId}] Tool type detected: ${toolType}`);
-            
+
             // Step 2: Validate tool input against schema (Requirement 8.2)
             const validationResult = this.validateToolInput(toolName, toolInput, toolType);
             if (!validationResult.valid) {
@@ -814,27 +844,27 @@ export class AgentCore {
                     error: `Invalid tool input: ${validationResult.error}`
                 };
             }
-            
+
             // Step 3 & 4: Route and execute tool (Requirements 8.3, 8.4)
             let executionResult: ToolResult;
-            
+
             switch (toolType) {
                 case 'handoff':
                     executionResult = await this.executeHandoffTool(sessionId, toolName, toolInput);
                     break;
-                    
+
                 case 'banking':
                     executionResult = await this.executeBankingTool(sessionId, toolName, toolInput);
                     break;
-                    
+
                 case 'knowledge_base':
                     executionResult = await this.executeKnowledgeBaseTool(toolName, toolInput);
                     break;
-                    
+
                 case 'local':
                     executionResult = await this.executeLocalTool(toolName, toolInput);
                     break;
-                    
+
                 default:
                     // Fallback to ToolsClient for unknown tools
                     const clientResult = await this.toolsClient.executeTool(toolName, toolInput);
@@ -845,7 +875,7 @@ export class AgentCore {
                     };
                     break;
             }
-            
+
             // Step 5: Handle tool results and errors (Requirement 8.5)
             if (!executionResult.success) {
                 console.error(`[AgentCore:${this.agentId}] Tool execution failed: ${executionResult.error}`);
@@ -853,15 +883,15 @@ export class AgentCore {
                 console.log(`[AgentCore:${this.agentId}] Tool executed successfully: ${toolName}`);
                 console.log(`[AgentCore:${this.agentId}] Tool result:`, JSON.stringify(executionResult.result).substring(0, 200));
             }
-            
+
             // Step 6: Track tool execution in Langfuse (Requirement 8.7, 11.4)
             this.trackToolExecution(sessionId, toolName, toolInput, toolUseId, executionResult);
-            
+
             return executionResult;
-            
+
         } catch (error: any) {
             console.error(`[AgentCore:${this.agentId}] Tool execution error:`, error);
-            
+
             // Step 5: Handle errors gracefully (Requirement 8.5)
             return {
                 success: false,
@@ -870,7 +900,7 @@ export class AgentCore {
             };
         }
     }
-    
+
     /**
      * Detect tool type from tool name
      * Requirement 8.1: Agent Core must detect tool type from tool calls
@@ -880,22 +910,22 @@ export class AgentCore {
         if (isHandoffTool(toolName)) {
             return 'handoff';
         }
-        
+
         // Check banking tools
         if (isBankingTool(toolName)) {
             return 'banking';
         }
-        
+
         // Check knowledge base tools
         if (toolName === 'search_knowledge_base' || toolName.includes('knowledge')) {
             return 'knowledge_base';
         }
-        
+
         // Check if tool exists in local tools
         // For now, assume other tools are local
         return 'local';
     }
-    
+
     /**
      * Validate tool input against tool schema
      * Requirement 8.2: Agent Core must validate tool input against tool schema
@@ -912,31 +942,31 @@ export class AgentCore {
                 error: 'Tool input must be an object'
             };
         }
-        
+
         // Type-specific validation
         switch (toolType) {
             case 'handoff':
                 return this.validateHandoffInput(toolName, toolInput);
-                
+
             case 'banking':
                 return this.validateBankingInput(toolName, toolInput);
-                
+
             case 'knowledge_base':
                 return this.validateKnowledgeBaseInput(toolInput);
-                
+
             default:
                 // For other tools, basic validation is sufficient
                 return { valid: true };
         }
     }
-    
+
     /**
      * Validate handoff tool input
      */
     private validateHandoffInput(toolName: string, input: any): { valid: boolean; error?: string } {
         // Log input for debugging
         console.log(`[AgentCore:${this.agentId}] Validating handoff input for ${toolName}:`, JSON.stringify(input).substring(0, 200));
-        
+
         if (toolName === 'return_to_triage') {
             if (!input.taskCompleted || typeof input.taskCompleted !== 'string') {
                 return { valid: false, error: 'taskCompleted is required and must be a string' };
@@ -955,11 +985,11 @@ export class AgentCore {
                 return { valid: false, error: 'context must be a string if provided' };
             }
         }
-        
+
         console.log(`[AgentCore:${this.agentId}] ✅ Handoff input validation passed`);
         return { valid: true };
     }
-    
+
     /**
      * Validate banking tool input
      */
@@ -973,20 +1003,20 @@ export class AgentCore {
                     return { valid: false, error: 'sortCode is required and must be a string' };
                 }
                 break;
-                
+
             case 'agentcore_balance':
             case 'get_account_transactions':
                 // These tools typically don't require input or have optional parameters
                 break;
-                
+
             default:
                 // Other banking tools - basic validation
                 break;
         }
-        
+
         return { valid: true };
     }
-    
+
     /**
      * Validate knowledge base tool input
      */
@@ -994,10 +1024,10 @@ export class AgentCore {
         if (!input.query || typeof input.query !== 'string') {
             return { valid: false, error: 'query is required and must be a string' };
         }
-        
+
         return { valid: true };
     }
-    
+
     /**
      * Execute handoff tool
      * Requirement 8.3: Route tool to appropriate service
@@ -1010,10 +1040,10 @@ export class AgentCore {
     ): Promise<ToolResult> {
         console.log(`[AgentCore:${this.agentId}] 🔄 Executing handoff tool: ${toolName}`);
         console.log(`[AgentCore:${this.agentId}] Handoff input:`, JSON.stringify(toolInput).substring(0, 300));
-        
+
         // Requirement 9.1: Detect handoff tool calls (transfer_to_*, return_to_triage)
         const isReturnHandoff = toolName === 'return_to_triage';
-        
+
         // Requirement 9.2: Extract handoff context (reason, verified user, user intent)
         const session = this.sessions.get(sessionId);
         if (!session) {
@@ -1024,14 +1054,14 @@ export class AgentCore {
                 error: 'Session not found'
             };
         }
-        
+
         // CRITICAL: Reset IDV attempts when returning to triage with failure
         if (isReturnHandoff && toolInput.taskCompleted === 'verification_failed') {
             console.log(`[AgentCore:${this.agentId}] 🔄 Resetting IDV attempts (returning to triage with failure)`);
             session.idvAttempts = 0;
             session.lastIdvFailure = undefined;
         }
-        
+
         // Extract target agent from tool name
         const targetAgent = getTargetAgentFromTool(toolName);
         if (!targetAgent) {
@@ -1042,41 +1072,41 @@ export class AgentCore {
                 error: `Invalid handoff tool: ${toolName}`
             };
         }
-        
+
         console.log(`[AgentCore:${this.agentId}] Target agent: ${targetAgent}`);
-        
+
         // Build handoff context
         const handoffContext: any = {
             reason: toolInput.reason || session.userIntent || 'User needs specialist assistance',
-            lastUserMessage: session.messages.length > 0 
-                ? session.messages[session.messages.length - 1].content 
+            lastUserMessage: session.messages.length > 0
+                ? session.messages[session.messages.length - 1].content
                 : ''
         };
-        
+
         // Requirement 9.7: Handle return handoffs with task completion status
         if (isReturnHandoff) {
             handoffContext.isReturn = true;
             handoffContext.taskCompleted = toolInput.taskCompleted || 'task_complete';
             handoffContext.summary = toolInput.summary || 'Task completed successfully';
             console.log(`[AgentCore:${this.agentId}] Return handoff - Task: ${handoffContext.taskCompleted}`);
-            
+
             // CRITICAL: Mark IDV as failed in handoff context so triage knows not to retry
             if (toolInput.taskCompleted === 'verification_failed' || toolInput.taskCompleted === 'idv_failed') {
                 handoffContext.idvFailed = true;
                 console.log(`[AgentCore:${this.agentId}] ⚠️  Marking IDV as failed in handoff context`);
             }
         }
-        
+
         // Requirement 9.3: Build handoff request with full LangGraph state
         const handoffRequest = this.requestHandoff(sessionId, targetAgent, handoffContext);
-        
+
         console.log(`[AgentCore:${this.agentId}] ✅ Handoff request built: ${this.agentId} → ${targetAgent}`);
         console.log(`[AgentCore:${this.agentId}] Handoff context:`, JSON.stringify(handoffRequest.context).substring(0, 300));
-        
+
         // Requirement 9.4: Send handoff_request to Gateway (via adapter)
         // Note: The actual sending is delegated to the adapter (Voice Side-Car or Text Adapter)
         // The adapter will call this method and then send the handoff_request via WebSocket
-        
+
         // Return success with handoff request data
         // The adapter will detect this and forward to Gateway
         return {
@@ -1089,7 +1119,7 @@ export class AgentCore {
             }
         };
     }
-    
+
     /**
      * Execute banking tool via local-tools service
      * Requirement 8.3: Route tool to appropriate service (local-tools)
@@ -1101,21 +1131,36 @@ export class AgentCore {
         toolInput: any
     ): Promise<ToolResult> {
         console.log(`[AgentCore:${this.agentId}] Executing banking tool: ${toolName}`);
-        
+
         try {
             // Call local-tools service
             const response = await axios.post(`${this.localToolsUrl}/tools/execute`, {
                 tool: toolName,
                 input: toolInput
             });
-            
+
             const result = response.data.result;
-            
+
+            // CRITICAL: Pin account details to session if they were provided in toolInput
+            // This ensures state persistence even for non-IDV banking calls
+            const session = this.sessions.get(sessionId);
+            if (session && toolInput) {
+                if (!session.graphState) session.graphState = {};
+                if (toolInput.accountNumber && !session.graphState.account) {
+                    session.graphState.account = toolInput.accountNumber;
+                    console.log(`[AgentCore:${this.agentId}] pinned account: ${toolInput.accountNumber}`);
+                }
+                if (toolInput.sortCode && !session.graphState.sortCode) {
+                    session.graphState.sortCode = toolInput.sortCode;
+                    console.log(`[AgentCore:${this.agentId}] pinned sort code: ${toolInput.sortCode}`);
+                }
+            }
+
             // Handle IDV check - store verified user in session
             if (toolName === 'perform_idv_check') {
                 this.handleIdvResult(sessionId, result, toolInput);
             }
-            
+
             return {
                 success: true,
                 result
@@ -1129,7 +1174,7 @@ export class AgentCore {
             };
         }
     }
-    
+
     /**
      * Handle IDV check result and store verified user in session
      * CRITICAL: Implements "Verified State Gate" pattern
@@ -1140,9 +1185,9 @@ export class AgentCore {
         if (!session) {
             return;
         }
-        
+
         let idvData;
-        
+
         // Parse result structure from AgentCore
         if (result.content && result.content[0] && result.content[0].text) {
             try {
@@ -1153,16 +1198,16 @@ export class AgentCore {
         } else if (result.auth_status) {
             idvData = result;
         }
-        
+
         // Initialize IDV attempts counter if not exists
         if (session.idvAttempts === undefined) {
             session.idvAttempts = 0;
         }
-        
+
         // Increment attempt counter
         session.idvAttempts++;
         console.log(`[AgentCore:${this.agentId}] IDV attempt ${session.idvAttempts}/3`);
-        
+
         if (idvData && idvData.auth_status === 'VERIFIED') {
             session.verifiedUser = {
                 customer_name: idvData.customer_name,
@@ -1170,7 +1215,7 @@ export class AgentCore {
                 sortCode: toolInput.sortCode,
                 auth_status: idvData.auth_status
             };
-            
+
             // Update graph state with verified flag
             if (!session.graphState) {
                 session.graphState = {};
@@ -1179,19 +1224,19 @@ export class AgentCore {
             session.graphState.customer_name = idvData.customer_name;
             session.graphState.account = toolInput.accountNumber;
             session.graphState.sortCode = toolInput.sortCode;
-            
+
             // Reset IDV attempts on success
             session.idvAttempts = 0;
             session.lastIdvFailure = undefined;
             console.log(`[AgentCore:${this.agentId}] ✅ Stored verified user: ${idvData.customer_name}`);
             console.log(`[AgentCore:${this.agentId}] ✅ Set verified state flag: true`);
-            
+
             // CRITICAL: Verified State Gate - Auto-trigger handoff to banking
             // This removes the burden from the IDV agent to decide where to go
             // The system handles routing based on verified state
             if (this.agentId === 'idv') {
                 console.log(`[AgentCore:${this.agentId}] 🚀 Verified State Gate: Auto-triggering handoff to banking`);
-                
+
                 // Store pending handoff in session for next response
                 session.graphState.pendingHandoff = {
                     targetAgent: 'banking',
@@ -1208,20 +1253,20 @@ export class AgentCore {
             // Store failure reason
             session.lastIdvFailure = idvData.message || 'Verification failed';
             console.log(`[AgentCore:${this.agentId}] ❌ IDV failed (attempt ${session.idvAttempts}/3): ${session.lastIdvFailure}`);
-            
+
             // Check if max attempts reached
             if (session.idvAttempts >= 3) {
                 console.log(`[AgentCore:${this.agentId}] ⚠️  Max IDV attempts reached (3/3) - should return to triage`);
             }
         }
-        
+
         // CRITICAL: Clear in-progress flag after processing result
         if (session.graphState) {
             session.graphState.idvInProgress = false;
             console.log(`[AgentCore:${this.agentId}] 🔓 Cleared IDV in-progress flag`);
         }
     }
-    
+
     /**
      * Execute knowledge base tool
      * Requirement 8.3: Route tool to appropriate service
@@ -1231,11 +1276,11 @@ export class AgentCore {
         toolInput: any
     ): Promise<ToolResult> {
         console.log(`[AgentCore:${this.agentId}] Executing knowledge base tool: ${toolName}`);
-        
+
         try {
             // Execute via ToolsClient which will route to appropriate service
             const executionResult = await this.toolsClient.executeTool(toolName, toolInput);
-            
+
             return {
                 success: executionResult.success,
                 result: executionResult.result,
@@ -1250,7 +1295,7 @@ export class AgentCore {
             };
         }
     }
-    
+
     /**
      * Execute local tool via ToolsClient
      * Requirement 8.3: Route tool to appropriate service (local-tools)
@@ -1261,11 +1306,11 @@ export class AgentCore {
         toolInput: any
     ): Promise<ToolResult> {
         console.log(`[AgentCore:${this.agentId}] Executing local tool: ${toolName}`);
-        
+
         try {
             // Execute via ToolsClient
             const executionResult = await this.toolsClient.executeTool(toolName, toolInput);
-            
+
             return {
                 success: executionResult.success,
                 result: executionResult.result,
@@ -1290,26 +1335,26 @@ export class AgentCore {
         if (!session) {
             throw new Error('Session not found');
         }
-        
+
         const targetPersonaId = getPersonaIdForAgent(targetAgent);
         console.log(`[AgentCore:${this.agentId}] Handoff: ${this.agentId} → ${targetAgent} (${targetPersonaId})`);
-        
+
         // Requirement 9.2: Extract handoff context (reason, verified user, user intent)
         const handoffContext: HandoffContext = {
             fromAgent: this.agentId,
             targetAgent,
             targetPersonaId,
-            lastUserMessage: context.lastUserMessage || 
+            lastUserMessage: context.lastUserMessage ||
                 (session.messages.length > 0 ? session.messages[session.messages.length - 1].content : ''),
             reason: context.reason || session.userIntent || 'User needs specialist assistance'
         };
-        
+
         // Include user intent if available
         if (session.userIntent) {
             handoffContext.userIntent = session.userIntent;
             console.log(`[AgentCore:${this.agentId}] Including user intent: ${session.userIntent}`);
         }
-        
+
         // Include verified user data if available (Requirement 9.2)
         if (session.verifiedUser) {
             handoffContext.verified = true;
@@ -1318,24 +1363,24 @@ export class AgentCore {
             handoffContext.sortCode = session.verifiedUser.sortCode;
             console.log(`[AgentCore:${this.agentId}] Including verified user: ${handoffContext.userName}`);
         }
-        
+
         // Requirement 9.7: Handle return handoffs with task completion status
         if (context.isReturn) {
             handoffContext.isReturn = true;
             handoffContext.taskCompleted = context.taskCompleted || 'task_complete';
             handoffContext.summary = context.summary || 'Task completed successfully';
             console.log(`[AgentCore:${this.agentId}] Return handoff - Task: ${handoffContext.taskCompleted}`);
-            
+
             // CRITICAL: Copy IDV failure flag if present
             if (context.idvFailed) {
                 handoffContext.idvFailed = true;
                 console.log(`[AgentCore:${this.agentId}] Including IDV failure flag in handoff context`);
             }
         }
-        
+
         // Requirement 9.3: Build handoff request with full LangGraph state
         const graphState = this.graphExecutor?.getCurrentState();
-        
+
         // Include session state in graph state for complete context
         const fullGraphState = {
             ...graphState,
@@ -1344,9 +1389,9 @@ export class AgentCore {
             messageCount: session.messages.length,
             sessionStartTime: session.startTime
         };
-        
+
         console.log(`[AgentCore:${this.agentId}] Handoff request built with full context and graph state`);
-        
+
         return {
             targetAgentId: targetPersonaId,
             context: handoffContext,
@@ -1454,7 +1499,7 @@ export class AgentCore {
             console.error(`[AgentCore:${this.agentId}] Session not found: ${sessionId}`);
             return;
         }
-        
+
         // Update verified user
         if (memory.verified !== undefined) {
             if (memory.verified && memory.userName) {
@@ -1469,12 +1514,12 @@ export class AgentCore {
                 session.verifiedUser = undefined;
             }
         }
-        
+
         // Update user intent
         if (memory.userIntent !== undefined) {
             session.userIntent = memory.userIntent;
         }
-        
+
         console.log(`[AgentCore:${this.agentId}] Session memory updated`);
     }
 
@@ -1486,9 +1531,9 @@ export class AgentCore {
         if (!session) {
             return {};
         }
-        
+
         const memory: any = {};
-        
+
         if (session.verifiedUser) {
             memory.verified = true;
             memory.userName = session.verifiedUser.customer_name;
@@ -1498,11 +1543,11 @@ export class AgentCore {
             // Explicitly set verified to false if no verified user
             memory.verified = false;
         }
-        
+
         if (session.userIntent) {
             memory.userIntent = session.userIntent;
         }
-        
+
         return memory;
     }
 
@@ -1514,22 +1559,22 @@ export class AgentCore {
         if (!session) {
             throw new Error('Session not found');
         }
-        
+
         const previousNode = session.currentNode;
         session.currentNode = nodeId;
-        
+
         console.log(`[AgentCore:${this.agentId}] Workflow transition: ${previousNode || 'start'} → ${nodeId}`);
-        
+
         // Update graph executor state
         if (this.graphExecutor) {
             const result = this.graphExecutor.updateState(nodeId);
-            
+
             if (result.success) {
                 console.log(`[AgentCore:${this.agentId}] Graph state updated: ${result.currentNode}`);
-                
+
                 // Get next possible nodes
                 const nextNodes = this.graphExecutor.getNextNodes();
-                
+
                 return {
                     currentNode: nodeId,
                     previousNode,
@@ -1541,7 +1586,7 @@ export class AgentCore {
                 console.error(`[AgentCore:${this.agentId}] Failed to update graph state: ${result.error}`);
             }
         }
-        
+
         return {
             currentNode: nodeId,
             previousNode,
@@ -1558,29 +1603,29 @@ export class AgentCore {
         if (!session) {
             return '';
         }
-        
+
         let systemPrompt = '';
-        
+
         // Build context injection
         let contextInjection = '';
-        
+
         // NOTE: Conversation history is now passed via messages array to Claude
         // No need to duplicate it in the system prompt
-        
+
         if (session.userIntent || session.verifiedUser || session.graphState) {
             contextInjection += '\n### CURRENT SESSION CONTEXT ###\n';
-            
+
             if (session.userIntent) {
                 contextInjection += `\n**User's Original Request:** ${session.userIntent}\n`;
             }
-            
+
             // Show account details from memory (even if not yet verified)
             // This allows IDV agent to use them without asking
             if (session.graphState && (session.graphState.account || session.graphState.sortCode)) {
                 const hasAccount = !!session.graphState.account;
                 const hasSortCode = !!session.graphState.sortCode;
                 const hasBoth = hasAccount && hasSortCode;
-                
+
                 contextInjection += `\n**Account Details from User:**\n`;
                 if (session.graphState.account) {
                     contextInjection += `**Account Number:** ${session.graphState.account}\n`;
@@ -1588,15 +1633,15 @@ export class AgentCore {
                 if (session.graphState.sortCode) {
                     contextInjection += `**Sort Code:** ${session.graphState.sortCode}\n`;
                 }
-                
+
                 // Add IDV-specific instruction
                 if (this.agentId === 'idv' && !session.verifiedUser) {
                     const attempts = session.idvAttempts || 0;
                     const maxAttempts = 3;
                     const remainingAttempts = maxAttempts - attempts;
-                    
+
                     contextInjection += `\n**CRITICAL INSTRUCTION FOR IDV:**\n`;
-                    
+
                     if (attempts === 0) {
                         // First attempt
                         if (hasBoth) {
@@ -1637,7 +1682,7 @@ export class AgentCore {
                         contextInjection += `- You have ${remainingAttempts} attempt(s) remaining\n`;
                         contextInjection += `- **CRITICAL: DO NOT call perform_idv_check again yet**\n`;
                         contextInjection += `- **You MUST ask the user to provide corrected details first**\n`;
-                        
+
                         if (hasBoth) {
                             // Have both but they were wrong - ask for corrections
                             contextInjection += `- The details you have (${session.graphState.account}, ${session.graphState.sortCode}) were INCORRECT\n`;
@@ -1655,7 +1700,7 @@ export class AgentCore {
                             // Have neither
                             contextInjection += `- Ask for BOTH: "Please provide your 8-digit account number and 6-digit sort code."\n`;
                         }
-                        
+
                         contextInjection += `- Emphasize that they need to provide CORRECT details\n`;
                         contextInjection += `- **WAIT for the user to respond with new details**\n`;
                         contextInjection += `- **DO NOT retry automatically with the same details**\n`;
@@ -1673,7 +1718,7 @@ export class AgentCore {
                     }
                 }
             }
-            
+
             if (session.verifiedUser) {
                 contextInjection += `
 **Customer Name:** ${session.verifiedUser.customer_name}
@@ -1682,12 +1727,12 @@ export class AgentCore {
 **Verification Status:** VERIFIED
 `;
             }
-            
+
             // Add agent-specific instructions
             if (this.agentId === 'triage') {
                 // Check if IDV failed (from graphState)
                 const idvFailed = session.graphState?.idvFailed || false;
-                
+
                 if (idvFailed) {
                     contextInjection += `
 **CRITICAL INSTRUCTION FOR TRIAGE - IDV FAILURE:** 
@@ -1749,13 +1794,13 @@ export class AgentCore {
 `;
             }
         }
-        
+
         // Build workflow instructions
         let workflowInstructions = '';
         if (this.workflowDef) {
             workflowInstructions = convertWorkflowToText(this.workflowDef);
         }
-        
+
         // Add handoff instructions for triage agent
         const handoffInstructions = this.agentId === 'triage' ? `
 
@@ -1816,14 +1861,14 @@ You: "I'll connect you to our banking specialist right away."
 **REMEMBER: Saying you will connect them is NOT enough - you MUST CALL THE TOOL!**
 
 ` : '';
-        
+
         // Combine all parts
         if (personaPrompt || this.personaPrompt) {
             systemPrompt = `${contextInjection}${personaPrompt || this.personaPrompt}${handoffInstructions}\n\n### WORKFLOW INSTRUCTIONS ###\n${workflowInstructions}`;
         } else {
             systemPrompt = `${contextInjection}${handoffInstructions}\n\n${workflowInstructions}`;
         }
-        
+
         return systemPrompt;
     }
 
@@ -1848,7 +1893,7 @@ You: "I'll connect you to our banking specialist right away."
     public getAllTools(): any[] {
         const handoffTools = generateHandoffTools();
         const bankingTools = generateBankingTools();
-        
+
         // Agent-specific tool access control
         // This ensures proper separation of concerns and enforces handoff flow
         switch (this.agentId) {
@@ -1857,34 +1902,34 @@ You: "I'll connect you to our banking specialist right away."
                 // Cannot call banking tools directly - must hand off to specialists
                 console.log(`[AgentCore:${this.agentId}] Tool access: Handoff tools only (${handoffTools.length} tools)`);
                 return handoffTools;
-                
+
             case 'idv':
                 // IDV agent: ONLY IDV tools (NO handoff tools)
                 // Gateway handles routing after successful verification (Verified State Gate pattern)
-                const idvTools = bankingTools.filter(t => 
+                const idvTools = bankingTools.filter(t =>
                     t.toolSpec.name === 'perform_idv_check'
                 );
-                
+
                 console.log(`[AgentCore:${this.agentId}] Tool access: IDV only (${idvTools.length} tools) - Gateway handles routing`);
-                
+
                 // Return ONLY IDV tools - no handoff tools
                 return idvTools;
-                
+
             case 'banking':
                 // Banking agent: Banking tools ONLY (NO handoff tools)
                 // After completing task, agent should ask if user needs anything else
                 // Gateway will handle routing back to triage if needed
-                const bankingOnlyTools = bankingTools.filter(t => 
+                const bankingOnlyTools = bankingTools.filter(t =>
                     t.toolSpec.name === 'agentcore_balance' ||
                     t.toolSpec.name === 'get_account_transactions' ||
                     t.toolSpec.name === 'uk_branch_lookup'
                 );
                 console.log(`[AgentCore:${this.agentId}] Tool access: Banking only (${bankingOnlyTools.length} tools) - NO handoff tools`);
                 return bankingOnlyTools;
-                
+
             case 'mortgage':
                 // Mortgage agent: Mortgage tools + handoff tools
-                const mortgageTools = bankingTools.filter(t => 
+                const mortgageTools = bankingTools.filter(t =>
                     t.toolSpec.name === 'calculate_max_loan' ||
                     t.toolSpec.name === 'get_mortgage_rates' ||
                     t.toolSpec.name === 'check_credit_score' ||
@@ -1892,27 +1937,27 @@ You: "I'll connect you to our banking specialist right away."
                 );
                 console.log(`[AgentCore:${this.agentId}] Tool access: Mortgage + Handoff (${mortgageTools.length + handoffTools.length} tools)`);
                 return [...handoffTools, ...mortgageTools];
-                
+
             case 'disputes':
                 // Disputes agent: Dispute tools + handoff tools
-                const disputeTools = bankingTools.filter(t => 
+                const disputeTools = bankingTools.filter(t =>
                     t.toolSpec.name === 'create_dispute_case' ||
                     t.toolSpec.name === 'update_dispute_case' ||
                     t.toolSpec.name === 'lookup_merchant_alias'
                 );
                 console.log(`[AgentCore:${this.agentId}] Tool access: Disputes + Handoff (${disputeTools.length + handoffTools.length} tools)`);
                 return [...handoffTools, ...disputeTools];
-                
+
             case 'investigation':
                 // Investigation agent: Investigation tools + handoff tools
                 // Can access transaction history for fraud investigation
-                const investigationTools = bankingTools.filter(t => 
+                const investigationTools = bankingTools.filter(t =>
                     t.toolSpec.name === 'get_account_transactions' ||
                     t.toolSpec.name === 'lookup_merchant_alias'
                 );
                 console.log(`[AgentCore:${this.agentId}] Tool access: Investigation + Handoff (${investigationTools.length + handoffTools.length} tools)`);
                 return [...handoffTools, ...investigationTools];
-                
+
             default:
                 // Unknown agent: All tools (fallback for development)
                 console.warn(`[AgentCore:${this.agentId}] Unknown agent type - granting all tools`);
@@ -1926,7 +1971,7 @@ You: "I'll connect you to our banking specialist right away."
     public setPersonaPrompt(prompt: string): void {
         this.personaPrompt = prompt;
     }
-    
+
     /**
      * Track tool execution in Langfuse
      * Requirement 8.7, 11.4: Track tool invocations and results
@@ -1942,10 +1987,10 @@ You: "I'll connect you to our banking specialist right away."
         if (!session?.langfuseTrace) {
             return;
         }
-        
+
         try {
             const startTime = Date.now();
-            
+
             session.langfuseTrace.span({
                 name: 'tool-execution',
                 input: {
@@ -1966,13 +2011,13 @@ You: "I'll connect you to our banking specialist right away."
                 },
                 level: result.success ? 'DEFAULT' : 'ERROR'
             });
-            
+
             console.log(`[AgentCore:${this.agentId}] Tracked tool execution in Langfuse: ${toolName}`);
         } catch (error: any) {
             console.warn(`[AgentCore:${this.agentId}] Failed to track tool execution: ${error.message}`);
         }
     }
-    
+
     /**
      * Track assistant response in Langfuse
      * Requirement 11.3: Track assistant responses
@@ -1982,13 +2027,13 @@ You: "I'll connect you to our banking specialist right away."
         if (!session?.langfuseTrace) {
             return;
         }
-        
+
         try {
             // Track time to first token if not already set
             if (!session.firstTokenTime) {
                 session.firstTokenTime = Date.now();
                 const timeToFirstToken = session.firstTokenTime - session.startTime;
-                
+
                 session.langfuseTrace.event({
                     name: 'first-token',
                     metadata: {
@@ -1997,7 +2042,7 @@ You: "I'll connect you to our banking specialist right away."
                     }
                 });
             }
-            
+
             // Track assistant response
             session.langfuseTrace.event({
                 name: 'assistant-response',
@@ -2008,7 +2053,7 @@ You: "I'll connect you to our banking specialist right away."
                     ...metadata
                 }
             });
-            
+
             // Store assistant message
             session.messages.push({
                 role: 'assistant',
@@ -2016,13 +2061,13 @@ You: "I'll connect you to our banking specialist right away."
                 timestamp: Date.now(),
                 metadata
             });
-            
+
             console.log(`[AgentCore:${this.agentId}] Tracked assistant response in Langfuse`);
         } catch (error: any) {
             console.warn(`[AgentCore:${this.agentId}] Failed to track assistant response: ${error.message}`);
         }
     }
-    
+
     /**
      * Track token usage in Langfuse
      * Requirement 11.6: Track token usage
@@ -2032,13 +2077,13 @@ You: "I'll connect you to our banking specialist right away."
         if (!session?.langfuseTrace) {
             return;
         }
-        
+
         try {
             // Update session token counts
             session.inputTokens = (session.inputTokens || 0) + inputTokens;
             session.outputTokens = (session.outputTokens || 0) + outputTokens;
             session.totalTokens = session.inputTokens + session.outputTokens;
-            
+
             // Track in Langfuse
             session.langfuseTrace.event({
                 name: 'token-usage',
@@ -2052,13 +2097,13 @@ You: "I'll connect you to our banking specialist right away."
                     timestamp: Date.now()
                 }
             });
-            
+
             console.log(`[AgentCore:${this.agentId}] Tracked token usage: +${inputTokens} input, +${outputTokens} output`);
         } catch (error: any) {
             console.warn(`[AgentCore:${this.agentId}] Failed to track token usage: ${error.message}`);
         }
     }
-    
+
     /**
      * Track interruption event in Langfuse
      * Requirement 11.7: Track interruptions and errors
@@ -2068,7 +2113,7 @@ You: "I'll connect you to our banking specialist right away."
         if (!session?.langfuseTrace) {
             return;
         }
-        
+
         try {
             session.langfuseTrace.event({
                 name: 'interruption',
@@ -2078,13 +2123,13 @@ You: "I'll connect you to our banking specialist right away."
                 },
                 level: 'WARNING'
             });
-            
+
             console.log(`[AgentCore:${this.agentId}] Tracked interruption in Langfuse`);
         } catch (error: any) {
             console.warn(`[AgentCore:${this.agentId}] Failed to track interruption: ${error.message}`);
         }
     }
-    
+
     /**
      * Track error event in Langfuse
      * Requirement 11.7: Track errors
@@ -2094,7 +2139,7 @@ You: "I'll connect you to our banking specialist right away."
         if (!session?.langfuseTrace) {
             return;
         }
-        
+
         try {
             session.langfuseTrace.event({
                 name: 'error',
@@ -2105,13 +2150,13 @@ You: "I'll connect you to our banking specialist right away."
                 },
                 level: 'ERROR'
             });
-            
+
             console.log(`[AgentCore:${this.agentId}] Tracked error in Langfuse: ${error}`);
         } catch (error: any) {
             console.warn(`[AgentCore:${this.agentId}] Failed to track error: ${error.message}`);
         }
     }
-    
+
     /**
      * Get Langfuse trace for a session (for external use)
      */

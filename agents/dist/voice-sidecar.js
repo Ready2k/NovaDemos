@@ -300,16 +300,17 @@ class VoiceSideCar {
             timestamp: transcriptData.timestamp || Date.now()
         }));
         // CRITICAL: Store messages in Agent Core for conversation history
-        if (role === 'user') {
-            // Process user message through Agent Core
-            this.agentCore.processUserMessage(session.sessionId, text)
-                .catch(error => {
-                console.error(`[VoiceSideCar] Error processing user message: ${error.message}`);
-            });
+        // Only record FINAL transcripts to history to avoid speculative duplicates
+        const isFinal = transcriptData.isFinal !== undefined ? transcriptData.isFinal : true;
+        if (role === 'user' && isFinal) {
+            // Sync user message to history WITHOUT triggering a new generation
+            this.agentCore.trackUserMessage(session.sessionId, text);
+            console.log(`[VoiceSideCar] Synced FINAL User transcript to history: "${text.substring(0, 30)}..."`);
         }
-        else if (role === 'assistant' && transcriptData.isFinal) {
+        else if (role === 'assistant' && isFinal) {
             // Store final assistant responses in conversation history
             this.agentCore.trackAssistantResponse(session.sessionId, text);
+            console.log(`[VoiceSideCar] Synced FINAL Assistant transcript to history: "${text.substring(0, 30)}..."`);
         }
     }
     /**
@@ -351,6 +352,13 @@ class VoiceSideCar {
             const result = await this.agentCore.executeTool(session.sessionId, toolData.toolName, toolInput, toolData.toolUseId);
             // Send tool result back to SonicClient
             await session.sonicClient.sendToolResult(toolData.toolUseId, result.result, !result.success);
+            // CRITICAL: Refresh system prompt in SonicClient from AgentCore
+            // Many tools (like IDV) update session state/verified status. 
+            // We must push the updated prompt to SonicClient so the model sees the 
+            // new context in its follow-up response to this tool result.
+            const updatedSystemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
+            session.sonicClient.updateSystemPrompt(updatedSystemPrompt);
+            console.log(`[VoiceSideCar] 🔄 Refreshed system prompt after tool result (${toolData.toolName})`);
             // Forward tool result to client
             // CRITICAL: Include 'input' so the gateway can extract account credentials
             // from perform_idv_check calls and store them in session memory before handoff
