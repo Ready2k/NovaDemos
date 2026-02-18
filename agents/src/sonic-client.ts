@@ -65,6 +65,8 @@ export class SonicClient {
     private currentTurnId: string | null = null; // Stable ID for the current assistant turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
     private lastUserTranscript: string = ''; // Track last user input for context
+    private isInterrupted: boolean = false; // Track if the current turn has been interrupted locally
+    private suppressedContentName: string | null = null; // Track name of content being suppressed (e.g. speculative audio)
 
     // Auto-Nudge State
     private hasCommittedToTool: boolean = false;
@@ -1044,21 +1046,50 @@ export class SonicClient {
             throw new Error('Session is not active.');
         }
 
-        // Check for silence (debugging)
-        const buffer = chunk.buffer;
-        let isSilent = true;
-        for (let i = 0; i < buffer.length; i++) {
-            if (buffer[i] !== 0) {
-                isSilent = false;
-                break;
-            }
-        }
-        if (isSilent) {
-            console.warn('[SonicClient] Warning: Received silent audio chunk');
-        }
-
         // Add to input queue for the async generator
         this.inputQueue.push(chunk.buffer);
+
+        // IMMEDIATE INTERRUPTION LOGIC
+        // If the user speaks while the assistant is speaking, we want to cut off playback immediately.
+        // We use a simple energy-based VAD here because we can't wait for the cloud VAD.
+
+        // Only check for interruption if:
+        // 1. Assistant is currently the active role
+        // 2. We haven't already triggered an interruption for this turn
+        // 3. There is active content (assistant is actually generating/speaking)
+        if (this.currentRole === 'ASSISTANT' && !this.isInterrupted && this.activeContentNames.size > 0) {
+            const buffer = chunk.buffer;
+            let hasSpeech = false;
+            const THRESHOLD = 500; // Sensitivity threshold for 16-bit audio
+
+            // Check for speech energy
+            for (let i = 0; i < buffer.length; i += 2) {
+                if (i + 1 < buffer.length) {
+                    const sample = buffer.readInt16LE(i);
+                    if (Math.abs(sample) > THRESHOLD) {
+                        hasSpeech = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasSpeech) {
+                console.log('[SonicClient] 🛑 Local VAD detected user speech during Assistant turn. Triggering IMMEDIATE interruption.');
+
+                this.isInterrupted = true;
+
+                // Emit interruption event immediately to stop client playback
+                this.eventCallback?.({
+                    type: 'interruption',
+                    data: { reason: 'local_vad' }
+                });
+
+
+                // Optional: Clear active content locally since we are interrupting
+                // this.activeContentNames.clear(); 
+                // (Decided not to clear locally yet, let the model catch up, but we stop forwarding audio)
+            }
+        }
 
         // Log every 50 chunks to avoid spam
         if (this.inputQueue.length % 50 === 0) {
@@ -1298,10 +1329,6 @@ export class SonicClient {
                         const contentId = eventData.contentStart.contentId;
                         const contentName = eventData.contentStart.contentName;
 
-                        // Track active content blocks
-                        if (contentName) {
-                            this.activeContentNames.add(contentName);
-                        }
 
                         let stage = 'UNKNOWN';
                         if (eventData.contentStart.additionalModelFields) {
@@ -1347,6 +1374,8 @@ export class SonicClient {
                             this.currentTurnId = `assistant-${Date.now()}`; // Generate a new ID for the assistant's turn
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
+                            this.isInterrupted = false; // Reset interruption state for new turn
+                            this.suppressedContentName = null; // Reset suppression state
 
                             // Reset Auto-Nudge State
                             this.hasCommittedToTool = false;
@@ -1374,6 +1403,25 @@ export class SonicClient {
 
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
                         this.currentRole = eventData.contentStart.role;
+
+                        // SPECULATIVE AUDIO SUPPRESSION
+                        // If the model sends audio for a SPECULATIVE block, we suppress it to avoid
+                        // "ghost" prompts that get interrupted by the FINAL block seconds later.
+                        if (eventData.contentStart.type === 'AUDIO' && stage === 'SPECULATIVE') {
+                            console.log(`[SonicClient] 🤫 Suppressing SPECULATIVE audio content: ${eventData.contentStart.contentName}`);
+                            this.suppressedContentName = eventData.contentStart.contentName;
+                            // Do NOT add to activeContentNames
+                            // Do NOT emit contentStart
+                            continue;
+                        } else if (this.suppressedContentName === eventData.contentStart.contentName) {
+                            // If we see a non-speculative version of the SAME content name (unlikely but safe)
+                            this.suppressedContentName = null;
+                        }
+
+                        // Track active content blocks (moved after suppression check)
+                        if (contentName) {
+                            this.activeContentNames.add(contentName);
+                        }
 
                         this.eventCallback?.({
                             type: 'contentStart',
@@ -1432,6 +1480,12 @@ export class SonicClient {
 
 
                     if (eventData.audioOutput) {
+                        // Suppress audio if locally interrupted
+                        if (this.isInterrupted) {
+                            // console.log('[SonicClient] Suppressing audio output due to local interruption');
+                            continue;
+                        }
+
                         const content = eventData.audioOutput.content;
                         if (content.length > 0) {
                             console.log(`[SonicClient] Emitting audio event: ${content.length} base64 chars`);
@@ -1559,6 +1613,13 @@ export class SonicClient {
                     if (eventData.contentEnd) {
                         const contentName = eventData.contentEnd.contentName;
                         console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason}) Content: ${contentName}`);
+
+                        // Handle suppressed content end
+                        if (contentName && contentName === this.suppressedContentName) {
+                            console.log(`[SonicClient] 🤫 Suppressing contentEnd for SPECULATIVE audio: ${contentName}`);
+                            this.suppressedContentName = null;
+                            continue;
+                        }
 
                         // Remove from active blocks
                         if (contentName) {
