@@ -854,10 +854,16 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
                 if (message.type === 'select_workflow') {
                     selectedWorkflowId = message.workflowId || 'triage';
+                    const interactionMode = message.interactionMode;
+
                     if (!sessionInitialized && !isInitializing) {
                         isInitializing = true;
                         try {
                             await router.createSession(sessionId, selectedWorkflowId);
+                            // Store interaction mode in memory
+                            if (interactionMode) {
+                                await router.updateMemory(sessionId, { interactionMode });
+                            }
                             const agent = await router.routeToAgent(sessionId);
                             if (agent) { currentAgent = agent; await connectToAgent(agent); sessionInitialized = true; }
                         } finally { isInitializing = false; }

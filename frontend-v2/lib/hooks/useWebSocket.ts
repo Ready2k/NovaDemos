@@ -9,6 +9,7 @@ interface UseWebSocketOptions {
     reconnectInterval?: number;
     maxReconnectAttempts?: number;
     workflowId?: string; // Add workflow selection
+    interactionMode?: string; // Add interaction mode (chat_only, chat_voice, etc.)
     onOpen?: () => void;
     onClose?: () => void;
     onError?: (error: Event) => void;
@@ -33,6 +34,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         reconnectInterval = 3000,
         maxReconnectAttempts = 5,
         workflowId,
+        interactionMode,
         onOpen,
         onClose,
         onError,
@@ -123,16 +125,17 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
                 console.log('[WebSocket] Connected');
                 setStatus('connected');
                 reconnectAttemptsRef.current = 0;
-                
+
                 // Send workflow selection if provided
                 if (workflowId) {
-                    console.log('[WebSocket] Sending workflow selection:', workflowId);
+                    console.log('[WebSocket] Sending workflow selection:', workflowId, 'interactionMode:', interactionMode);
                     ws.send(JSON.stringify({
                         type: 'select_workflow',
-                        workflowId: workflowId
+                        workflowId: workflowId,
+                        interactionMode: interactionMode
                     }));
                 }
-                
+
                 onOpenRef.current?.();
             };
 
@@ -162,15 +165,12 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
 
             ws.onmessage = (event) => {
                 try {
-                    console.log('[WebSocket] Raw message received, type:', typeof event.data, 'instanceof ArrayBuffer:', event.data instanceof ArrayBuffer);
-                    
                     // Handle binary data (could be audio OR text)
                     if (event.data instanceof ArrayBuffer) {
                         // Try to decode as text first
                         try {
                             const text = new TextDecoder().decode(event.data);
                             const message = JSON.parse(text);
-                            console.log('[WebSocket] Decoded ArrayBuffer as JSON:', message.type);
                             setLastMessage(message);
                             onMessageRef.current?.(message);
                             return;
@@ -187,7 +187,6 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
                     }
 
                     // Handle JSON data (string)
-                    console.log('[WebSocket] Parsing as JSON:', event.data);
                     const message = JSON.parse(event.data);
                     setLastMessage(message);
                     onMessageRef.current?.(message);
@@ -199,7 +198,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
             console.error('[WebSocket] Connection failed', error);
             setStatus('disconnected');
         }
-    }, [url, reconnectInterval, maxReconnectAttempts]);
+    }, [url, reconnectInterval, maxReconnectAttempts, workflowId, interactionMode]);
 
     // Update ref whenever connect changes
     useEffect(() => {

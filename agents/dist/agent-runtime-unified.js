@@ -243,6 +243,7 @@ class UnifiedRuntime {
             graphExecutor: this.graphExecutor,
             localToolsUrl: this.config.localToolsUrl,
             gatewayUrl: this.config.gatewayUrl,
+            awsConfig: this.config.awsConfig,
             langfuseConfig: {
                 publicKey: process.env.LANGFUSE_PUBLIC_KEY,
                 secretKey: process.env.LANGFUSE_SECRET_KEY,
@@ -272,7 +273,7 @@ class UnifiedRuntime {
                 accessKeyId: this.config.awsConfig.accessKeyId,
                 secretAccessKey: this.config.awsConfig.secretAccessKey,
                 sessionToken: this.config.awsConfig?.sessionToken,
-                modelId: 'amazon.nova-2-sonic-v1:0'
+                modelId: process.env.SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0'
             };
             const voiceSideCarConfig = {
                 agentCore: this.agentCore,

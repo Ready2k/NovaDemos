@@ -41,6 +41,7 @@ class AgentCore {
         this.decisionEvaluator = config.decisionEvaluator;
         this.graphExecutor = config.graphExecutor;
         this.localToolsUrl = config.localToolsUrl || 'http://local-tools:9000';
+        this.awsConfig = config.awsConfig;
         // Initialize Gateway Router if configured
         if (config.gatewayUrl) {
             this.gatewayRouter = new gateway_router_1.GatewayRouter({
@@ -307,11 +308,19 @@ class AgentCore {
                         userMessage.toLowerCase().includes('transaction')));
             // Call Claude Sonnet via Bedrock Converse API
             const { BedrockRuntimeClient, ConverseCommand } = require('@aws-sdk/client-bedrock-runtime');
-            const bedrockClient = new BedrockRuntimeClient({
-                region: process.env.AWS_REGION || 'us-east-1'
-            });
+            const clientConfig = {
+                region: this.awsConfig?.region || process.env.AWS_REGION || 'us-east-1'
+            };
+            if (this.awsConfig?.accessKeyId && this.awsConfig?.secretAccessKey) {
+                clientConfig.credentials = {
+                    accessKeyId: this.awsConfig.accessKeyId,
+                    secretAccessKey: this.awsConfig.secretAccessKey,
+                    sessionToken: this.awsConfig.sessionToken
+                };
+            }
+            const bedrockClient = new BedrockRuntimeClient(clientConfig);
             const converseParams = {
-                modelId: 'us.amazon.nova-2-lite-v1:0',
+                modelId: 'amazon.nova-lite-v1:0',
                 messages: messages,
                 system: [{ text: systemPrompt }],
                 inferenceConfig: {

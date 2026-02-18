@@ -56,6 +56,7 @@ class SonicClient {
         this.contentStages = new Map(); // Track generation stage by ID
         this.contentNameStages = new Map(); // Track generation stage by Name
         this.activeContentNames = new Set(); // Track active content blocks from the model
+        this.pendingSystemPromptUpdate = null; // Store pending system prompt update for injection
         this.currentTurnTranscript = ''; // Accumulate text for the current turn
         this.currentTurnId = null; // Stable ID for the current assistant turn
         this.isTurnComplete = false; // Track if the previous turn ended
@@ -513,52 +514,11 @@ class SonicClient {
         yield { chunk: { bytes: Buffer.from(JSON.stringify(initialSilenceEvent)) } };
         console.log('[SonicClient] Primed audio content with silence');
         while (this.isProcessing) {
-            // Check for system prompt updates
+            // Check for system prompt updates - drain the queue but DON'T send them as turns yet
+            // They will be prepended to the next USER turn (text input or tool result)
             if (this.systemPromptQueue.length > 0) {
-                const newSystemPrompt = this.systemPromptQueue.shift();
-                console.log(`[SonicClient] Processing system prompt update (${newSystemPrompt.length} chars)`);
-                const systemUpdateId = `system-update-${Date.now()}`;
-                // CRITICAL FIX: Use USER role for mid-stream updates.
-                // Bedrock Nova Sonic only allows ONE 'SYSTEM' role block per prompt.
-                // Sending a second one causes a 'Duplicate SYSTEM content' error and kills the stream.
-                const systemContentStart = {
-                    event: {
-                        contentStart: {
-                            promptName: promptName,
-                            contentName: systemUpdateId,
-                            type: "TEXT",
-                            interactive: true, // Internal directive but follows USER role rules
-                            role: "USER",
-                            textInputConfiguration: {
-                                mediaType: "text/plain"
-                            }
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentStart)) } };
-                // 2. Text Input
-                const systemTextInput = {
-                    event: {
-                        textInput: {
-                            promptName: promptName,
-                            contentName: systemUpdateId,
-                            // Wrap in a tag so the model knows it's an administrative update
-                            content: `[SYSTEM_UPDATE]\nYour current instructions and context have been updated:\n\n${newSystemPrompt}`
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemTextInput)) } };
-                // 3. Content End
-                const systemContentEnd = {
-                    event: {
-                        contentEnd: {
-                            promptName: promptName,
-                            contentName: systemUpdateId
-                        }
-                    }
-                };
-                yield { chunk: { bytes: Buffer.from(JSON.stringify(systemContentEnd)) } };
-                console.log(`[SonicClient] ✓ System prompt update sent to active stream (as USER block)`);
+                this.pendingSystemPromptUpdate = this.systemPromptQueue.shift();
+                console.log(`[SonicClient] Captured pending system prompt update (${this.pendingSystemPromptUpdate.length} chars)`);
             }
             // Check for tool results first (priority over text/audio)
             if (this.toolResultQueue.length > 0) {
@@ -601,6 +561,14 @@ class SonicClient {
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
                 // 3. Build combined content for all results
                 let combinedInjectedContent = "[SYSTEM] Tool results received:\n\n";
+                // INTEGRATED FIX: Prepend any pending system prompt update to the tool results
+                // This ensures the model sees the updated context (like IDV status) 
+                // at the EXACT same time it sees the tool results.
+                if (this.pendingSystemPromptUpdate) {
+                    combinedInjectedContent = `[SYSTEM_UPDATE]\nYour current instructions and context have been updated:\n\n${this.pendingSystemPromptUpdate}\n\n[SYSTEM] Tool results received:\n\n`;
+                    console.log(`[SonicClient] Prepending pending system prompt update to tool result batch`);
+                    this.pendingSystemPromptUpdate = null;
+                }
                 for (const resultData of resultsToProcess) {
                     // Unwrap AgentCore result format if present
                     let unwrappedResult = resultData.result;
@@ -723,12 +691,19 @@ class SonicClient {
                     }
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textStartEvent)) } };
+                let contentToSubmit = text;
+                // INTEGRATED FIX: Prepend any pending system prompt update to the text input
+                if (this.pendingSystemPromptUpdate) {
+                    contentToSubmit = `[SYSTEM_UPDATE]\nYour instructions have been updated:\n\n${this.pendingSystemPromptUpdate}\n\n[USER INPUT]:\n${text}`;
+                    console.log(`[SonicClient] Prepending pending system prompt update to user text input`);
+                    this.pendingSystemPromptUpdate = null;
+                }
                 const textInputEvent = {
                     event: {
                         textInput: {
                             promptName: promptName,
                             contentName: textContentName,
-                            content: text
+                            content: contentToSubmit
                         }
                     }
                 };

@@ -190,11 +190,11 @@ export default function Home() {
 
         if (existingMsgIndex >= 0) {
           const existing = messages[existingMsgIndex];
-          
+
           // FIXED: Always update if same ID, regardless of isFinal status
           // This handles streaming → final transition properly
           console.log(`[App] Updating message ID: ${messageId}, isFinal: ${existing.isFinal} → ${isFinal}`);
-          
+
           updateMessageById(messageId, {
             content: cleanText,
             isFinal: isFinal,
@@ -204,7 +204,7 @@ export default function Home() {
         } else {
           // Only add if this is a new message ID
           console.log(`[App] Adding new message ID: ${messageId}, isFinal: ${isFinal}`);
-          
+
           addMessage({
             id: messageId,
             role: role,
@@ -331,6 +331,7 @@ export default function Home() {
     url: getWebSocketUrl(),
     autoConnect: false, // Manual connect to avoid Strict Mode issues
     workflowId: selectedWorkflow, // Pass selected workflow
+    interactionMode: settings.interactionMode, // Pass interaction mode
     onOpen: () => {
       console.log('[WebSocket] Connected to server, waiting for confirmation...');
       setConnectionStatus('connecting');

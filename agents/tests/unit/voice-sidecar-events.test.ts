@@ -153,7 +153,7 @@ describe('VoiceSideCar Event Handling', () => {
         // Start a session for testing
         sessionId = 'test-event-session';
         mockWs = new MockWebSocket();
-        
+
         try {
             await voiceSideCar.startVoiceSession(sessionId, mockWs as any);
             // Clear initial messages (connected message)
@@ -234,12 +234,9 @@ describe('VoiceSideCar Event Handling', () => {
                 }
             };
 
-            // Mock processUserMessage
-            const processSpy = jest.spyOn(agentCore, 'processUserMessage')
-                .mockResolvedValue({
-                    type: 'text',
-                    content: 'Your balance is $1000'
-                });
+            // Mock trackUserMessage
+            const trackSpy = jest.spyOn(agentCore, 'trackUserMessage')
+                .mockReturnValue(undefined);
 
             await (voiceSideCar as any).handleSonicEvent(sessionId, transcriptEvent);
 
@@ -249,9 +246,8 @@ describe('VoiceSideCar Event Handling', () => {
             expect(transcriptMessages[0].role).toBe('user');
             expect(transcriptMessages[0].text).toBe('Check my balance');
 
-            // Should process through Agent Core
-            await new Promise(resolve => setTimeout(resolve, 10)); // Wait for async processing
-            expect(processSpy).toHaveBeenCalledWith(sessionId, 'Check my balance');
+            // Should track message in Agent Core (but not process as Nova Sonic handles turn)
+            expect(trackSpy).toHaveBeenCalledWith(sessionId, 'Check my balance');
         });
 
         it('should handle transcript with content field instead of text', async () => {

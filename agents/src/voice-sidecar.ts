@@ -10,7 +10,7 @@
 
 import { WebSocket } from 'ws';
 import { SonicClient, SonicConfig, SonicEvent, AudioChunk } from './sonic-client';
-import { AgentCore } from './agent-core';
+import { AgentCore, AgentResponse, HandoffRequest } from './agent-core';
 import { isHandoffTool } from './handoff-tools';
 import { isBankingTool } from './banking-tools';
 
@@ -25,11 +25,14 @@ export interface VoiceSideCarConfig {
 /**
  * Voice session state
  */
-interface VoiceSession {
+export interface VoiceSession {
     sessionId: string;
     ws: WebSocket;
     sonicClient: SonicClient;
     startTime: number;
+    voiceEnabled: boolean; // Whether voice is preferred/enabled
+    isStarted: boolean;    // Whether the Sonic session has actually been started
+    isStarting: boolean;   // Whether the Sonic session is currently starting
 }
 
 /**
@@ -64,6 +67,10 @@ export class VoiceSideCar {
         }
 
         try {
+            // Check interaction mode from memory
+            const interactionMode = memory?.interactionMode || 'chat_voice';
+            const voiceEnabled = interactionMode !== 'chat_only';
+
             // Initialize Agent Core session with voice/hybrid mode for speech formatting
             this.agentCore.initializeSession(sessionId, memory, 'hybrid');
 
@@ -75,31 +82,28 @@ export class VoiceSideCar {
                 sessionId,
                 ws,
                 sonicClient,
-                startTime: Date.now()
+                startTime: Date.now(),
+                voiceEnabled,
+                isStarted: false,
+                isStarting: false
             };
             this.sessions.set(sessionId, session);
 
-            // Get system prompt and tools from Agent Core
-            const personaConfig = this.agentCore.getPersonaConfig();
-            const systemPrompt = this.agentCore.getSystemPrompt(sessionId);
-            const tools = this.agentCore.getAllTools();
+            // If voice is enabled, try to start the session immediately
+            if (voiceEnabled) {
+                try {
+                    await this.actuallyStartVoice(session, false); // Don't send connected message yet
+                } catch (error: any) {
+                    console.warn(`[VoiceSideCar] ⚠️ Failed to initialize voice stream: ${error.message}`);
+                    console.warn(`[VoiceSideCar] downgrading to chat-only mode for session ${sessionId}`);
+                    session.voiceEnabled = false;
+                    // Proceed without throwing - allow chat functionality
+                }
+            } else {
+                console.log(`[VoiceSideCar] Voice stream NOT started for session ${sessionId} (interactionMode=${interactionMode})`);
+            }
 
-            // Configure SonicClient
-            sonicClient.setConfig({
-                systemPrompt,
-                voiceId: personaConfig?.voiceId || 'matthew',
-                tools
-            });
-
-            // Start SonicClient with event handler
-            await sonicClient.startSession(
-                (event: SonicEvent) => this.handleSonicEvent(sessionId, event),
-                sessionId
-            );
-
-            console.log(`[VoiceSideCar] Voice session started successfully: ${sessionId}`);
-
-            // Send connected message to client
+            // Always send connected message to client
             ws.send(JSON.stringify({
                 type: 'connected',
                 sessionId,
@@ -121,6 +125,56 @@ export class VoiceSideCar {
             }));
 
             throw error;
+        }
+    }
+
+    /**
+     * Actually start the Sonic session for a session
+     */
+    private async actuallyStartVoice(session: VoiceSession, sendConnected: boolean = true): Promise<void> {
+        if (session.isStarted || session.isStarting) return;
+
+        session.isStarting = true;
+        console.log(`[VoiceSideCar] Actually starting voice for session: ${session.sessionId}`);
+
+        try {
+            // Get system prompt and tools from Agent Core
+            const personaConfig = this.agentCore.getPersonaConfig();
+            const systemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
+            const tools = this.agentCore.getAllTools();
+
+            console.log(`[VoiceSideCar] Configuring SonicClient for ${session.sessionId} (prompt length: ${systemPrompt.length}, tools: ${tools.length})`);
+
+            // Configure SonicClient
+            session.sonicClient.setConfig({
+                systemPrompt,
+                voiceId: personaConfig?.voiceId || 'matthew',
+                tools
+            });
+
+            // Start SonicClient with event handler
+            console.log(`[VoiceSideCar] Calling sonicClient.startSession for ${session.sessionId}...`);
+            await session.sonicClient.startSession(
+                (event: SonicEvent) => this.handleSonicEvent(session.sessionId, event),
+                session.sessionId
+            );
+
+            session.isStarted = true;
+            session.isStarting = false;
+            console.log(`[VoiceSideCar] ✅ Voice session started successfully: ${session.sessionId}`);
+
+            if (sendConnected) {
+                // Send connected message to client
+                session.ws.send(JSON.stringify({
+                    type: 'connected',
+                    sessionId: session.sessionId,
+                    timestamp: Date.now()
+                }));
+            }
+        } catch (error: any) {
+            session.isStarting = false;
+            console.error(`[VoiceSideCar] ❌ Failed to actually start voice for session ${session.sessionId}:`, error);
+            throw error; // Let the caller (handleTextInput/handleAudioChunk) handle it
         }
     }
 
@@ -170,6 +224,12 @@ export class VoiceSideCar {
         }
 
         try {
+            // Lazy start if not already started
+            if (!session.isStarted) {
+                console.log(`[VoiceSideCar] User sending audio - lazily starting voice for session ${sessionId}`);
+                await this.actuallyStartVoice(session, false);
+            }
+
             const audioChunk: AudioChunk = {
                 buffer: audioBuffer,
                 timestamp: Date.now()
@@ -201,9 +261,10 @@ export class VoiceSideCar {
         }
 
         try {
-            await session.sonicClient.endAudioInput();
-            console.log(`[VoiceSideCar] Audio input ended for session: ${sessionId}`);
-
+            if (session.isStarted) {
+                await session.sonicClient.endAudioInput();
+                console.log(`[VoiceSideCar] Audio input ended for session: ${sessionId}`);
+            }
         } catch (error: any) {
             console.error(`[VoiceSideCar] Error ending audio input: ${error.message}`);
         }
@@ -211,7 +272,6 @@ export class VoiceSideCar {
 
     /**
      * Handle text input (for hybrid mode)
-     * Sends text to SonicClient for processing
      */
     public async handleTextInput(sessionId: string, text: string, skipTranscript: boolean = false): Promise<void> {
         const session = this.sessions.get(sessionId);
@@ -221,19 +281,150 @@ export class VoiceSideCar {
         }
 
         try {
-            await session.sonicClient.sendText(text, skipTranscript);
-            console.log(`[VoiceSideCar] Text input sent for session: ${sessionId} (skipTranscript=${skipTranscript})`);
+            // Lazy start if not already started BUT only if voice is enabled
+            if (!session.isStarted) {
+                if (session.voiceEnabled) {
+                    console.log(`[VoiceSideCar] User sending text in hybrid mode - lazily starting voice for session ${sessionId}`);
+                    await this.actuallyStartVoice(session, false);
+                    await session.sonicClient.sendText(text, skipTranscript);
+                } else {
+                    console.log(`[VoiceSideCar] User sending text in chat-only mode - using AgentCore processUserMessage (Voice-Agnostic)`);
+
+                    // Echo user message as transcript for frontend display (if not skipping)
+                    if (!skipTranscript) {
+                        session.ws.send(JSON.stringify({
+                            type: 'transcript',
+                            id: `user-${Date.now()}`,
+                            role: 'user',
+                            text,
+                            isFinal: true,
+                            timestamp: Date.now()
+                        }));
+                    }
+
+                    // Generate response using Agent Core (Claude Sonnet) directly
+                    const response = await this.agentCore.processUserMessage(sessionId, text);
+                    this.sendTextResponse(sessionId, response);
+                }
+            } else {
+                // Already started, use Sonic
+                await session.sonicClient.sendText(text, skipTranscript);
+            }
+
+            console.log(`[VoiceSideCar] Text input processed for session: ${sessionId} (skipTranscript=${skipTranscript})`);
 
         } catch (error: any) {
-            console.error(`[VoiceSideCar] Error handling text input: ${error.message}`);
+            console.error(`[VoiceSideCar] ❌ Error handling text input for session ${sessionId}:`, error);
+            if (error.stack) console.error(error.stack);
 
             // Send error to client
             session.ws.send(JSON.stringify({
                 type: 'error',
                 message: 'Error processing text input',
-                details: error.message
+                details: error.message,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
             }));
         }
+    }
+
+    /**
+     * Send text response to client (Voice-Agnostic path)
+     */
+    private sendTextResponse(sessionId: string, response: AgentResponse): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
+
+        try {
+            switch (response.type) {
+                case 'text':
+                    session.ws.send(JSON.stringify({
+                        type: 'transcript',
+                        id: `assistant-${Date.now()}`,
+                        role: 'assistant',
+                        text: response.content,
+                        isFinal: true,
+                        timestamp: Date.now()
+                    }));
+                    break;
+
+                case 'tool_call':
+                    if (response.toolCalls) {
+                        for (const toolCall of response.toolCalls) {
+                            session.ws.send(JSON.stringify({
+                                type: 'tool_use',
+                                toolName: toolCall.toolName,
+                                toolUseId: toolCall.toolUseId,
+                                input: toolCall.input,
+                                timestamp: toolCall.timestamp
+                            }));
+
+                            this.agentCore.executeTool(sessionId, toolCall.toolName, toolCall.input, toolCall.toolUseId)
+                                .then(result => {
+                                    session.ws.send(JSON.stringify({
+                                        type: 'tool_result',
+                                        toolName: toolCall.toolName,
+                                        toolUseId: toolCall.toolUseId,
+                                        result: result.result,
+                                        success: result.success,
+                                        error: result.error,
+                                        timestamp: Date.now()
+                                    }));
+
+                                    if (result.success && result.result?.handoffRequest) {
+                                        this.sendHandoffRequest(sessionId, result.result.handoffRequest);
+                                    } else if (!isHandoffTool(toolCall.toolName)) {
+                                        // Auto-trigger follow-up for text mode
+                                        this.agentCore.generateResponse(sessionId, '')
+                                            .then(followUp => this.sendTextResponse(sessionId, followUp));
+                                    }
+                                });
+                        }
+                    }
+                    break;
+
+                case 'handoff':
+                    if (response.handoffRequest) {
+                        this.sendHandoffRequest(sessionId, response.handoffRequest);
+                    }
+                    break;
+
+                case 'error':
+                    this.sendError(sessionId, response.error || 'Unknown error');
+                    break;
+            }
+        } catch (error: any) {
+            console.error(`[VoiceSideCar] Error sending text response: ${error.message}`);
+        }
+    }
+
+    /**
+     * Send handoff request to client
+     */
+    private sendHandoffRequest(sessionId: string, handoff: HandoffRequest): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
+
+        session.ws.send(JSON.stringify({
+            type: 'handoff_request',
+            targetAgentId: handoff.targetAgentId,
+            context: handoff.context,
+            graphState: handoff.graphState,
+            timestamp: Date.now()
+        }));
+    }
+
+    /**
+     * Send error message to client
+     */
+    private sendError(sessionId: string, error: string): void {
+        const session = this.sessions.get(sessionId);
+        if (!session) return;
+
+        session.ws.send(JSON.stringify({
+            type: 'error',
+            message: error,
+            timestamp: Date.now()
+        }));
     }
 
     /**
@@ -248,9 +439,10 @@ export class VoiceSideCar {
         }
 
         try {
-            session.sonicClient.setConfig(config);
-            console.log(`[VoiceSideCar] Session config updated for: ${sessionId}`);
-
+            if (session.isStarted) {
+                session.sonicClient.setConfig(config);
+                console.log(`[VoiceSideCar] Session config updated for: ${sessionId}`);
+            }
         } catch (error: any) {
             console.error(`[VoiceSideCar] Error updating session config: ${error.message}`);
         }
@@ -330,8 +522,6 @@ export class VoiceSideCar {
 
                 default:
                     // CRITICAL: Don't forward unknown events to prevent JSON errors
-                    // Nova Sonic may send internal events (TEXT, AUDIO, TOOL, etc.) that aren't in our SonicEvent type
-                    // These raw events should be silently filtered to prevent the client from receiving unexpected message formats
                     console.log(`[VoiceSideCar] Filtered unknown event type: ${event.type} (not forwarding to client)`);
             }
 
@@ -344,13 +534,10 @@ export class VoiceSideCar {
      * Forward audio to client
      */
     private forwardAudioToClient(session: VoiceSession, audioData: any): void {
-        // Send audio as binary data
-        // SonicClient emits matches { audio: Buffer }, so we access .audio
         if (audioData.audio) {
             console.log(`[VoiceSideCar] Sending audio chunk: ${audioData.audio.length} bytes`);
             session.ws.send(audioData.audio);
         } else if (audioData.buffer) {
-            // Fallback for legacy or different event shapes
             console.log(`[VoiceSideCar] Sending audio buffer: ${audioData.buffer.length} bytes`);
             session.ws.send(audioData.buffer);
         }
@@ -360,35 +547,28 @@ export class VoiceSideCar {
      * Handle transcript event
      */
     private handleTranscriptEvent(session: VoiceSession, transcriptData: any): void {
-        // Extract text from various possible fields
         const text = transcriptData.text || transcriptData.content || transcriptData.transcript || '';
-
         console.log(`[VoiceSideCar] Transcript event - Role: ${transcriptData.role}, Text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
 
-        // CRITICAL FIX: Generate stable ID if not provided by SonicClient
         const role = transcriptData.role || 'assistant';
         const stableId = transcriptData.id || `${session.sessionId}-${role}-${transcriptData.timestamp || Date.now()}`;
 
         // Forward transcript to client (FLATTENED)
         session.ws.send(JSON.stringify({
             type: 'transcript',
-            id: stableId, // Stable ID for deduplication
+            id: stableId,
             role: role,
             text: text,
-            isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true, // Default to true if not specified
+            isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true,
             timestamp: transcriptData.timestamp || Date.now()
         }));
 
-        // CRITICAL: Store messages in Agent Core for conversation history
-        // Only record FINAL transcripts to history to avoid speculative duplicates
         const isFinal = transcriptData.isFinal !== undefined ? transcriptData.isFinal : true;
 
         if (role === 'user' && isFinal) {
-            // Sync user message to history WITHOUT triggering a new generation
             this.agentCore.trackUserMessage(session.sessionId, text);
             console.log(`[VoiceSideCar] Synced FINAL User transcript to history: "${text.substring(0, 30)}..."`);
         } else if (role === 'assistant' && isFinal) {
-            // Store final assistant responses in conversation history
             this.agentCore.trackAssistantResponse(session.sessionId, text);
             console.log(`[VoiceSideCar] Synced FINAL Assistant transcript to history: "${text.substring(0, 30)}..."`);
         }
@@ -399,32 +579,22 @@ export class VoiceSideCar {
      */
     private async handleToolUseEvent(session: VoiceSession, toolData: any): Promise<void> {
         console.log(`[VoiceSideCar] Tool use event: ${toolData.toolName}`);
-        console.log(`[VoiceSideCar] Raw tool input type: ${typeof (toolData.input || toolData.content)}`);
 
-        // Parse tool input if it's a JSON string
         let toolInput = toolData.input || toolData.content;
 
-        // Handle JSON string inputs
         if (typeof toolInput === 'string') {
             try {
                 toolInput = JSON.parse(toolInput);
-                console.log(`[VoiceSideCar] ✅ Parsed tool input from JSON string`);
             } catch (e) {
-                console.warn(`[VoiceSideCar] ⚠️  Tool input is a string but not valid JSON, using as-is: ${toolInput}`);
-                // If it's not valid JSON, wrap it in an object
+                console.warn(`[VoiceSideCar] Tool input is a string but not valid JSON, using as-is: ${toolInput}`);
                 toolInput = { value: toolInput };
             }
         }
 
-        // Ensure toolInput is an object
         if (typeof toolInput !== 'object' || toolInput === null) {
-            console.warn(`[VoiceSideCar] ⚠️  Tool input is not an object, wrapping: ${typeof toolInput}`);
             toolInput = { value: toolInput };
         }
 
-        console.log(`[VoiceSideCar] Parsed tool input:`, JSON.stringify(toolInput).substring(0, 200));
-
-        // Forward tool use to client for UI feedback
         session.ws.send(JSON.stringify({
             type: 'tool_use',
             toolName: toolData.toolName,
@@ -434,7 +604,6 @@ export class VoiceSideCar {
         }));
 
         try {
-            // Execute tool via Agent Core
             const result = await this.agentCore.executeTool(
                 session.sessionId,
                 toolData.toolName,
@@ -442,15 +611,12 @@ export class VoiceSideCar {
                 toolData.toolUseId
             );
 
-            // Send tool result back to SonicClient
             await session.sonicClient.sendToolResult(
                 toolData.toolUseId,
                 result.result,
                 !result.success
             );
 
-            // CRITICAL: Refresh system prompt in SonicClient from AgentCore
-            // Only if NOT handing off, and only for state-changing tools.
             const agentSession = this.agentCore.getSession(session.sessionId);
             const isHandingOff = !!agentSession?.graphState?.pendingHandoff;
             const isBanking = isBankingTool(toolData.toolName);
@@ -461,7 +627,6 @@ export class VoiceSideCar {
                 console.log(`[VoiceSideCar] 🔄 Refreshed system prompt after state-changing banking tool (${toolData.toolName})`);
             }
 
-            // Forward tool result to client
             session.ws.send(JSON.stringify({
                 type: 'tool_result',
                 toolName: toolData.toolName,
@@ -473,18 +638,11 @@ export class VoiceSideCar {
                 timestamp: Date.now()
             }));
 
-            // CRITICAL: Check for pending handoff from Verified State Gate
             if (agentSession?.graphState?.pendingHandoff) {
                 const pendingHandoff = agentSession.graphState.pendingHandoff;
-                console.log(`[VoiceSideCar] 🚀 Detected pending handoff from Verified State Gate: ${pendingHandoff.targetAgent}`);
-
-                // SHIELD: Clear locally so we don't trigger twice
                 delete agentSession.graphState.pendingHandoff;
 
-                // DELAY: Give the agent 2 seconds to finish speaking the confirmation
-                // of successful verification before actually handing off.
                 setTimeout(() => {
-                    console.log(`[VoiceSideCar] 🚀 Executing delayed automatic handoff to ${pendingHandoff.targetAgent}`);
                     session.ws.send(JSON.stringify({
                         type: 'handoff_request',
                         targetAgentId: pendingHandoff.targetAgent,
@@ -495,11 +653,8 @@ export class VoiceSideCar {
                 }, 2000);
             }
 
-            // Check for explicit handoff from tool result
             if (result.success && result.result?.handoffRequest) {
                 const handoffRequest = result.result.handoffRequest;
-                console.log(`[VoiceSideCar] 🔄 Forwarding explicit handoff request: ${handoffRequest.targetAgentId}`);
-
                 session.ws.send(JSON.stringify({
                     type: 'handoff_request',
                     targetAgentId: handoffRequest.targetAgentId,
@@ -510,15 +665,12 @@ export class VoiceSideCar {
             }
         } catch (error: any) {
             console.error(`[VoiceSideCar] ❌ Tool execution error: ${error.message}`);
-
-            // Send error result to SonicClient
             await session.sonicClient.sendToolResult(
                 toolData.toolUseId,
                 { error: error.message },
                 true
             );
 
-            // Forward error to client
             session.ws.send(JSON.stringify({
                 type: 'tool_error',
                 toolName: toolData.toolName,
@@ -580,7 +732,6 @@ export class VoiceSideCar {
      * Handle workflow update event
      */
     private handleWorkflowUpdateEvent(session: VoiceSession, workflowData: any): void {
-        // Update workflow state in Agent Core
         if (workflowData.nodeId) {
             try {
                 const update = this.agentCore.updateWorkflowState(
@@ -588,7 +739,6 @@ export class VoiceSideCar {
                     workflowData.nodeId
                 );
 
-                // Forward workflow update to client
                 session.ws.send(JSON.stringify({
                     type: 'workflow_update',
                     currentNode: update.currentNode,
@@ -603,7 +753,6 @@ export class VoiceSideCar {
                 console.error(`[VoiceSideCar] Error updating workflow state: ${error.message}`);
             }
         } else {
-            // Just forward the workflow update to client
             session.ws.send(JSON.stringify({
                 type: 'workflow_update',
                 data: workflowData,
@@ -628,7 +777,6 @@ export class VoiceSideCar {
 
     /**
      * Get a voice session
-     * Used for updating session state (e.g., system prompt updates)
      */
     public getSession(sessionId: string): VoiceSession | undefined {
         return this.sessions.get(sessionId);
