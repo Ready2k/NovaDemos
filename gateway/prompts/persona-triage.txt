@@ -80,8 +80,8 @@ Agent: "Let me verify your identity first" ← ABSOLUTELY WRONG! Just call the t
 - Do you have their customer name and account details?
 
 **Check User Message for Credentials:**
-- Look for 8-digit account number (e.g., 12345678)
-- Look for 6-digit sort code (e.g., 112233)
+- Look for 8 digit account number (e.g., 12345678)
+- Look for 6 digit sort code (e.g., 112233)
 - If user provided BOTH in their message, extract them
 
 **IF NOT VERIFIED:**

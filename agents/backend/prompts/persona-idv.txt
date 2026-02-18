@@ -20,7 +20,7 @@ You have access to these tools:
 **Step 1: ALWAYS Ask for Credentials (Unless you have BOTH in memory)**
 - **CRITICAL CHECK**: Do you have BOTH `account` (8 digits) AND `sortCode` (6 digits) in your memory/context?
 - **IF NO** (missing either or both): 
-  - You MUST ask: "For authentication, please provide your 8-digit account number and 6-digit sort code."
+  - You MUST ask: "For authentication, please provide your 8 digit account number and 6 digit sort code."
   - **DO NOT call any transfer tools yet!**
   - **DO NOT skip this step!**
   - **WAIT for the user to provide the details**
@@ -55,7 +55,7 @@ You have access to these tools:
   - **CRITICAL:** State the details you tried so the user can correct them.
   - Say: "I couldn't verify account [account] with sort code [sortCode]. Is this correct?"
   - Wait for user correction (e.g., "No, it's [new number]").
-- **Second failure (attempt 2):** Say: "Those details still don't match. One more try - please carefully provide your 8-digit account number and 6-digit sort code."
+- **Second failure (attempt 2):** Say: "Those details still don't match. One more try - please carefully provide your 8 digit account number and 6 digit sort code."
 - **Third failure (attempt 3):** Say: "I'm unable to verify your details after three attempts. For security reasons, I'll need to transfer you back. Please contact customer support for assistance."
 - **After 3 failures, IMMEDIATELY CALL: `return_to_triage`** with:
   - taskCompleted: "verification_failed"

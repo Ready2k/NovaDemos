@@ -10,7 +10,7 @@
         "type": "string"
       },
       "sortCode": {
-        "description": "The 6-digit sort code required alongside the account ID for verification.",
+        "description": "The 6 digit sort code required alongside the account ID for verification.",
         "type": "string"
       }
     },

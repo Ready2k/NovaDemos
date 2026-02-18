@@ -6,8 +6,112 @@
  * It's part of the "Text-to-Voice Wrapper" that makes text agents work as voice agents.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.formatSpeechToText = formatSpeechToText;
 exports.formatTextForSpeech = formatTextForSpeech;
 exports.containsAccountNumbers = containsAccountNumbers;
+// Mapping for number parsing
+const smallNumbers = {
+    'zero': 0, 'oh': 0, 'nil': 0, 'nought': 0,
+    'one': 1, 'won': 1,
+    'two': 2, 'too': 2, 'to': 2,
+    'three': 3, 'tree': 3, 'free': 3,
+    'four': 4, 'for': 4,
+    'five': 5,
+    'six': 6, 'sex': 6, 'c': 6, 'see': 6, 'sea': 6,
+    'seven': 7,
+    'eight': 8, 'aitch': 8, 'haitch': 8, 'h': 8,
+    'nine': 9,
+    'ten': 10, 'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+    'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19,
+    'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
+    'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90
+};
+const magnitudes = {
+    'hundred': 100,
+    'thousand': 1000,
+    'million': 1000000,
+    'billion': 1000000000
+};
+/**
+ * Convert spoken words to digits/numbers for clean transcript display
+ * Handles both:
+ * 1. Digit sequences: "my account is one two three" -> "my account is 123"
+ * 2. Spoken values: "transfer one hundred and fifty pounds" -> "transfer 150 pounds"
+ */
+function formatSpeechToText(text) {
+    if (!text)
+        return text;
+    // Pre-processing: 
+    // - Remove 'and' when likely part of a number (e.g. "hundred and fifty")
+    // - Normalize dashes ("twenty-one" -> "twenty one")
+    let cleanText = text.toLowerCase()
+        .replace(/-/g, ' ')
+        // Replace punctuation with spaces to avoid joining words (e.g. "tuesday?and" -> "tuesday and")
+        .replace(/[^\w\s]/g, ' ');
+    const words = cleanText.split(/\s+/);
+    const result = [];
+    let currentNumberWords = [];
+    const processBufferedNumber = () => {
+        if (currentNumberWords.length === 0)
+            return;
+        // Decide if this is a sequence of digits (account number) or a value (amount)
+        const hasMagnitude = currentNumberWords.some(w => magnitudes[w]);
+        const hasDoubleDigits = currentNumberWords.some(w => smallNumbers[w] >= 10);
+        // If it's just single digits 0-9, treat as sequence (12345)
+        // If it looks like math ("hundred", "twenty"), parse as value
+        if (hasMagnitude || hasDoubleDigits) {
+            result.push(parseNumberString(currentNumberWords).toString());
+        }
+        else {
+            // Treat as sequence of digits: "one two three" -> "123"
+            const digits = currentNumberWords.map(w => smallNumbers[w]).join('');
+            result.push(digits);
+        }
+        currentNumberWords = [];
+    };
+    for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        // Skip 'and' if it connects number words
+        if (word === 'and') {
+            const prevIsNum = i > 0 && (smallNumbers[words[i - 1]] !== undefined || magnitudes[words[i - 1]] !== undefined);
+            const nextIsNum = i < words.length - 1 && (smallNumbers[words[i + 1]] !== undefined || magnitudes[words[i + 1]] !== undefined);
+            if (prevIsNum && nextIsNum) {
+                continue; // It's a connector "hundred AND fifty"
+            }
+        }
+        if (smallNumbers[word] !== undefined || magnitudes[word] !== undefined) {
+            currentNumberWords.push(word);
+        }
+        else {
+            // End of number sequence
+            processBufferedNumber();
+            result.push(words[i]);
+        }
+    }
+    processBufferedNumber();
+    return result.join(' ');
+}
+function parseNumberString(words) {
+    let total = 0;
+    let currentChunk = 0;
+    for (const word of words) {
+        if (smallNumbers[word] !== undefined) {
+            currentChunk += smallNumbers[word];
+        }
+        else if (magnitudes[word] !== undefined) {
+            const mag = magnitudes[word];
+            if (mag === 100) {
+                currentChunk *= 100;
+            }
+            else {
+                total += currentChunk * mag;
+                currentChunk = 0;
+            }
+        }
+    }
+    total += currentChunk;
+    return total;
+}
 /**
  * Format text for natural speech synthesis
  *
@@ -53,7 +157,7 @@ function formatTextForSpeech(text) {
     // 5. Format large standalone numbers (but NOT account numbers or sort codes)
     // Only format numbers that are clearly amounts (with commas or in currency context)
     formatted = formatted.replace(/\b([\d,]+)\b(?!\s*(?:account|sort code|reference))/gi, (match, num) => {
-        // Skip if it's an 8-digit or 6-digit number (likely account/sort code)
+        // Skip if it's an 8 digit or 6 digit number (likely account/sort code)
         const cleanNum = num.replace(/,/g, '');
         if (cleanNum.length === 8 || cleanNum.length === 6) {
             return match; // Keep as-is
@@ -64,9 +168,7 @@ function formatTextForSpeech(text) {
         }
         // Format large numbers (> 999) to words
         const numValue = parseInt(cleanNum);
-        if (numValue > 999) {
-            return numberToWords(numValue);
-        }
+        return numberToWords(numValue);
         return match;
     });
     // 6. Clean up any remaining formatting artifacts

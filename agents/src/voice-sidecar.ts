@@ -13,6 +13,7 @@ import { SonicClient, SonicConfig, SonicEvent, AudioChunk } from './sonic-client
 import { AgentCore, AgentResponse, HandoffRequest } from './agent-core';
 import { isHandoffTool } from './handoff-tools';
 import { isBankingTool } from './banking-tools';
+import { formatSpeechToText } from './speech-formatter';
 
 /**
  * Configuration for Voice Side-Car
@@ -49,6 +50,8 @@ export class VoiceSideCar {
 
         console.log('[VoiceSideCar] Initialized');
     }
+
+
 
     /**
      * Start a voice session
@@ -141,13 +144,39 @@ export class VoiceSideCar {
             // Get system prompt and tools from Agent Core
             const personaConfig = this.agentCore.getPersonaConfig();
             const systemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
+
+            // Inject Voice vs Text rules
+            const voiceRules = `
+[VOICE vs TEXT OUTPUT RULES]
+1. TRANSCRIPT (Written Text):
+   - Always write numbers as DIGITS (e.g., "£4.50", "15%", "2024").
+   - NEVER guess or complete partial numbers. If the user says "123456", write "123456". Do NOT add digits.
+   - Keep the text concise and clean.
+
+2. SPEECH (Audio Output):
+   - You must PRONOUNCE numbers as full words (e.g., say "four pounds fifty").
+   - EXCEPTION: Speak 8-digit Account Numbers and 6-digit Sort Codes as individual digits (e.g., "one-two-three...").
+
+3. INTERRUPTION HANDLING:
+   - If the user interrupts or says "stop", STOP talking immediately.
+   - Do NOT finish your sentence. Do NOT apologize. Just stop.
+
+4. CRITICAL:
+   - Do NOT write the phonetic pronunciation in the transcript.
+
+5. INCOMPLETE INPUTS:
+   - If the user's input seems cut off or incomplete (e.g., ends in "and...", "because...", or a mid-sentence preposition), DO NOT assume the rest.
+   - ADJUST your response to ask: "I didn't quite catch the end of that. Could you continue?" or "You were saying?".
+   - IGNORE partial fragments if they don't make sense alone.
+`;
+            const fullSystemPrompt = systemPrompt + voiceRules;
             const tools = this.agentCore.getAllTools();
 
-            console.log(`[VoiceSideCar] Configuring SonicClient for ${session.sessionId} (prompt length: ${systemPrompt.length}, tools: ${tools.length})`);
+            console.log(`[VoiceSideCar] Configuring SonicClient for ${session.sessionId} (prompt length: ${fullSystemPrompt.length}, tools: ${tools.length})`);
 
             // Configure SonicClient
             session.sonicClient.setConfig({
-                systemPrompt,
+                systemPrompt: fullSystemPrompt,
                 voiceId: personaConfig?.voiceId || 'matthew',
                 tools
             });
@@ -553,12 +582,21 @@ export class VoiceSideCar {
         const role = transcriptData.role || 'assistant';
         const stableId = transcriptData.id || `${session.sessionId}-${role}-${transcriptData.timestamp || Date.now()}`;
 
+        // FORMAT USER TRANSCRIPT: Convert "one two three" -> "123"
+        let finalText = text;
+        if (role === 'user') {
+            finalText = formatSpeechToText(text);
+            if (finalText !== text) {
+                console.log(`[VoiceSideCar] Formatted user transcript: "${text}" -> "${finalText}"`);
+            }
+        }
+
         // Forward transcript to client (FLATTENED)
         session.ws.send(JSON.stringify({
             type: 'transcript',
             id: stableId,
             role: role,
-            text: text,
+            text: finalText,
             isFinal: transcriptData.isFinal !== undefined ? transcriptData.isFinal : true,
             timestamp: transcriptData.timestamp || Date.now()
         }));
@@ -566,8 +604,8 @@ export class VoiceSideCar {
         const isFinal = transcriptData.isFinal !== undefined ? transcriptData.isFinal : true;
 
         if (role === 'user' && isFinal) {
-            this.agentCore.trackUserMessage(session.sessionId, text);
-            console.log(`[VoiceSideCar] Synced FINAL User transcript to history: "${text.substring(0, 30)}..."`);
+            this.agentCore.trackUserMessage(session.sessionId, finalText);
+            console.log(`[VoiceSideCar] Synced FINAL Formatted User transcript to history: "${finalText.substring(0, 30)}..."`);
         } else if (role === 'assistant' && isFinal) {
             this.agentCore.trackAssistantResponse(session.sessionId, text);
             console.log(`[VoiceSideCar] Synced FINAL Assistant transcript to history: "${text.substring(0, 30)}..."`);
@@ -622,11 +660,33 @@ export class VoiceSideCar {
             const isBanking = isBankingTool(toolData.toolName);
 
             if (!isHandingOff && isBanking) {
-                const updatedSystemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
-                session.sonicClient.updateSystemPrompt(updatedSystemPrompt);
-                console.log(`[VoiceSideCar] 🔄 Refreshed system prompt after state-changing banking tool (${toolData.toolName})`);
-            }
+                const systemPrompt = this.agentCore.getSystemPrompt(session.sessionId);
+                // Inject Voice vs Text rules
+                const voiceRules = `
+[VOICE vs TEXT OUTPUT RULES]
+1. TRANSCRIPT (Written Text):
+   - Always write numbers as DIGITS.
+   - NEVER guess or complete partial numbers.
+   - Keep the text concise and clean.
 
+2. SPEECH (Audio Output):
+   - You must PRONOUNCE numbers as full words (e.g., say "four pounds fifty").
+   - EXCEPTION: Speak 8-digit Account Numbers and 6-digit Sort Codes as individual digits (e.g., "one-two-three...").
+
+3. INTERRUPTION HANDLING:
+   - If the user interrupts, STOP talking immediately.
+
+4. CRITICAL:
+   - Do NOT write the phonetic pronunciation in the transcript.
+
+5. INCOMPLETE INPUTS:
+   - If the user's input seems cut off or incomplete (e.g., ends in "and...", "because...", or a mid-sentence preposition), DO NOT assume the rest.
+   - ADJUST your response to ask: "I didn't quite catch the end of that. Could you continue?" or "You were saying?".
+   - IGNORE partial fragments if they don't make sense alone.
+`;
+                session.sonicClient.updateSystemPrompt(systemPrompt + voiceRules);
+                console.log(`[VoiceSideCar] 🔄 Refreshed system prompt (+voice rules) after state-changing banking tool (${toolData.toolName})`);
+            }
             session.ws.send(JSON.stringify({
                 type: 'tool_result',
                 toolName: toolData.toolName,

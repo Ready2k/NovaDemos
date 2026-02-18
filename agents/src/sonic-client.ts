@@ -55,14 +55,16 @@ export class SonicClient {
     private eventCallback?: (event: SonicEvent) => void;
     private currentPromptName?: string;
     private currentContentName?: string;
-    private currentRole: string = 'assistant';
+    private currentRole: string = 'ASSISTANT';
     private recentOutputs: string[] = [];
     private contentStages: Map<string, string> = new Map(); // Track generation stage by ID
     private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
     private activeContentNames: Set<string> = new Set(); // Track active content blocks from the model
     private pendingSystemPromptUpdate: string | null = null; // Store pending system prompt update for injection
-    private currentTurnTranscript: string = ''; // Accumulate text for the current turn
-    private currentTurnId: string | null = null; // Stable ID for the current assistant turn
+    private userTranscript: string = ''; // Accumulate text for user turns
+    private assistantTranscript: string = ''; // Accumulate text for assistant turns
+    private userTurnId: string | null = null; // Stable ID for user turns
+    private assistantTurnId: string | null = null; // Stable ID for assistant turns
     private isTurnComplete: boolean = false; // Track if the previous turn ended
     private lastUserTranscript: string = ''; // Track last user input for context
     private isInterrupted: boolean = false; // Track if the current turn has been interrupted locally
@@ -732,7 +734,8 @@ export class SonicClient {
                 // SIMPLE FIX: Just reset transcript state - let Nova Sonic handle conversation naturally
                 // The deduplication system in server.ts will filter out any duplicates
                 console.log('[SonicClient] User text input received. Resetting transcript state.');
-                this.currentTurnTranscript = '';
+                this.userTranscript = '';
+                this.assistantTranscript = '';
                 this.isTurnComplete = true;
 
                 // Clear tool deduplication for real user turns only.
@@ -1186,7 +1189,8 @@ export class SonicClient {
         // CRITICAL: Reset transcript when user sends new text
         // This ensures the next assistant response starts fresh
         console.log(`[SonicClient] User text input received. Resetting transcript for new response.`);
-        this.currentTurnTranscript = '';
+        this.userTranscript = '';
+        this.assistantTranscript = '';
         this.isTurnComplete = true; // Mark previous turn as complete
 
         // Clear tool deduplication for the new agent turn.
@@ -1239,6 +1243,40 @@ export class SonicClient {
     /**
      * Handle output events from Nova Sonic
      */
+    /**
+     * Check if a transcript snippet is technical noise (like JSON artifacts)
+     */
+    private isNoiseTranscript(text: string): boolean {
+        if (!text) return true;
+        const clean = text.trim();
+        if (clean.length === 0) return true;
+
+        // Match { "interrupted": true } or { "interrupted": false } with any quotes/spacing
+        if (clean.match(/^\{["']interrupted["']\s*:\s*(true|false)\s*\}$/i)) return true;
+
+        // Match other common noise like sentiment tags if they arrive in their own block
+        if (clean.match(/^\[(DIALECT|SENTIMENT|STEP):[^\]]+\]$/i)) return true;
+
+        return false;
+    }
+
+    private async processStageInContentStart(eventData: any, contentId: string) {
+        let stage = 'UNKNOWN';
+        if (eventData.contentStart.additionalModelFields) {
+            try {
+                const fields = JSON.parse(eventData.contentStart.additionalModelFields);
+                stage = fields.generationStage || 'UNKNOWN';
+            } catch (e) {
+                // Ignore parse error
+            }
+        }
+        this.contentStages.set(contentId, stage);
+        if (eventData.contentStart.contentName) {
+            this.contentNameStages.set(eventData.contentStart.contentName, stage);
+        }
+        return stage;
+    }
+
     private async processOutputEvents(outputStream: AsyncIterable<any>) {
         console.log('[SonicClient] Starting output event processing');
         const currentSessionId = this.sessionId; // Capture session ID for race condition check
@@ -1329,80 +1367,67 @@ export class SonicClient {
                         const contentId = eventData.contentStart.contentId;
                         const contentName = eventData.contentStart.contentName;
 
+                        const stage = await this.processStageInContentStart(eventData, contentId);
 
-                        let stage = 'UNKNOWN';
-                        if (eventData.contentStart.additionalModelFields) {
-                            try {
-                                const fields = JSON.parse(eventData.contentStart.additionalModelFields);
-                                stage = fields.generationStage || 'UNKNOWN';
-                            } catch (e) {
-                                // Ignore parse error
+                        // Normalize roles. Nova sends uppercase.
+                        // CRITICAL: Treat SYSTEM and ASSISTANT as the same interaction role 
+                        // to prevent turn ID resets when the model sends noise/system blocks.
+                        const normalizedRole = eventData.contentStart.role.toUpperCase();
+                        const currentRoleNormalized = this.currentRole.toUpperCase();
+
+                        const isAssistantRole = (role: string) => role === 'ASSISTANT' || role === 'SYSTEM';
+                        const interactionChanged = isAssistantRole(normalizedRole) !== isAssistantRole(currentRoleNormalized);
+
+                        // We only want to trigger a reset if we move between USER and [ASSISTANT/SYSTEM]
+                        let shouldReset = interactionChanged;
+
+                        if (!shouldReset && this.isTurnComplete && eventData.contentStart.type === 'TEXT') {
+                            // If it's the same role but the turn was marked complete, only reset if it's 
+                            // not a transition from SPECULATIVE to FINAL.
+                            if (stage === 'FINAL' && this.assistantTurnId) {
+                                console.log(`[SonicClient] Keeping stable ID ${this.assistantTurnId} for FINAL render (transitioning from SPECULATIVE)`);
+                                shouldReset = false;
+                            } else {
+                                shouldReset = true;
                             }
                         }
-                        this.contentStages.set(contentId, stage);
-                        if (eventData.contentStart.contentName) {
-                            this.contentNameStages.set(eventData.contentStart.contentName, stage);
-                        }
-
-                        // Normalize role for comparison (Nova sends uppercase, we use lowercase internally)
-                        const normalizedRole = eventData.contentStart.role.toLowerCase();
-                        const currentRoleNormalized = this.currentRole.toLowerCase();
-
-                        // Reset transcript if:
-                        // 1. Role changes (USER -> ASSISTANT or vice versa)
-                        // 2. Previous turn completed (isTurnComplete flag) AND it's a TEXT content start
-                        // 3. FIXED: Only reset on actual role changes or completed turns, not every content chunk
-                        const roleChanged = normalizedRole !== currentRoleNormalized;
-                        // FIXED: Reset on role change OR if previous turn ended OR if we detect a new TEXT block from Assistant that implies a new response structure
-                        const shouldReset = roleChanged || (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
 
                         // Langfuse: Capture user transcript BEFORE reset when switching from USER to ASSISTANT
-                        if (this.trace && roleChanged && currentRoleNormalized === 'user' && normalizedRole === 'assistant' && this.currentTurnTranscript.length > 0) {
-                            this.lastUserTranscript = this.currentTurnTranscript;
+                        if (this.trace && interactionChanged && currentRoleNormalized === 'USER' && isAssistantRole(normalizedRole) && this.userTranscript.length > 0) {
+                            this.lastUserTranscript = this.userTranscript;
                             console.log(`[SonicClient] ✓ Captured user transcript BEFORE reset: "${this.lastUserTranscript.substring(0, 50)}..."`);
                         }
 
-                        // Debugging the "I apologize" ghost text
-                        if (this.currentTurnTranscript.length > 0 && shouldReset) {
-                            console.log(`[SonicClient] Resetting transcript. Prev content (chars: ${this.currentTurnTranscript.length}): "${this.currentTurnTranscript.substring(0, 50)}..."`);
-                        }
-
                         if (shouldReset) {
-                            console.log(`[SonicClient] Resetting transcript. Reason: ${roleChanged ? 'Role changed' : 'New turn starting'}. Old role: ${this.currentRole}, New role: ${eventData.contentStart.role}, Type: ${eventData.contentStart.type}`);
+                            console.log(`[SonicClient] Resetting transcript. Reason: ${interactionChanged ? 'Role changed' : 'New turn starting'}. Old: ${this.currentRole}, New: ${normalizedRole}`);
 
+                            if (normalizedRole === 'USER') {
+                                this.userTurnId = `user-${Date.now()}`;
+                                this.userTranscript = '';
+                            } else if (!this.assistantTurnId || interactionChanged) {
+                                // Only generate new assistant ID if it's a truly new interaction turn
+                                this.assistantTurnId = `assistant-${Date.now()}`;
+                                this.assistantTranscript = '';
+                            }
 
-                            this.currentTurnId = `assistant-${Date.now()}`; // Generate a new ID for the assistant's turn
-                            this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
-                            this.isInterrupted = false; // Reset interruption state for new turn
-                            this.suppressedContentName = null; // Reset suppression state
-
-                            // Reset Auto-Nudge State
+                            this.isInterrupted = false;
+                            this.suppressedContentName = null;
                             this.hasCommittedToTool = false;
                             this.hasCalledTool = false;
-                            this.activeContentNames.clear(); // Clear tracking for new turn
+                            this.activeContentNames.clear();
 
                             // Reset tool deduplication ONLY when a genuine new user turn starts.
-                            // Nova Sonic's speculative execution cycles through TOOL→ASSISTANT→TOOL
-                            // within a single agent turn. Clearing on every role change would let the
-                            // second (final) tool call through. Only clear when:
-                            //   - Role switches TO user (real new input)
-                            //   - A completed turn's TEXT block starts (isTurnComplete path)
-                            const isNewUserTurn = normalizedRole === 'user' ||
-                                (this.isTurnComplete && eventData.contentStart.type === 'TEXT');
-                            if (isNewUserTurn) {
+                            if (normalizedRole === 'USER' || (this.isTurnComplete && eventData.contentStart.type === 'TEXT')) {
                                 this.dispatchedToolUseIds.clear();
                                 this.pendingDuplicateToolUseIds.clear();
                                 this.dispatchedToolNames.clear();
-                                console.log(`[SonicClient] 🔄 Tool deduplication state cleared (new user turn)`);
+                                console.log(`[SonicClient] 🔄 Tool deduplication state cleared`);
                             }
-                        } else if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
-                            // If we are NOT resetting, but getting new text, log why
-                            console.log(`[SonicClient] EXPLICITLY NOT RESETTING transcript. Appending new TEXT block to existing turn.`);
                         }
 
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
-                        this.currentRole = eventData.contentStart.role;
+                        this.currentRole = normalizedRole;
 
                         // SPECULATIVE AUDIO SUPPRESSION
                         // If the model sends audio for a SPECULATIVE block, we suppress it to avoid
@@ -1433,15 +1458,16 @@ export class SonicClient {
 
                         // Langfuse: Capture user transcript when switching from USER to ASSISTANT
                         // This must happen BEFORE we create the assistant generation
-                        console.log(`[SonicClient] Langfuse check: trace=${!!this.trace}, roleChanged=${roleChanged}, currentRole=${currentRoleNormalized}, newRole=${normalizedRole}, transcriptLen=${this.currentTurnTranscript.length}`);
+                        const transcriptLen = this.currentRole === 'USER' ? this.userTranscript.length : this.assistantTranscript.length;
+                        console.log(`[SonicClient] Langfuse check: trace=${!!this.trace}, interactionChanged=${interactionChanged}, currentRole=${currentRoleNormalized}, newRole=${normalizedRole}, transcriptLen=${transcriptLen}`);
 
-                        if (this.trace && roleChanged && currentRoleNormalized === 'user' && normalizedRole === 'assistant') {
+                        if (this.trace && interactionChanged && currentRoleNormalized === 'USER' && isAssistantRole(normalizedRole)) {
                             // User just finished speaking, capture their transcript
-                            if (this.currentTurnTranscript.length > 0) {
-                                this.lastUserTranscript = this.currentTurnTranscript;
+                            if (this.userTranscript.length > 0) {
+                                this.lastUserTranscript = this.userTranscript;
                                 console.log(`[SonicClient] ✓ Captured user transcript on role change: "${this.lastUserTranscript.substring(0, 50)}..."`);
                             } else {
-                                console.log(`[SonicClient] ✗ Role changed to ASSISTANT but currentTurnTranscript is empty!`);
+                                console.log(`[SonicClient] ✗ Role changed to ASSISTANT but userTranscript is empty!`);
                             }
                         }
 
@@ -1497,48 +1523,48 @@ export class SonicClient {
                     }
 
                     if (eventData.textOutput) {
-                        // const content = eventData.textOutput.content;
                         const contentId = eventData.textOutput.contentId;
                         const stage = this.contentStages.get(contentId) || 'UNKNOWN';
 
                         // CRITICAL: Check for [STEP: step_id] tags
-                        let cleanContent = eventData.textOutput.content;
-                        const stepMatch = cleanContent.match(/\[STEP:\s*([a-zA-Z0-9_\-]+)\]/);
+                        let rawText = eventData.textOutput.content;
+                        const stepMatch = rawText.match(/\[STEP:\s*([a-zA-Z0-9_\-]+)\]/);
+                        // CLEANING: Process tags and noise
+                        let cleanContent = rawText;
+
+                        // Emit workflow if tag found
                         if (stepMatch) {
                             const stepId = stepMatch[1];
                             console.log(`[SonicClient] DETECTED WORKFLOW STEP: ${stepId}`);
-
-                            // Emit workflow event
                             this.eventCallback?.({
                                 type: 'workflow_update',
                                 data: { currentStep: stepId }
                             });
-
-                            // Remove the tag from the displayed text
-                            cleanContent = cleanContent.replace(/\[STEP:\s*[a-zA-Z0-9_\-]+\]/g, '').trim();
+                            // Remove the tag but KEEP SURROUNDING WHITESPACE to avoid joining words
+                            cleanContent = cleanContent.replace(/\[STEP:\s*[a-zA-Z0-9_\-]+\]/g, '');
                         }
 
-                        // CLEANING: Remove [DIALECT: ...] tags
-                        cleanContent = cleanContent.replace(/\[DIALECT:[^\]]+\]/g, '').trim();
+                        // CLEANING: Remove other tags and markers (DIALECT, SENTIMENT)
+                        cleanContent = cleanContent.replace(/\[DIALECT:[^\]]+\]/g, '')
+                            .replace(/[\[\]]?SENTIMENT:\s*-?\d+(\.\d+)?[\]\[]?/gi, '')
+                            .replace(/^System:/i, '');
 
-                        // CLEANING: Remove SENTIMENT tags
-                        cleanContent = cleanContent.replace(/[\[\]]?SENTIMENT:\s*-?\d+(\.\d+)?[\]\[]?/gi, '').trim();
-
-                        // CLEANING: Remove JSON artifacts (e.g. { "interrupted": true })
-                        if (cleanContent.match(/^\s*\{\s*"interrupted"\s*:\s*true\s*\}\s*$/)) {
+                        // CLEANING: Remove JSON artifacts (e.g. { "interrupted": true }) with flexible spacing
+                        if (cleanContent.match(/\{["']interrupted["']\s*:\s*(true|false)\s*\}/gi)) {
                             console.log('[SonicClient] Removing leaked interruption JSON artifact');
+                            cleanContent = cleanContent.replace(/\{["']interrupted["']\s*:\s*(true|false)\s*\}/gi, '');
+                        }
+
+                        // Important: NO aggressive .trim() here! That causes "Helloworld" Joining.
+                        // Only trim if the entire chunk was just punctuation or markers that we removed.
+                        if (cleanContent.replace(/\s+/g, '').length === 0) {
                             cleanContent = "";
                         }
 
-                        // CLEANING: Remove Hallucinated "System" headers
-                        cleanContent = cleanContent.replace(/^System:/i, '').trim();
-
-                        // If text is only the tag or now empty, don't append
-                        if (cleanContent.length === 0) cleanContent = "";
-
                         // DEDUPING: Check if we are appending a duplicate phrase (common with streaming deltas occasionally)
                         // Simple check: if the new content is exactly the tail of the existing transcript
-                        if (cleanContent && this.currentTurnTranscript.endsWith(cleanContent)) {
+                        const currentTranscriptToDedupe = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+                        if (cleanContent && currentTranscriptToDedupe.endsWith(cleanContent)) {
                             console.log(`[SonicClient] Skipping duplicate content chunk: "${cleanContent}"`);
                             cleanContent = "";
                         }
@@ -1552,57 +1578,80 @@ export class SonicClient {
                                 console.log(`[SonicClient] Time to first token: ${ttft}ms`);
                             }
 
-                            // Accumulate text for the current turn
-                            this.currentTurnTranscript += cleanContent;
+                            // Accumulate text for the correct role's turn
+                            // CLEANUP REGEXES (more robust versions)
+                            const DIALECT_REGEX = /\[DIALECT:[^\]]+\]/g;
+                            const INTERRUPTED_JSON_REGEX = /\{["']interrupted["']\s*:\s*(true|false)\s*\}/gi;
+                            const SYSTEM_HEADER_REGEX = /^System:\s*/i;
+                            const STEP_TAG_REGEX = /\[STEP:\s*[a-zA-Z0-9_\-]+\]/g;
 
-                            // FINAL CLEANING: Apply cleaning to the FULL transcript to catch split tags
-                            // Remove [DIALECT] tags
-                            this.currentTurnTranscript = this.currentTurnTranscript.replace(/\[DIALECT:[^\]]+\]/g, '').trim();
+                            // Accumulate text for the correct role's turn
+                            // Accumulate text for the correct role's turn
+                            if (this.currentRole === 'USER') {
+                                // Add a space if the previous transcript doesn't end in one or a newline
+                                if (this.userTranscript && !this.userTranscript.match(/[\s\n]$/) && !cleanContent.match(/^[\s\n]/)) {
+                                    this.userTranscript += ' ';
+                                }
+                                this.userTranscript += cleanContent;
+                            } else {
+                                // Add a space for assistant too if needed to avoid word joining
+                                if (this.assistantTranscript && !this.assistantTranscript.match(/[\s\n]$/) && !cleanContent.match(/^[\s\n]/)) {
+                                    this.assistantTranscript += ' ';
+                                }
+                                this.assistantTranscript += cleanContent;
+                            }
 
-                            // Remove JSON artifacts
-                            this.currentTurnTranscript = this.currentTurnTranscript.replace(/\{"interrupted":true\}/g, '').trim();
+                            // Re-apply cleanup after accumulation to ensure whole-turn consistency
+                            const cleanOutput = (text: string) => text.replace(DIALECT_REGEX, '')
+                                .replace(INTERRUPTED_JSON_REGEX, '')
+                                .replace(SYSTEM_HEADER_REGEX, '')
+                                .replace(STEP_TAG_REGEX, '');
 
-                            // Remove system hallucinations at start
-                            this.currentTurnTranscript = this.currentTurnTranscript.replace(/^System:\s*/i, '').trim();
+                            this.userTranscript = cleanOutput(this.userTranscript);
+                            this.assistantTranscript = cleanOutput(this.assistantTranscript);
 
-                            // Remove [STEP] tags that might have slipped through
-                            this.currentTurnTranscript = this.currentTurnTranscript.replace(/\[STEP:\s*[a-zA-Z0-9_\-]+\]/g, '').trim();
+                            const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+                            const currentTurnId = this.currentRole === 'USER' ? this.userTurnId : this.assistantTurnId;
 
-                            console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" -> Turn Total: "${this.currentTurnTranscript.substring(0, 50)}..."`);
+                            console.log(`[SonicClient] Received text (ID: ${contentId}, Role: ${this.currentRole}, Stage: ${stage}): "${content}" -> Turn Total: "${currentTurnTranscript}"`);
 
                             // Send transcript event for streaming AND debug purposes
                             // For SPECULATIVE stage, send as streaming (non-final)
                             // This allows real-time text updates in the UI
-                            this.eventCallback?.({
-                                type: 'transcript',
-                                data: {
-                                    id: this.currentTurnId || `assistant-${Date.now()}`,
-                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                    text: this.currentTurnTranscript, // Send FULL accumulated turn text
-                                    isFinal: false,  // Always false here - final comes from END_TURN
-                                    isStreaming: true,  // Flag for UI to show as streaming
-                                    stage: stage // Pass stage (e.g. SPECULATIVE)
+
+                            // Emission Gate: Allow both USER and ASSISTANT for real-time display.
+                            // We EXCLUDE the 'SYSTEM' role here as it often contains internal noise/markers.
+                            // Assistant streaming is safe because we use a stable Turn ID to prevent duplication.
+                            if (this.currentRole === 'USER' || this.currentRole === 'ASSISTANT') {
+                                const stableId = this.currentRole === 'USER' ? this.userTurnId : this.assistantTurnId;
+                                const transcriptText = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+
+                                if (stableId) {
+                                    this.eventCallback?.({
+                                        type: 'transcript',
+                                        data: {
+                                            id: stableId,
+                                            role: this.currentRole.toLowerCase() as 'user' | 'assistant',
+                                            text: transcriptText, // Send FULL accumulated turn text
+                                            isFinal: false,
+                                            isStreaming: true,
+                                            stage: stage
+                                        }
+                                    });
                                 }
-                            });
+                            }
 
                             // AUTO-NUDGE DETECTION: Check for commitment phrases
                             if (!this.hasCommittedToTool && this.currentRole === 'ASSISTANT') {
-                                // IMPROVED: Use strict regex patterns to avoid false positives (e.g. "I can help with checking...")
+                                const currentContent = this.assistantTranscript;
                                 const commitmentPatterns = [
-                                    // 1. Future explicit action: "I'll check", "Let me verify", "I will search"
                                     /\b(I'll|I will|let me|allow me to|gonna|going to|let's|lets)\s+(check|verify|look up|access|search|pull up|get|find|retrieve|fetch|connect|transfer|handoff|put you through)\b/i,
-
-                                    // 2. Present continuous with "I am": "I'm checking", "I am verifying"
                                     /\b(I'm|I am)\s+(checking|verifying|accessing|searching|pulling up|looking up|retrieving|fetching|connecting|transferring|handing off)\b/i,
-
-                                    // 3. Start of sentence/Clause active action: "Checking your...", "Sure, verifying details..."
                                     /(?:^|[.!?]\s+|(?:\b(?:Ok|Okay|Sure|Alright|Right|Yes|No|Thanks|Thank you)\s*[,.]\s*))(Checking|Verifying|Accessing|Searching|Looking up|Pulling up|Retrieving|Fetching|Connecting|Transferring|Handing off)\b/i,
-
-                                    // 4. Wait phrases: "Just a moment", "Bear with me"
                                     /\b(just a moment|bear with me|one moment|hold on)\b/i
                                 ];
 
-                                if (commitmentPatterns.some(pattern => pattern.test(this.currentTurnTranscript))) {
+                                if (commitmentPatterns.some(pattern => pattern.test(currentContent))) {
                                     this.hasCommittedToTool = true;
                                     console.log(`[SonicClient] Auto-Nudge: Detected commitment phrase. Watching for tool call...`);
                                 }
@@ -1670,111 +1719,128 @@ export class SonicClient {
                         }
 
                         // Send final transcript when turn ends
-                        if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
-                            // Determine stage from content name if possible
-                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                        if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN'))) {
+                            const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+                            const currentTurnId = this.currentRole === 'USER' ? this.userTurnId : this.assistantTurnId;
 
-                            this.eventCallback?.({
-                                type: 'transcript',
-                                data: {
-                                    id: this.currentTurnId || `assistant-${Date.now()}`,
-                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                    text: this.currentTurnTranscript,
-                                    isFinal: true,
-                                    isStreaming: false,
-                                    stage: stage
+                            if (currentTurnTranscript.length > 0 && !this.isNoiseTranscript(currentTurnTranscript)) {
+                                const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                                this.eventCallback?.({
+                                    type: 'transcript',
+                                    data: {
+                                        id: currentTurnId || eventData.contentEnd.contentName || `${this.currentRole.toLowerCase()}-${Date.now()}`,
+                                        role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                        text: currentTurnTranscript,
+                                        isFinal: true,
+                                        isStreaming: false,
+                                        stage: stage
+                                    }
+                                });
+                            }
+                        }
+
+                        // Capture USER transcript for Langfuse
+                        if (this.currentRole === 'USER') {
+                            this.lastUserTranscript = this.userTranscript;
+                            console.log(`[SonicClient] Captured user voice transcript for Langfuse: "${this.lastUserTranscript}"`);
+
+                            // Langfuse: Track User Voice Input as a generation
+                            if (this.trace) {
+                                const userGen = this.trace.generation({
+                                    name: "user-input",
+                                    model: this.config.modelId,
+                                    startTime: new Date()
+                                });
+                                userGen.end({
+                                    input: this.lastUserTranscript,
+                                    output: this.lastUserTranscript  // Echo for tracking
+                                });
+                            }
+                        }
+
+                        // Langfuse: End Assistant Generation
+                        if (this.currentGeneration && this.currentRole === 'ASSISTANT') {
+                            const endTime = new Date();
+                            const metadata: any = {};
+
+                            // Add latency metrics
+                            if (this.currentGenerationStartTime) {
+                                const totalDuration = endTime.getTime() - this.currentGenerationStartTime.getTime();
+                                metadata.latency_ms = totalDuration;
+
+                                if (this.firstTokenTime) {
+                                    const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
+                                    metadata.time_to_first_token_ms = ttft;
+
+                                    // Score: Latency (lower is better, normalize to some scale or just track raw)
+                                    // For now, we'll just track it as a score for visibility
+                                    this.trace?.score({
+                                        name: "latency-score",
+                                        value: ttft < 1000 ? 1 : (ttft < 3000 ? 0.7 : 0.3),
+                                        comment: `TTFT: ${ttft}ms`
+                                    });
                                 }
+                            }
+
+                            // Score: Success/Accuracy (1 for successful turn completion)
+                            this.trace?.score({
+                                name: "turn-success",
+                                value: 1,
+                                comment: "Turn completed successfully"
                             });
 
-                            // Capture USER transcript for Langfuse
-                            if (this.currentRole === 'USER') {
-                                this.lastUserTranscript = this.currentTurnTranscript;
-                                console.log(`[SonicClient] Captured user voice transcript for Langfuse: "${this.lastUserTranscript.substring(0, 50)}..."`);
-
-                                // Langfuse: Track User Voice Input as a generation
-                                if (this.trace) {
-                                    const userGen = this.trace.generation({
-                                        name: "user-input",
-                                        model: this.config.modelId,
-                                        startTime: new Date()
-                                    });
-                                    userGen.end({
-                                        input: this.lastUserTranscript,
-                                        output: this.lastUserTranscript  // Echo for tracking
-                                    });
+                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                            this.currentGeneration.end({
+                                output: this.assistantTranscript,
+                                completionStartTime: endTime,
+                                metadata: {
+                                    ...metadata, // Include latency metrics
+                                    stage: stage // OVERWRITE 'SPECULATIVE' with 'FINAL' (or whatever stage we ended on)
                                 }
-                            }
+                            });
+                            this.currentGeneration = null;
+                            this.currentGenerationStartTime = null;
+                            this.firstTokenTime = null;
 
-                            // Langfuse: End Assistant Generation
-                            if (this.currentGeneration && this.currentRole === 'ASSISTANT') {
-                                const endTime = new Date();
-                                const metadata: any = {};
-
-                                // Add latency metrics
-                                if (this.currentGenerationStartTime) {
-                                    const totalDuration = endTime.getTime() - this.currentGenerationStartTime.getTime();
-                                    metadata.latency_ms = totalDuration;
-
-                                    if (this.firstTokenTime) {
-                                        const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
-                                        metadata.time_to_first_token_ms = ttft;
-
-                                        // Score: Latency (lower is better, normalize to some scale or just track raw)
-                                        // For now, we'll just track it as a score for visibility
-                                        this.trace?.score({
-                                            name: "latency-score",
-                                            value: ttft < 1000 ? 1 : (ttft < 3000 ? 0.7 : 0.3),
-                                            comment: `TTFT: ${ttft}ms`
-                                        });
-                                    }
-                                }
-
-                                // Score: Success/Accuracy (1 for successful turn completion)
-                                this.trace?.score({
-                                    name: "turn-success",
-                                    value: 1,
-                                    comment: "Turn completed successfully"
-                                });
-
-                                this.currentGeneration.end({
-                                    output: this.currentTurnTranscript,
-                                    completionStartTime: endTime,
-                                    metadata: {
-                                        ...metadata, // Include latency metrics
-                                        stage: stage // OVERWRITE 'SPECULATIVE' with 'FINAL' (or whatever stage we ended on)
-                                    }
-                                });
-                                this.currentGeneration = null;
-                                this.currentGenerationStartTime = null;
-                                this.firstTokenTime = null;
-
-                                // FIX: Clear transcript after ending generation to prevent duplication/concatenation
-                                // in subsequent generations (e.g. if tool use triggers multiple gens per turn)
-                                this.currentTurnTranscript = '';
-                            }
+                            // FIX: Clear transcript after ending generation to prevent duplication/concatenation
+                            // in subsequent generations (e.g. if tool use triggers multiple gens per turn)
+                            this.assistantTranscript = '';
                         }
 
                         // If interrupted, mark the current transcript as cancelled
-                        if (eventData.contentEnd.stopReason === 'INTERRUPTED' && this.currentTurnTranscript.length > 0) {
-                            this.eventCallback?.({
-                                type: 'transcript',
-                                data: {
-                                    transcript: this.currentTurnTranscript,
-                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                    isFinal: false,
-                                    isStreaming: false,
-                                    isCancelled: true
-                                },
-                            });
+                        if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
+                            const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+                            const currentTurnId = this.currentRole === 'USER' ? this.userTurnId : this.assistantTurnId;
+
+                            if (currentTurnTranscript.length > 0 && !this.isNoiseTranscript(currentTurnTranscript)) {
+                                // Emit transcript update for ALL roles, ensuring `id` is set to `this.currentTurnId`.
+                                // This stable ID is key to preventing UI duplication.
+                                this.eventCallback?.({
+                                    type: 'transcript',
+                                    data: {
+                                        id: currentTurnId,
+                                        role: this.currentRole === 'USER' ? 'user' : 'assistant',
+                                        text: currentTurnTranscript,
+                                        isFinal: false,
+                                        isStreaming: false,
+                                        isCancelled: true,
+                                        timestamp: Date.now()
+                                    },
+                                });
+                            }
                         }
 
-                        // Mark turn as complete if END_TURN or INTERRUPTED
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
-                            this.isTurnComplete = true;
-                            // Also reset the transcript immediately for the next turn
-                            // This prevents accumulation across multiple assistant responses
-                            console.log(`[SonicClient] Turn ended (${eventData.contentEnd.stopReason}). Resetting transcript for next turn.`);
-                            this.currentTurnTranscript = '';
+                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                            const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
+
+                            // Only mark true for FINAL stages AND non-noise blocks.
+                            if (stage !== 'SPECULATIVE' && !this.isNoiseTranscript(currentTurnTranscript)) {
+                                this.isTurnComplete = true;
+                                console.log(`[SonicClient] Turn ended definitively (${eventData.contentEnd.stopReason}, stage: ${stage}). Will reset on next interaction.`);
+                            } else {
+                                console.log(`[SonicClient] Block ended (${eventData.contentEnd.stopReason}). Maintaining turn ID for subsequent content.`);
+                            }
                         }
 
                         if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
@@ -1782,12 +1848,13 @@ export class SonicClient {
 
                             // Langfuse: Track interruption as an event
                             if (this.trace) {
+                                const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
                                 this.trace.event({
                                     name: "interruption",
                                     metadata: {
                                         role: this.currentRole,
-                                        transcriptLength: this.currentTurnTranscript.length,
-                                        partialTranscript: this.currentTurnTranscript.substring(0, 100)
+                                        transcriptLength: currentTurnTranscript.length,
+                                        partialTranscript: currentTurnTranscript.substring(0, 100)
                                     },
                                     level: "WARNING"
                                 });
@@ -1826,7 +1893,6 @@ export class SonicClient {
                     if (eventData.usageEvent) {
                         console.log('[SonicClient] Usage:', JSON.stringify(eventData.usageEvent));
 
-                        // Track token usage for Langfuse
                         if (eventData.usageEvent.details?.total) {
                             const total = eventData.usageEvent.details.total;
                             const inputTokens = (total.input?.speechTokens || 0) + (total.input?.textTokens || 0);
@@ -1836,7 +1902,6 @@ export class SonicClient {
                             this.sessionOutputTokens = outputTokens;
                             this.sessionTotalTokens = inputTokens + outputTokens;
 
-                            // Update current generation with usage if it exists
                             if (this.currentGeneration) {
                                 this.currentGeneration.update({
                                     usage: {
@@ -1871,8 +1936,8 @@ export class SonicClient {
                     }
                 },
             });
-            console.log('[SonicClient] Output event processing ended');
         }
+        console.log('[SonicClient] Output event processing ended');
     }
 
     /**
@@ -1894,7 +1959,7 @@ export class SonicClient {
                 output: {
                     type: "session-end",
                     status: "completed",
-                    transcriptLength: this.recentOutputs.length, // or some other metric
+                    transcriptLength: this.recentOutputs.length,
                     tokenUsage: {
                         input: this.sessionInputTokens,
                         output: this.sessionOutputTokens,
@@ -1906,10 +1971,11 @@ export class SonicClient {
         }
 
         // Wait for generator to finish yielding final events (SessionEnd)
-        if (this.inputStreamFinished) {
+        // inputStreamFinished is a promise we track
+        if ((this as any).inputStreamFinished) {
             console.log('[SonicClient] Waiting for input stream to finish...');
             const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2000));
-            await Promise.race([this.inputStreamFinished, timeoutPromise]);
+            await Promise.race([(this as any).inputStreamFinished, timeoutPromise]);
             console.log('[SonicClient] Input stream finished (or timed out)');
         }
 
@@ -1917,7 +1983,6 @@ export class SonicClient {
         this.inputQueue = [];
 
         // Give streams extra time to flush buffers to network
-        // INCREASED TIMEOUT: AWS SDK buffering can be aggressive
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Reset state
@@ -1948,6 +2013,5 @@ export class SonicClient {
     public getSessionTotalTokens(): number {
         return this.sessionTotalTokens;
     }
-
 
 }

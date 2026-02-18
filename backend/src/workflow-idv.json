@@ -60,7 +60,7 @@
         },
         {
             "id": "ask_sortcode_only",
-            "label": "User provided valid 8-digit Account Number. Say: 'Thank you. Now I just need your 6-digit Sort Code to complete verification.'",
+            "label": "User provided valid 8 digit Account Number. Say: 'Thank you. Now I just need your 6 digit Sort Code to complete verification.'",
             "type": "process"
         },
         {
@@ -71,7 +71,7 @@
         },
         {
             "id": "ask_account_only",
-            "label": "User provided valid 6-digit Sort Code. Say: 'Thank you. Now I just need your 8-digit Account Number to complete verification.'",
+            "label": "User provided valid 6 digit Sort Code. Say: 'Thank you. Now I just need your 8 digit Account Number to complete verification.'",
             "type": "process"
         },
         {

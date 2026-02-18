@@ -19,7 +19,6 @@ const banking_tools_1 = require("./banking-tools");
 const gateway_router_1 = require("./gateway-router");
 const axios_1 = __importDefault(require("axios"));
 const langfuse_1 = require("langfuse");
-const speech_formatter_1 = require("./speech-formatter");
 /**
  * Agent Core - Voice-agnostic business logic
  */
@@ -292,7 +291,7 @@ class AgentCore {
             // 1. Triage agent + user asking for account-specific info
             // 2. IDV agent + user provided BOTH account number AND sort code (8 digits + 6 digits)
             // 3. Banking agent + user asking for balance/transactions
-            // For IDV: Only force if we have both 8-digit and 6-digit numbers
+            // For IDV: Only force if we have both 8 digit and 6 digit numbers
             const has8Digits = /\b\d{8}\b/.test(userMessage);
             const has6Digits = /\b\d{6}\b/.test(userMessage);
             const hasBothCredentials = has8Digits && has6Digits;
@@ -372,19 +371,6 @@ class AgentCore {
                         if (content.text) {
                             let responseText = content.text;
                             console.log(`[AgentCore:${this.agentId}] Claude response: "${responseText.substring(0, 100)}..."`);
-                            // CRITICAL: Format text for speech in voice mode
-                            // This is part of the "Text-to-Voice Wrapper" that makes text agents work as voice agents
-                            // Only format if this session is in voice/hybrid mode
-                            const session = this.sessions.get(sessionId);
-                            if (session?.mode === 'voice' || session?.mode === 'hybrid') {
-                                const originalText = responseText;
-                                responseText = (0, speech_formatter_1.formatTextForSpeech)(responseText);
-                                if (originalText !== responseText) {
-                                    console.log(`[AgentCore:${this.agentId}] 🎤 Speech formatting applied:`);
-                                    console.log(`[AgentCore:${this.agentId}]    Original: "${originalText.substring(0, 80)}..."`);
-                                    console.log(`[AgentCore:${this.agentId}]    Formatted: "${responseText.substring(0, 80)}..."`);
-                                }
-                            }
                             // Store assistant response
                             this.trackAssistantResponse(sessionId, responseText);
                             return {
@@ -1353,21 +1339,21 @@ class AgentCore {
                             // Have both but they were wrong - ask for corrections
                             contextInjection += `- The details you have (${session.graphState.account}, ${session.graphState.sortCode}) were INCORRECT\n`;
                             contextInjection += `- Ask the user to CAREFULLY re-enter BOTH their account number and sort code\n`;
-                            contextInjection += `- Say: "Those details weren't quite right. Let's try again. Please provide your 8-digit account number and 6-digit sort code."\n`;
+                            contextInjection += `- Say: "Those details weren't quite right. Let's try again. Please provide your 8 digit account number and 6 digit sort code."\n`;
                         }
                         else if (hasAccount && !hasSortCode) {
                             // Have account, need sort code
                             contextInjection += `- You have account ${session.graphState.account} but still need the sort code\n`;
-                            contextInjection += `- Ask ONLY for the sort code: "I have your account number. Now please provide your 6-digit sort code."\n`;
+                            contextInjection += `- Ask ONLY for the sort code: "I have your account number. Now please provide your 6 digit sort code."\n`;
                         }
                         else if (!hasAccount && hasSortCode) {
                             // Have sort code, need account
                             contextInjection += `- You have sort code ${session.graphState.sortCode} but still need the account number\n`;
-                            contextInjection += `- Ask ONLY for the account: "I have your sort code. Now please provide your 8-digit account number."\n`;
+                            contextInjection += `- Ask ONLY for the account: "I have your sort code. Now please provide your 8 digit account number."\n`;
                         }
                         else {
                             // Have neither
-                            contextInjection += `- Ask for BOTH: "Please provide your 8-digit account number and 6-digit sort code."\n`;
+                            contextInjection += `- Ask for BOTH: "Please provide your 8 digit account number and 6 digit sort code."\n`;
                         }
                         contextInjection += `- Emphasize that they need to provide CORRECT details\n`;
                         contextInjection += `- **WAIT for the user to respond with new details**\n`;

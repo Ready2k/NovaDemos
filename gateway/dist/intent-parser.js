@@ -113,7 +113,7 @@ function extractAccountDetails(message) {
         result.hasAccountDetails = true;
         return result;
     }
-    // Pattern 5: Just look for 8-digit and 6-digit numbers (both present)
+    // Pattern 5: Just look for 8 digit and 6 digit numbers (both present)
     const eightDigit = converted.match(/\b(\d{8})\b/);
     const sixDigit = converted.match(/\b(\d{6})\b/);
     if (eightDigit && sixDigit) {

@@ -33,16 +33,16 @@ function convertSpokenNumbersToDigits(text: string): string {
 
     // Replace spoken numbers with digits, concatenating consecutive numbers
     let result = text.toLowerCase();
-    
+
     // Split by whitespace and punctuation, but keep track of positions
     const words = result.split(/\s+/);
     const converted: string[] = [];
     let digitBuffer: string[] = [];
-    
+
     for (let i = 0; i < words.length; i++) {
         // Clean the word (remove punctuation)
         const cleaned = words[i].replace(/[^\w]/g, '');
-        
+
         if (numberMap[cleaned]) {
             // This is a spoken number - add to digit buffer
             digitBuffer.push(numberMap[cleaned]);
@@ -56,12 +56,12 @@ function convertSpokenNumbersToDigits(text: string): string {
             converted.push(words[i]);
         }
     }
-    
+
     // Flush any remaining digits
     if (digitBuffer.length > 0) {
         converted.push(digitBuffer.join(''));
     }
-    
+
     return converted.join(' ');
 }
 
@@ -81,7 +81,7 @@ export function extractAccountDetails(message: string): ParsedIntent {
     // First, convert spoken numbers to digits
     const converted = convertSpokenNumbersToDigits(message);
     console.log(`[IntentParser] Converted: "${message}" → "${converted}"`);
-    
+
     const result: ParsedIntent = {
         hasAccountDetails: false
     };
@@ -129,7 +129,7 @@ export function extractAccountDetails(message: string): ParsedIntent {
         return result;
     }
 
-    // Pattern 5: Just look for 8-digit and 6-digit numbers (both present)
+    // Pattern 5: Just look for 8 digit and 6 digit numbers (both present)
     const eightDigit = converted.match(/\b(\d{8})\b/);
     const sixDigit = converted.match(/\b(\d{6})\b/);
     if (eightDigit && sixDigit) {
@@ -140,7 +140,7 @@ export function extractAccountDetails(message: string): ParsedIntent {
     }
 
     // CRITICAL NEW PATTERNS: Handle partial matches
-    
+
     // Pattern 6: Just account number (8 digits) with context
     const accountOnly = /(?:account|acc|acct)\s*(?:number|no|num|#)?\s*(?:is\s+)?(\d{8})\b/i;
     const matchAccount = converted.match(accountOnly);

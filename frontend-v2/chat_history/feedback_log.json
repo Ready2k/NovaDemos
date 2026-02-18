@@ -334,5 +334,19 @@
     "score": 0,
     "name": "user-feedback",
     "timestamp": "2026-02-17T13:23:32.227Z"
+  },
+  {
+    "sessionId": "29706ea6-52be-44bf-8dd4-0546d9149d74",
+    "traceId": "29706ea6-52be-44bf-8dd4-0546d9149d74",
+    "score": 1,
+    "name": "user-feedback",
+    "timestamp": "2026-02-18T18:37:28.798Z"
+  },
+  {
+    "sessionId": "d5dc9b18-f109-4238-bb84-cde607014920",
+    "traceId": "d5dc9b18-f109-4238-bb84-cde607014920",
+    "score": 0,
+    "name": "user-feedback",
+    "timestamp": "2026-02-18T19:49:17.877Z"
   }
 ]
