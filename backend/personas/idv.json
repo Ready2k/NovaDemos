@@ -5,7 +5,8 @@
   "promptFile": "persona-idv-simple.txt",
   "workflows": [],
   "allowedTools": [
-    "perform_idv_check"
+    "perform_idv_check",
+    "get_server_time"
   ],
   "voiceId": "stephen",
   "metadata": {

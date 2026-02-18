@@ -1,0 +1,30 @@
+{
+    "id": "banking",
+    "name": "Banking Agent",
+    "description": "Professional banking agent for balances, transactions, and account management",
+    "promptFile": "persona-banking.txt",
+    "workflows": [
+        "banking",
+        "banking-master"
+    ],
+    "allowedTools": [
+        "agentcore_balance",
+        "agentcore_transactions",
+        "get_account_transactions",
+        "uk_branch_lookup",
+        "manage_recent_interactions",
+        "return_to_triage",
+        "get_server_time"
+    ],
+    "voiceId": "tiffany",
+    "metadata": {
+        "language": "en-US",
+        "region": "UK",
+        "tone": "professional-friendly",
+        "specializations": [
+            "balances",
+            "transactions",
+            "branch-lookup"
+        ]
+    }
+}

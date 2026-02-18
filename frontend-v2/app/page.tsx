@@ -180,10 +180,21 @@ export default function Home() {
           }
         }
 
-        if (!cleanText) break;
-
         // Use message ID if available, else derive one
         const messageId = transcriptMsg.id || `msg-${role}-${transcriptMsg.timestamp || Date.now()}`;
+
+        if (!cleanText) {
+          // CRITICAL FIX: If text is empty/filtered but isFinal is true, we MUST finalize the message.
+          // Otherwise the UI remains in "thinking/streaming" state forever.
+          if (isFinal) {
+            const existingMsgIndex = messages.findIndex(m => m.id === messageId);
+            if (existingMsgIndex >= 0) {
+              console.log(`[App] Finalizing message ID: ${messageId} (empty final chunk)`);
+              updateMessageById(messageId, { isFinal: true });
+            }
+          }
+          break;
+        }
 
         // CRITICAL FIX: Deduplicate by ID - streaming messages should update, not duplicate
         const existingMsgIndex = messages.findIndex(m => m.id === messageId);

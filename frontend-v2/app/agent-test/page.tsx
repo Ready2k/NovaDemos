@@ -20,15 +20,15 @@ interface Agent {
 // Animated thinking dots component
 function ThinkingDots() {
   const [dots, setDots] = useState(1);
-  
+
   useEffect(() => {
     const interval = setInterval(() => {
       setDots(prev => (prev % 3) + 1);
     }, 500);
-    
+
     return () => clearInterval(interval);
   }, []);
-  
+
   return (
     <span className="text-gray-400">
       Thinking{'.'.repeat(dots)}
@@ -74,11 +74,11 @@ export default function AgentTestPage() {
   // Auto-scroll to bottom ONLY when user sends a message or on first message
   // Don't auto-scroll on agent responses to avoid disrupting reading
   const lastMessageRef = useRef<number>(0);
-  
+
   useEffect(() => {
     if (messagesEndRef.current && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
-      
+
       // Only auto-scroll if:
       // 1. It's the first message
       // 2. The last message is from the user (they just sent something)
@@ -89,7 +89,7 @@ export default function AgentTestPage() {
           container.scrollTop = container.scrollHeight;
         }
       }
-      
+
       lastMessageRef.current = messages.length;
     }
   }, [messages]);
@@ -102,7 +102,7 @@ export default function AgentTestPage() {
 
     setIsConnecting(true);
     setMessages([]);
-    
+
     const newSessionId = `test-${Date.now()}`;
     setSessionId(newSessionId);
 
@@ -116,10 +116,10 @@ export default function AgentTestPage() {
       // Server-side rendering fallback
       wsHost = process.env.NEXT_PUBLIC_WS_URL?.replace('ws://', '').replace(':8080', '') || 'localhost';
     }
-    
+
     let wsUrl: string;
     let connectionMode: string;
-    
+
     if (useGateway) {
       // Gateway Mode: Connect to gateway which will route to agents
       wsUrl = `ws://${wsHost}:8080/sonic`;
@@ -145,9 +145,9 @@ export default function AgentTestPage() {
           type: 'select_workflow',
           workflowId: selectedAgent.id
         }));
-        
+
         setCurrentAgent(selectedAgent.id);
-        
+
         setMessages(prev => [...prev, {
           role: 'system',
           content: `Connected via Gateway → ${selectedAgent.name} (${useVoiceMode ? 'Voice' : 'Text'} Mode)`,
@@ -192,8 +192,8 @@ export default function AgentTestPage() {
       if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
         if (useVoiceMode) {
           console.log('[AgentTest] Received binary audio data');
-          const audioData = event.data instanceof Blob 
-            ? await event.data.arrayBuffer() 
+          const audioData = event.data instanceof Blob
+            ? await event.data.arrayBuffer()
             : event.data;
           await audioProcessor.playAudio(audioData);
         }
@@ -213,8 +213,9 @@ export default function AgentTestPage() {
         switch (message.type) {
           case 'transcript':
             if (message.role && message.text) {
-              const messageId = message.id || `${message.role}-${message.timestamp || Date.now()}`;
-              
+              // Use message ID if available, else derive one with randomness to prevent collision
+              const messageId = message.id || `${message.role}-${message.timestamp || Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
               console.log(`[AgentTest] Transcript received:`, {
                 id: messageId,
                 role: message.role,
@@ -222,17 +223,22 @@ export default function AgentTestPage() {
                 isFinal: message.isFinal,
                 originalId: message.id
               });
-              
+
+              // Stop thinking animation when agent responds (ANY response from assistant should stop thinking)
+              if (message.role === 'assistant') {
+                setIsThinking(false);
+              }
+
               // Filter out internal system messages
-              const isSystemMessage = message.text.startsWith('[SYSTEM:') || 
-                                     message.text.startsWith('[System:') ||
-                                     message.text.startsWith('I want to '); // Auto-trigger messages
-              
+              const isSystemMessage = message.text.startsWith('[SYSTEM:') ||
+                message.text.startsWith('[System:') ||
+                message.text.startsWith('I want to '); // Auto-trigger messages
+
               if (isSystemMessage) {
-                console.log(`[AgentTest] Filtering out system message`);
+                console.log(`[AgentTest] Filtering out system message: ${message.text}`);
                 return; // Don't display system messages
               }
-              
+
               // Clean up agent messages - remove [STEP: ...] prefixes
               let cleanText = message.text;
               if (message.role === 'assistant') {
@@ -242,18 +248,13 @@ export default function AgentTestPage() {
                 cleanText = cleanText.replace(/\[WORKFLOW:\s*[^\]]+\]\s*/g, '');
                 cleanText = cleanText.trim();
               }
-              
-              // Stop thinking animation when agent responds
-              if (message.role === 'assistant') {
-                setIsThinking(false);
-              }
-              
+
               // Deduplicate by ID - update existing message if ID matches
               setMessages(prev => {
-                const existingIndex = prev.findIndex(m => 
+                const existingIndex = prev.findIndex(m =>
                   (m as any).id === messageId
                 );
-                
+
                 if (existingIndex >= 0) {
                   // Update existing message
                   console.log(`[AgentTest] Updating existing message at index ${existingIndex}`);
@@ -266,17 +267,17 @@ export default function AgentTestPage() {
                   return updated;
                 } else {
                   // ADDITIONAL CHECK: Look for duplicate content from same role
-                  const duplicateIndex = prev.findIndex(m => 
-                    m.role === message.role && 
+                  const duplicateIndex = prev.findIndex(m =>
+                    m.role === message.role &&
                     m.content === cleanText &&
                     Date.now() - m.timestamp < 5000 // Within 5 seconds
                   );
-                  
+
                   if (duplicateIndex >= 0) {
                     console.log(`[AgentTest] Skipping duplicate content at index ${duplicateIndex}`);
                     return prev; // Don't add duplicate
                   }
-                  
+
                   // Add new message
                   console.log(`[AgentTest] Adding new message with ID: ${messageId}`);
                   return [...prev, {
@@ -320,7 +321,7 @@ export default function AgentTestPage() {
           case 'connected':
             console.log(`[AgentTest] Session confirmed: ${message.sessionId}`);
             break;
-            
+
           case 'handoff_event':
             // Gateway mode: Track agent handoffs
             if (useGateway && message.target) {
@@ -332,7 +333,7 @@ export default function AgentTestPage() {
               }]);
             }
             break;
-            
+
           default:
             // Silently ignore unknown message types (e.g., raw Nova Sonic events, metadata, etc.)
             // These are filtered at the gateway/agent level but log them for debugging
@@ -343,7 +344,7 @@ export default function AgentTestPage() {
         console.error('[AgentTest] Error parsing message:', error);
         console.error('[AgentTest] Raw message data:', event.data);
         console.error('[AgentTest] Message preview:', typeof event.data === 'string' ? event.data.substring(0, 200) : 'not a string');
-        
+
         // Show error in UI
         setMessages(prev => [...prev, {
           role: 'system',
@@ -427,7 +428,7 @@ export default function AgentTestPage() {
           <div className="lg:col-span-1">
             <div className="bg-gray-800 rounded-lg p-6">
               <h2 className="text-xl font-semibold mb-4">Select Agent</h2>
-              
+
               <div className="space-y-2">
                 {AGENTS.map(agent => (
                   <button
@@ -480,8 +481,8 @@ export default function AgentTestPage() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-400">
-                    {useGateway 
-                      ? "✅ Agents can hand off to each other via Gateway" 
+                    {useGateway
+                      ? "✅ Agents can hand off to each other via Gateway"
                       : "❌ Direct connection - no agent handoffs"}
                   </p>
                 </div>
@@ -514,8 +515,8 @@ export default function AgentTestPage() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-400">
-                    {useVoiceMode 
-                      ? "🎤 Audio input/output enabled" 
+                    {useVoiceMode
+                      ? "🎤 Audio input/output enabled"
                       : "⌨️ Text-only mode"}
                   </p>
                 </div>
@@ -553,12 +554,12 @@ export default function AgentTestPage() {
                 <div className="mt-3 text-xs text-gray-400">
                   {useGateway ? (
                     <>
-                      <strong className="text-green-400">Gateway Mode:</strong> Agents can hand off conversations to each other. 
+                      <strong className="text-green-400">Gateway Mode:</strong> Agents can hand off conversations to each other.
                       Try asking Triage for your balance - it will route through IDV → Banking.
                     </>
                   ) : (
                     <>
-                      <strong className="text-gray-500">Direct Mode:</strong> Each agent works independently in their specialist area only. 
+                      <strong className="text-gray-500">Direct Mode:</strong> Each agent works independently in their specialist area only.
                       No handoffs between agents.
                     </>
                   )}
@@ -605,7 +606,7 @@ export default function AgentTestPage() {
                         </div>
                       </div>
                     ))}
-                    
+
                     {/* Thinking Animation */}
                     {isThinking && (
                       <div className="p-4 rounded-lg bg-gray-700 mr-12">
@@ -639,8 +640,8 @@ export default function AgentTestPage() {
                       disabled={!isConnected}
                       className={cn(
                         "flex-1 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2",
-                        audioProcessor.isRecording 
-                          ? "bg-red-600 hover:bg-red-700 text-white" 
+                        audioProcessor.isRecording
+                          ? "bg-red-600 hover:bg-red-700 text-white"
                           : "bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-600"
                       )}
                     >

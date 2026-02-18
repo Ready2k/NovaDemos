@@ -1,7 +1,7 @@
 {
   "id": "disputes",
   "name": "Disputes",
-  "personaId": "persona-BankingDisputes",
+  "personaId": "disputes",
   "title": "Managing Disputes",
   "nodes": [
     {
@@ -208,8 +208,6 @@
       "to": "end_created"
     }
   ],
-  "id": "disputes",
-  "name": "Disputes",
   "voiceId": "matthew",
   "metadata": {
     "persona": "professional-disputes",

@@ -168,6 +168,12 @@ export class VoiceSideCar {
    - If the user's input seems cut off or incomplete (e.g., ends in "and...", "because...", or a mid-sentence preposition), DO NOT assume the rest.
    - ADJUST your response to ask: "I didn't quite catch the end of that. Could you continue?" or "You were saying?".
    - IGNORE partial fragments if they don't make sense alone.
+
+6. TOOL USE (PHANTOM RULE):
+   - When you have enough info to call a tool, call it IMMEDIATELY and SILENTLY.
+   - DO NOT speak before the tool call (e.g. "I'll check that", "One moment").
+   - Your turn should contain ONLY the tool use event, no text.
+   - Speak only AFTER the tool result returns.
 `;
             const fullSystemPrompt = systemPrompt + voiceRules;
             const tools = this.agentCore.getAllTools();

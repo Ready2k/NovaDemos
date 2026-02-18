@@ -51,7 +51,7 @@ const langfuse_1 = require("langfuse");
 class SonicClient {
     constructor(config = {}) {
         this.sessionId = null;
-        this.currentRole = 'ASSISTANT';
+        this.currentRole = 'NONE';
         this.recentOutputs = [];
         this.contentStages = new Map(); // Track generation stage by ID
         this.contentNameStages = new Map(); // Track generation stage by Name
@@ -1113,10 +1113,10 @@ class SonicClient {
         if (clean.length === 0)
             return true;
         // Match { "interrupted": true } or { "interrupted": false } with any quotes/spacing
-        if (clean.match(/^\{["']interrupted["']\s*:\s*(true|false)\s*\}$/i))
+        if (clean.match(/^\{\s*["']interrupted["']\s*:\s*(true|false)\s*\}\s*$/i))
             return true;
         // Match other common noise like sentiment tags if they arrive in their own block
-        if (clean.match(/^\[(DIALECT|SENTIMENT|STEP):[^\]]+\]$/i))
+        if (clean.match(/^\[\s*(DIALECT|SENTIMENT|STEP):[^\]]+\]\s*$/i))
             return true;
         return false;
     }
@@ -1393,12 +1393,11 @@ class SonicClient {
                                 const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
                                 console.log(`[SonicClient] Time to first token: ${ttft}ms`);
                             }
-                            // Accumulate text for the correct role's turn
                             // CLEANUP REGEXES (more robust versions)
-                            const DIALECT_REGEX = /\[DIALECT:[^\]]+\]/g;
-                            const INTERRUPTED_JSON_REGEX = /\{["']interrupted["']\s*:\s*(true|false)\s*\}/gi;
+                            const DIALECT_REGEX = /\[\s*DIALECT:[^\]]+\]/g;
+                            const INTERRUPTED_JSON_REGEX = /\{\s*["']interrupted["']\s*:\s*(true|false)\s*\}/gi;
                             const SYSTEM_HEADER_REGEX = /^System:\s*/i;
-                            const STEP_TAG_REGEX = /\[STEP:\s*[a-zA-Z0-9_\-]+\]/g;
+                            const STEP_TAG_REGEX = /\[\s*STEP:\s*[a-zA-Z0-9_\-]+\]/g;
                             // Accumulate text for the correct role's turn
                             // Accumulate text for the correct role's turn
                             if (this.currentRole === 'USER') {
@@ -1615,8 +1614,10 @@ class SonicClient {
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
                             const currentTurnTranscript = this.currentRole === 'USER' ? this.userTranscript : this.assistantTranscript;
-                            // Only mark true for FINAL stages AND non-noise blocks.
-                            if (stage !== 'SPECULATIVE' && !this.isNoiseTranscript(currentTurnTranscript)) {
+                            // Only mark true for FINAL stages.
+                            // CRITICAL: We also mark true for noise-only blocks if they are definitive ends,
+                            // to ensure the NEXT turn resets properly and doesn't accumulate the noise.
+                            if (stage !== 'SPECULATIVE') {
                                 this.isTurnComplete = true;
                                 console.log(`[SonicClient] Turn ended definitively (${eventData.contentEnd.stopReason}, stage: ${stage}). Will reset on next interaction.`);
                             }

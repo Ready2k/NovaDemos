@@ -1901,6 +1901,7 @@ You: "I'll connect you to our banking specialist right away."
     public getAllTools(): any[] {
         const handoffTools = generateHandoffTools();
         const bankingTools = generateBankingTools();
+        const timeTools = bankingTools.filter(t => t.toolSpec.name === 'get_server_time');
 
         // Agent-specific tool access control
         // This ensures proper separation of concerns and enforces handoff flow
@@ -1908,8 +1909,8 @@ You: "I'll connect you to our banking specialist right away."
             case 'triage':
                 // Triage agent: ONLY handoff tools
                 // Cannot call banking tools directly - must hand off to specialists
-                console.log(`[AgentCore:${this.agentId}] Tool access: Handoff tools only (${handoffTools.length} tools)`);
-                return handoffTools;
+                console.log(`[AgentCore:${this.agentId}] Tool access: Handoff + Time (${handoffTools.length + timeTools.length} tools)`);
+                return [...handoffTools, ...timeTools];
 
             case 'idv':
                 // IDV agent: ONLY IDV tools (NO handoff tools)
@@ -1918,10 +1919,10 @@ You: "I'll connect you to our banking specialist right away."
                     t.toolSpec.name === 'perform_idv_check'
                 );
 
-                console.log(`[AgentCore:${this.agentId}] Tool access: IDV only (${idvTools.length} tools) - Gateway handles routing`);
+                console.log(`[AgentCore:${this.agentId}] Tool access: IDV + Time (${idvTools.length + timeTools.length} tools) - Gateway handles routing`);
 
-                // Return ONLY IDV tools - no handoff tools
-                return idvTools;
+                // Return ONLY IDV + Time tools - no handoff tools
+                return [...idvTools, ...timeTools];
 
             case 'banking':
                 // Banking agent: Banking tools ONLY (NO handoff tools)
@@ -1932,8 +1933,8 @@ You: "I'll connect you to our banking specialist right away."
                     t.toolSpec.name === 'get_account_transactions' ||
                     t.toolSpec.name === 'uk_branch_lookup'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: Banking only (${bankingOnlyTools.length} tools) - NO handoff tools`);
-                return bankingOnlyTools;
+                console.log(`[AgentCore:${this.agentId}] Tool access: Banking + Time (${bankingOnlyTools.length + timeTools.length} tools) - NO handoff tools`);
+                return [...bankingOnlyTools, ...timeTools];
 
             case 'mortgage':
                 // Mortgage agent: Mortgage tools + handoff tools
@@ -1943,8 +1944,8 @@ You: "I'll connect you to our banking specialist right away."
                     t.toolSpec.name === 'check_credit_score' ||
                     t.toolSpec.name === 'value_property'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: Mortgage + Handoff (${mortgageTools.length + handoffTools.length} tools)`);
-                return [...handoffTools, ...mortgageTools];
+                console.log(`[AgentCore:${this.agentId}] Tool access: Mortgage + Handoff + Time (${mortgageTools.length + handoffTools.length + timeTools.length} tools)`);
+                return [...handoffTools, ...mortgageTools, ...timeTools];
 
             case 'disputes':
                 // Disputes agent: Dispute tools + handoff tools
@@ -1953,8 +1954,8 @@ You: "I'll connect you to our banking specialist right away."
                     t.toolSpec.name === 'update_dispute_case' ||
                     t.toolSpec.name === 'lookup_merchant_alias'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: Disputes + Handoff (${disputeTools.length + handoffTools.length} tools)`);
-                return [...handoffTools, ...disputeTools];
+                console.log(`[AgentCore:${this.agentId}] Tool access: Disputes + Handoff + Time (${disputeTools.length + handoffTools.length + timeTools.length} tools)`);
+                return [...handoffTools, ...disputeTools, ...timeTools];
 
             case 'investigation':
                 // Investigation agent: Investigation tools + handoff tools
@@ -1963,8 +1964,8 @@ You: "I'll connect you to our banking specialist right away."
                     t.toolSpec.name === 'get_account_transactions' ||
                     t.toolSpec.name === 'lookup_merchant_alias'
                 );
-                console.log(`[AgentCore:${this.agentId}] Tool access: Investigation + Handoff (${investigationTools.length + handoffTools.length} tools)`);
-                return [...handoffTools, ...investigationTools];
+                console.log(`[AgentCore:${this.agentId}] Tool access: Investigation + Handoff + Time (${investigationTools.length + handoffTools.length + timeTools.length} tools)`);
+                return [...handoffTools, ...investigationTools, ...timeTools];
 
             default:
                 // Unknown agent: All tools (fallback for development)

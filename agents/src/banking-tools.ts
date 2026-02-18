@@ -98,6 +98,13 @@ export function generateBankingTools(): BankingTool[] {
         console.log('[BankingTools] Loaded uk_branch_lookup from AgentCore');
     }
 
+    // Load server time tool
+    const timeTool = loadToolFromFile('get_server_time.json');
+    if (timeTool) {
+        tools.push(timeTool);
+        console.log('[BankingTools] Loaded get_server_time from AgentCore');
+    }
+
     console.log(`[BankingTools] Loaded ${tools.length} banking tools from AgentCore definitions`);
     return tools;
 }
@@ -114,7 +121,8 @@ export function isBankingTool(toolName: string): boolean {
         'create_dispute_case',
         'update_dispute_case',
         'lookup_merchant_alias',
-        'manage_recent_interactions'
+        'manage_recent_interactions',
+        'get_server_time'
     ];
     return bankingTools.includes(toolName);
 }

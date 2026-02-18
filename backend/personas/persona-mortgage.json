@@ -3,19 +3,26 @@
   "name": "Mortgage Specialist Agent",
   "description": "Specialized mortgage advisor for loan calculations and property valuations",
   "promptFile": "persona-mortgage.txt",
-  "workflows": ["mortgage"],
+  "workflows": [
+    "mortgage"
+  ],
   "allowedTools": [
     "calculate_max_loan",
     "check_credit_score",
     "get_mortgage_rates",
     "value_property",
-    "search_knowledge_base"
+    "search_knowledge_base",
+    "get_server_time"
   ],
   "voiceId": "amy",
   "metadata": {
     "language": "en-GB",
     "region": "UK",
     "tone": "professional-advisory",
-    "specializations": ["mortgages", "property-valuation", "credit-assessment"]
+    "specializations": [
+      "mortgages",
+      "property-valuation",
+      "credit-assessment"
+    ]
   }
 }

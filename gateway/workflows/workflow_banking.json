@@ -1,7 +1,7 @@
 {
   "id": "banking",
   "name": "Banking",
-  "personaId": "persona-BankingDisputes",
+  "personaId": "banking",
   "nodes": [
     {
       "id": "start",
@@ -374,7 +374,7 @@
     }
   ],
   "testConfig": {
-    "personaId": "persona-BankingDisputes",
+    "personaId": "banking",
     "successCriteria": "The system gives me my balance, shows me some transactions and checks my disputes ",
     "testInstructions": "I just want my balance for account 12345678, \nWait and give the sort code only when asked, 112233\nI also need to see my last 2 transactions and if i have any open disputes",
     "disconnectAction": "always",

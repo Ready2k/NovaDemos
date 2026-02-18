@@ -3,7 +3,10 @@
   "name": "Banking Disputes Agent",
   "description": "Professional banking agent handling disputes, transactions, and account management",
   "promptFile": "persona-BankingDisputes.txt",
-  "workflows": ["banking", "disputes"],
+  "workflows": [
+    "banking",
+    "disputes"
+  ],
   "allowedTools": [
     "perform_idv_check",
     "create_dispute_case",
@@ -12,13 +15,18 @@
     "get_account_transactions",
     "lookup_merchant_alias",
     "manage_recent_interactions",
-    "agentcore_transactions"
+    "agentcore_transactions",
+    "get_server_time"
   ],
   "voiceId": "tiffany",
   "metadata": {
     "language": "en-US",
     "region": "UK",
     "tone": "professional-friendly",
-    "specializations": ["disputes", "transactions", "account-management"]
+    "specializations": [
+      "disputes",
+      "transactions",
+      "account-management"
+    ]
   }
 }
