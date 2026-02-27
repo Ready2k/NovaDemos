@@ -104,7 +104,7 @@ export default function Home() {
                 agentId: settings.agentId,
                 agentAliasId: settings.agentAliasId,
                 inactivityEnabled: settings.inactivityEnabled ?? true,
-                inactivityTimeout: settings.inactivityTimeout ?? 20,
+                inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
                 inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
               },
             });
@@ -373,7 +373,7 @@ export default function Home() {
           agentId: settings.agentId,
           agentAliasId: settings.agentAliasId,
           inactivityEnabled: settings.inactivityEnabled ?? true,
-          inactivityTimeout: settings.inactivityTimeout ?? 20,
+          inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
           inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
         }
       });

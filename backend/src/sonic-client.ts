@@ -1408,39 +1408,55 @@ export class SonicClient {
                         // Mark turn as complete if END_TURN or INTERRUPTED
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             this.isTurnComplete = true;
+                            // Save transcript before resetting — needed to detect model self-interruptions below
+                            const transcriptBeforeReset = this.currentTurnTranscript;
                             // Also reset the transcript immediately for the next turn
                             // This prevents accumulation across multiple assistant responses
                             console.log(`[SonicClient] Turn ended (${eventData.contentEnd.stopReason}). Resetting transcript for next turn.`);
                             this.currentTurnTranscript = '';
-                        }
 
-                        if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
-                            console.log('[SonicClient] Interruption detected!');
+                            if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
+                                // Detect model self-interruption: the content was ONLY the {"interrupted": true}
+                                // JSON signal with no real speech content. This happens when the model sends
+                                // a second self-correction after a tool result (triggered by context like "no").
+                                // In that case, suppressing the interruption event prevents the frontend from
+                                // incorrectly clearing the audio queue for the correct response already playing.
+                                const strippedTranscript = transcriptBeforeReset
+                                    .replace(/\{\s*"interrupted"\s*:\s*true\s*\}/g, '')
+                                    .trim();
+                                const isSelfInterruption = strippedTranscript.length === 0;
 
-                            // Langfuse: Track interruption as an event
-                            if (this.trace) {
-                                this.trace.event({
-                                    name: "interruption",
-                                    metadata: {
-                                        role: this.currentRole,
-                                        transcriptLength: this.currentTurnTranscript.length,
-                                        partialTranscript: this.currentTurnTranscript.substring(0, 100)
-                                    },
-                                    level: "WARNING"
-                                });
+                                if (isSelfInterruption) {
+                                    console.log('[SonicClient] Suppressing model self-interruption event (pure {"interrupted": true} content — no real speech)');
+                                } else {
+                                    console.log('[SonicClient] Interruption detected!');
 
-                                // Score: Turn Impact
-                                this.trace.score({
-                                    name: "turn-success",
-                                    value: 0,
-                                    comment: "Interrupted by user"
-                                });
+                                    // Langfuse: Track interruption as an event
+                                    if (this.trace) {
+                                        this.trace.event({
+                                            name: "interruption",
+                                            metadata: {
+                                                role: this.currentRole,
+                                                transcriptLength: transcriptBeforeReset.length,
+                                                partialTranscript: transcriptBeforeReset.substring(0, 100)
+                                            },
+                                            level: "WARNING"
+                                        });
+
+                                        // Score: Turn Impact
+                                        this.trace.score({
+                                            name: "turn-success",
+                                            value: 0,
+                                            comment: "Interrupted by user"
+                                        });
+                                    }
+
+                                    this.eventCallback?.({
+                                        type: 'interruption',
+                                        data: {}
+                                    });
+                                }
                             }
-
-                            this.eventCallback?.({
-                                type: 'interruption',
-                                data: {}
-                            });
                         }
                     }
 

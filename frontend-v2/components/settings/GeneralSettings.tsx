@@ -337,7 +337,7 @@ export default function GeneralSettings() {
                         <span className="text-gray-500">{settings.inactivityTimeout ?? 20}s</span>
                     </div>
                     <input
-                        type="range" min="5" max="60" step="5"
+                        type="range" min="5" max="50" step="5"
                         value={settings.inactivityTimeout ?? 20}
                         onChange={(e) => updateSettings({ inactivityTimeout: parseInt(e.target.value) })}
                         className="w-full h-2 rounded-full bg-gray-700 appearance-none cursor-pointer accent-violet-500"

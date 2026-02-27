@@ -1099,7 +1099,7 @@ function broadcastWorkflowStatus(session: ClientSession) {
 }
 
 // --- Inactivity Detection ---
-const DEFAULT_INACTIVITY_TIMEOUT = 20; // 20 seconds
+const DEFAULT_INACTIVITY_TIMEOUT = 45; // 45 seconds
 const DEFAULT_INACTIVITY_MAX_CHECKS = 3; // 3 checks before closing
 
 function startInactivityTimer(session: ClientSession) {
@@ -2864,8 +2864,10 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             console.log(`[Server] Inactivity detection ${session.inactivityEnabled ? 'enabled' : 'disabled'}`);
                         }
                         if (parsed.config.inactivityTimeout !== undefined) {
-                            session.inactivityTimeout = parsed.config.inactivityTimeout;
-                            console.log(`[Server] Inactivity timeout set to: ${session.inactivityTimeout}s`);
+                            // Cap at 50s — Nova Sonic hard-disconnects after 55s of silence
+                            const NOVA_SONIC_MAX_IDLE_S = 50;
+                            session.inactivityTimeout = Math.min(parsed.config.inactivityTimeout, NOVA_SONIC_MAX_IDLE_S);
+                            console.log(`[Server] Inactivity timeout set to: ${session.inactivityTimeout}s (requested: ${parsed.config.inactivityTimeout}s)`);
                         }
                         if (parsed.config.inactivityMaxChecks !== undefined) {
                             session.inactivityMaxChecks = parsed.config.inactivityMaxChecks;
@@ -3565,6 +3567,11 @@ function formatUserTranscript(text: string): string {
         return result;
     });
 
+    // Final pass: collapse digit sequences separated only by spaces/commas into contiguous form.
+    // Handles mixed Transcribe output like "1 1 2 2 33" → "112233" (when Transcribe emits
+    // some digits numerically and others as words that got converted above).
+    formatted = formatted.replace(/\b\d+\b([\s,]+\b\d+\b)+/g, match => match.replace(/[\s,]+/g, ''));
+
     return formatted;
 }
 
@@ -3696,6 +3703,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'contentStart':
             if (event.data.role === 'assistant') {
                 console.log('[Server] Assistant Turn Started');
+                // Reset interrupted flag — user has finished speaking, agent is now responding
+                session.isInterrupted = false;
+                // Stop inactivity timer while agent is responding
+                stopInactivityTimer(session);
                 // No buffering - audio flows immediately
             }
             break;
@@ -4446,6 +4457,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
         case 'toolUse': {
             // Native AWS Bedrock Tool Use Event
             // PRODUCTION: Native Nova 2 Sonic Tool Use Detected
+            // Stop inactivity timer - agent is actively processing a tool call
+            stopInactivityTimer(session);
             const toolStartTime = Date.now();
             console.log(`[DEBUG] ===== TOOL USE CASE HANDLER CALLED AT ${new Date().toISOString()} =====`);
             logWithTimestamp('[Server]', `🔧 NATIVE TOOL USE: ${event.data.toolName || event.data.name} (ID: ${event.data.toolUseId})`);
@@ -4970,6 +4983,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Reset flow state for next interaction
             session.hasFlowedAudio = false;
             session.toolsCalledThisTurn = []; // Clear tool tracker
+            // Agent finished speaking - restart inactivity timer waiting for user
+            session.inactivityCheckCount = 0;
+            startInactivityTimer(session);
             break;
 
 
