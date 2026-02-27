@@ -789,6 +789,13 @@ wss.on('connection', async (clientWs: WebSocket) => {
                     } else if (isInitializing || isHandingOff || (agentWs && agentWs.readyState === WebSocket.CONNECTING)) {
                         console.log(`[Gateway] Buffering text_input (initializing: ${isInitializing}, handingOff: ${isHandingOff})`);
                         messageQueue.push({ data, isBinary });
+                    } else {
+                        console.error(`[Gateway] ❌ Failed to forward text_input: Agent not ready (state: ${agentWs?.readyState})`);
+                        clientWs.send(JSON.stringify({
+                            type: 'error',
+                            message: 'Agent connection not available. Please try again.',
+                            timestamp: Date.now()
+                        }));
                     }
 
                     // THEN extract credentials and update memory

@@ -311,6 +311,7 @@ export default function AgentTestPage() {
             break;
 
           case 'error':
+            setIsThinking(false);
             setMessages(prev => [...prev, {
               role: 'system',
               content: `❌ Error: ${message.message}`,
