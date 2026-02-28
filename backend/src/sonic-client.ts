@@ -39,7 +39,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update' | 'session_start';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update' | 'session_start' | 'latency_update';
     data: any;
 }
 
@@ -1363,6 +1363,15 @@ export class SonicClient {
                                             value: ttft < 1000 ? 1 : (ttft < 3000 ? 0.7 : 0.3),
                                             comment: `TTFT: ${ttft}ms`
                                         });
+
+                                        // Emit latency event so the frontend can display it
+                                        this.eventCallback?.({
+                                            type: 'latency_update',
+                                            data: {
+                                                ttft_ms: ttft,
+                                                latency_ms: totalDuration,
+                                            }
+                                        });
                                     }
                                 }
 
@@ -1513,6 +1522,8 @@ export class SonicClient {
             if (error instanceof Error) {
                 console.error('[SonicClient] Stack:', error.stack);
             }
+
+            // Emit error event before resetting state so the callback is still valid
             this.eventCallback?.({
                 type: 'error',
                 data: {
@@ -1524,7 +1535,19 @@ export class SonicClient {
                     }
                 },
             });
-            console.log('[SonicClient] Output event processing ended');
+
+            // Force-reset session state so isActive() returns false.
+            // Without this the session appears alive but the underlying stream is dead,
+            // preventing any automatic restart from working.
+            this.sessionId = null;
+            this.isProcessing = false;
+            this.inputStream = null;
+            this.outputStream = null;
+            this.currentGenerationStartTime = null;
+            this.firstTokenTime = null;
+            this.eventCallback = undefined;
+
+            console.log('[SonicClient] Output event processing ended, session state reset');
         }
     }
 

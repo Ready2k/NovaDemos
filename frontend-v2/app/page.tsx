@@ -41,7 +41,8 @@ export default function Home() {
     isHydrated,
     setWorkflowState,
     updateSettings,
-    navigateTo
+    navigateTo,
+    showToast,
   } = useApp();
 
   // Local state for survey
@@ -61,6 +62,9 @@ export default function Home() {
 
   // Ref to prevent double-connect in React Strict Mode
   const hasConnectedRef = useRef(false);
+
+  // Ref to track running latency averages (avoids stale closure issues in useCallback)
+  const latencyRef = useRef({ turns: 0, avgTtft: 0, avgLatency: 0 });
 
   // Ref to track session ID for feedback (robust against state updates)
   const sessionIdRef = useRef<string | null>(null);
@@ -116,6 +120,8 @@ export default function Home() {
         console.log('[Session] Started:', message.sessionId);
         // Robust capture: Update ref immediately
         sessionIdRef.current = message.sessionId;
+        // Reset latency tracking for new session
+        latencyRef.current = { turns: 0, avgTtft: 0, avgLatency: 0 };
         console.log('[Session] Capture Ref Updated:', sessionIdRef.current);
 
         setCurrentSession({
@@ -253,9 +259,45 @@ export default function Home() {
         });
         break;
 
+      case 'latency_update': {
+        const ttft = message.ttft_ms as number;
+        const lat = message.latency_ms as number;
+        if (ttft > 0 && lat > 0) {
+          const turns = latencyRef.current.turns + 1;
+          latencyRef.current.turns = turns;
+          latencyRef.current.avgTtft = Math.round((latencyRef.current.avgTtft * (turns - 1) + ttft) / turns);
+          latencyRef.current.avgLatency = Math.round((latencyRef.current.avgLatency * (turns - 1) + lat) / turns);
+          updateSessionStats({
+            lastTtft: ttft,
+            avgTtft: latencyRef.current.avgTtft,
+            lastLatency: lat,
+            avgLatency: latencyRef.current.avgLatency,
+            latencyTurns: turns,
+          });
+        }
+        break;
+      }
+
+      case 'reconnecting':
+        console.warn('[WebSocket] Reconnecting:', message.message);
+        setConnectionStatus('connecting');
+        showToast(message.message || 'Reconnecting…', 'info', 8000);
+        break;
+
+      case 'reconnected':
+        console.log('[WebSocket] Reconnected:', message.message);
+        setConnectionStatus('connected');
+        showToast(message.message || 'Reconnected successfully', 'success', 4000);
+        break;
+
       case 'error':
         console.error('[WebSocket] Error:', message.message, message.details);
-        // Could show a toast notification here
+        if (message.fatal) {
+          setConnectionStatus('disconnected');
+          showToast(message.message || 'Service error — please refresh to reconnect.', 'error', 10000);
+        } else {
+          showToast(message.message || 'An error occurred.', 'error', 6000);
+        }
         break;
 
       case 'tool_use':
@@ -286,7 +328,7 @@ export default function Home() {
       default:
         console.log('[WebSocket] Unknown message type:', message.type);
     }
-  }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings]);
+  }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast]);
 
   // Initialize WebSocket
   const getWebSocketUrl = () => {

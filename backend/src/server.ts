@@ -3711,6 +3711,16 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
             break;
 
+        case 'latency_update':
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'latency_update',
+                    ttft_ms: event.data.ttft_ms,
+                    latency_ms: event.data.latency_ms,
+                }));
+            }
+            break;
+
         case 'audio':
             // Forward audio data as binary WebSocket message
             if (event.data.audio) {
@@ -4952,17 +4962,50 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
             break;
 
-        case 'error':
-            // Log error and notify client
-            console.error('[Server] Nova Sonic error:', event.data);
+        case 'error': {
+            console.error('[Server] Nova Sonic stream error — attempting auto-restart:', event.data);
+
+            // Tell the client we're reconnecting so it can show feedback immediately
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
-                    type: 'error',
-                    message: 'Nova Sonic streaming error',
-                    details: event.data // Send full error details to frontend
+                    type: 'reconnecting',
+                    message: 'Connection interrupted — reconnecting…',
                 }));
             }
+
+            // Attempt one automatic session restart after a short backoff
+            setTimeout(async () => {
+                if (ws.readyState !== WebSocket.OPEN) return; // Client already gone
+
+                try {
+                    console.log('[Server] Restarting Nova Sonic session after stream error…');
+                    // sonic-client already force-reset its state, so startSession is safe
+                    await session.sonicClient.startSession(
+                        (e: SonicEvent) => handleSonicEvent(ws, e, session),
+                        session.sessionId
+                    );
+                    console.log('[Server] Nova Sonic session restarted successfully');
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'reconnected',
+                            message: 'Reconnected — you can continue speaking.',
+                        }));
+                    }
+                } catch (restartError: any) {
+                    console.error('[Server] Failed to restart Nova Sonic session:', restartError);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'Service unavailable. Please refresh the page to reconnect.',
+                            details: event.data,
+                            fatal: true,
+                        }));
+                    }
+                }
+            }, 1500); // 1.5 s backoff before retry
+
             break;
+        }
 
         case 'usageEvent':
             // Forward usage stats

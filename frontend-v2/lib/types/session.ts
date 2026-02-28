@@ -25,6 +25,11 @@ export interface Session {
     voicePreset?: string;
     detectedLanguage?: string;
     languageConfidence?: number;
+    lastTtft?: number;
+    avgTtft?: number;
+    lastLatency?: number;
+    avgLatency?: number;
+    latencyTurns?: number;
 }
 
 export interface SessionStats {
