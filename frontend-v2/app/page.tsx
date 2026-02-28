@@ -31,6 +31,7 @@ export default function Home() {
     messages,
     addMessage,
     updateLastMessage,
+    clearMessages,
     currentSession,
     setCurrentSession,
     updateSessionStats,
@@ -122,6 +123,8 @@ export default function Home() {
         sessionIdRef.current = message.sessionId;
         // Reset latency tracking for new session
         latencyRef.current = { turns: 0, avgTtft: 0, avgLatency: 0 };
+        // Clear messages from the previous session
+        clearMessages();
         console.log('[Session] Capture Ref Updated:', sessionIdRef.current);
 
         setCurrentSession({
@@ -328,7 +331,7 @@ export default function Home() {
       default:
         console.log('[WebSocket] Unknown message type:', message.type);
     }
-  }, [messages, addMessage, updateLastMessage, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast]);
+  }, [messages, addMessage, updateLastMessage, clearMessages, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast]);
 
   // Initialize WebSocket
   const getWebSocketUrl = () => {
