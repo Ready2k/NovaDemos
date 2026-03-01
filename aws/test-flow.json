@@ -1,0 +1,60 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+  "Actions": [
+    {
+      "Parameters": { "FlowLoggingBehavior": "Enabled" },
+      "Identifier": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": { "NextAction": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb" }
+    },
+    {
+      "Parameters": { "MediaStreamingState": "Enabled", "MediaStreamType": "Audio" },
+      "Identifier": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb",
+      "Type": "UpdateMediaStreamingBehavior",
+      "Transitions": { "NextAction": "6d7350cb-22dd-4e67-ab92-808fcb97fd40", "Errors": [ { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": { "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-StartBotSession", "InvocationTimeLimitSeconds": "8" },
+      "Identifier": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
+      "Type": "InvokeExternalResource",
+      "Transitions": { "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf", "Errors": [ { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": { "MaxTimeoutMs": "10000" },
+      "Identifier": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+      "Type": "GetParticipantInput",
+      "Transitions": { "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c", "Errors": [ { "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": { "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-ProcessBotTurn", "InvocationTimeLimitSeconds": "8" },
+      "Identifier": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+      "Type": "InvokeExternalResource",
+      "Transitions": { "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8", "Errors": [ { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": { "ComparisonValue": "$.External.intent" },
+      "Identifier": "739dff43-8a3b-4860-93fb-c45472855cf8",
+      "Type": "Compare",
+      "Transitions": { "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd", "Conditions": [ { "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd", "Condition": { "Operator": "Equals", "Operands": [ "transfer" ] } }, { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "Condition": { "Operator": "Equals", "Operands": [ "end" ] } } ], "Errors": [ { "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf", "ErrorType": "NoMatchingCondition" } ] }
+    },
+    {
+      "Parameters": { },
+      "Identifier": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+      "Type": "UpdateRoutingProfile",
+      "Transitions": { "NextAction": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37", "Errors": [ { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
+      "Type": "TransferParticipantToQueue",
+      "Transitions": { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "Errors": [ { "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c", "ErrorType": "NoMatchingError" } ] }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    }
+  ]
+}

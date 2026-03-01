@@ -198,10 +198,9 @@ export class SonicClient {
      * Start a bidirectional streaming session with Nova 2 Sonic
      */
     async startSession(onEvent: (event: SonicEvent) => void, externalSessionId?: string): Promise<void> {
-        // Validation: Check for credentials
+        // Validation: Log warning for missing credentials, but let the SDK attempt to load them from Role/Environment
         if ((!this.config.accessKeyId || !this.config.secretAccessKey) && !this.config.bearerToken) {
-            console.warn('[SonicClient] Start session aborted: Missing AWS Credentials.');
-            throw new Error('AWS Credentials not configured. Please configure them in the Settings UI.');
+            console.log('[SonicClient] Missing explicit IAM Credentials. Defaulting to AWS Credential Chain / IAM Role...');
         }
 
         if (this.sessionId) {

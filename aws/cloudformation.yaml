@@ -20,6 +20,13 @@ Parameters:
     Type: String
     Description: 'Bedrock Nova Sonic Model ID'
     Default: 'amazon.nova-2-sonic-v1:0'
+  DeployBucket:
+    Type: String
+    Description: 'S3 bucket that holds Lambda deployment packages (created separately, must exist before stack deploy)'
+  KvsBridgePackageS3Key:
+    Type: String
+    Description: 'S3 key for the KVS bridge Lambda zip — produced by aws/lambdas/build.sh'
+    Default: 'lambdas/kvs-bridge.zip'
 
 Conditions:
   HasCert: !Not [!Equals [!Ref CertificateArn, '']]
@@ -148,6 +155,23 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+
+  # DynamoDB session state table for the KVS bridge Lambdas.
+  # Keyed on sessionId (= "connect-<ContactId>").  TTL auto-expires rows after 2 hours.
+  VoiceSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 'voice_s2s_sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
 
   # --------------------------------------------------------------------------
   # Load Balancing
@@ -293,6 +317,7 @@ Resources:
                 Action:
                   - 'bedrock:InvokeModelWithResponseStream'
                   - 'bedrock:InvokeModel'
+                  - 'bedrock:InvokeModelWithBidirectionalStream'
                 Resource: '*'
               - Effect: Allow
                 Action:
@@ -335,13 +360,6 @@ Resources:
               Value: !Ref AWS::Region
             - Name: NOVA_SONIC_MODEL_ID
               Value: !Ref NovaSonicModelId
-          Secrets:
-            - Name: LANGFUSE_PUBLIC_KEY
-              ValueFrom: !Sub '${LangfuseSecretArn}:PUBLIC_KEY::'
-            - Name: LANGFUSE_SECRET_KEY
-              ValueFrom: !Sub '${LangfuseSecretArn}:SECRET_KEY::'
-            - Name: LANGFUSE_HOST
-              ValueFrom: !Sub '${LangfuseSecretArn}:HOST::'
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -396,8 +414,23 @@ Resources:
                 Action:
                   - 'kinesisvideo:GetDataEndpoint'
                   - 'kinesisvideo:GetMedia'
-                  - 's3:PutObject'
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModelWithBidirectionalStream'
+                  - 'bedrock:InvokeModel'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub '${SessionLogsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:UpdateItem'
+                Resource: !GetAtt VoiceSessionsTable.Arn
 
   StartBotSessionLambda:
     Type: AWS::Lambda::Function
@@ -405,14 +438,15 @@ Resources:
       FunctionName: 'voice-s2s-StartBotSession'
       Runtime: nodejs20.x
       Role: !GetAtt ConnectIntegrationRole.Arn
-      Handler: index.handler
+      Handler: start-session.handler
+      Timeout: 15
+      MemorySize: 256
       Code:
-        ZipFile: |
-          exports.handler = async (event) => {
-              const sessionId = `connect-${event.ContactId}`;
-              console.log('Starting Connect session:', sessionId);
-              return { sessionId, status: 'started' };
-          };
+        S3Bucket: !Ref DeployBucket
+        S3Key: !Ref KvsBridgePackageS3Key
+      Environment:
+        Variables:
+          SESSION_TABLE: !Ref VoiceSessionsTable
 
   ProcessBotTurnLambda:
     Type: AWS::Lambda::Function
@@ -420,14 +454,33 @@ Resources:
       FunctionName: 'voice-s2s-ProcessBotTurn'
       Runtime: nodejs20.x
       Role: !GetAtt ConnectIntegrationRole.Arn
-      Handler: index.handler
+      Handler: process-turn.handler
+      Timeout: 30
+      MemorySize: 512
       Code:
-        ZipFile: |
-          exports.handler = async (event) => {
-              const { sessionId, audioS3Key } = event;
-              console.log('Processing turn for session:', sessionId);
-              return { responseAudioUrl: 's3://dummy/audio.wav', intent: 'continue' };
-          };
+        S3Bucket: !Ref DeployBucket
+        S3Key: !Ref KvsBridgePackageS3Key
+      Environment:
+        Variables:
+          SESSION_TABLE: !Ref VoiceSessionsTable
+          RESPONSE_BUCKET: !Ref SessionLogsBucket
+          NOVA_SONIC_MODEL_ID: !Ref NovaSonicModelId
+  StartBotSessionLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref StartBotSessionLambda
+      Principal: 'connect.amazonaws.com'
+      SourceArn: !Ref ConnectInstanceArn
+
+  ProcessBotTurnLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ProcessBotTurnLambda
+      Principal: 'connect.amazonaws.com'
+      SourceArn: !Ref ConnectInstanceArn
+
   VoiceS2SContactFlow:
     Type: AWS::Connect::ContactFlow
     Properties:
@@ -484,9 +537,15 @@ Resources:
                   "audioPrompt": true
                 }
               },
-              "739dff43-8a3b-4860-93fb-c45472855cf8": {
+              "f8e7d6c5-b4a3-4210-9876-543210fedcba": {
                 "position": {
                   "x": 1459.2,
+                  "y": -22.4
+                }
+              },
+              "739dff43-8a3b-4860-93fb-c45472855cf8": {
+                "position": {
+                  "x": 1726.4,
                   "y": -22.4
                 }
               },
@@ -573,15 +632,20 @@ Resources:
             },
             {
               "Parameters": {
-                "MaxTimeoutMs": "10000"
+                "StoreInput": "False",
+                "InputTimeLimitSeconds": "8"
               },
               "Identifier": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
-              "Type": "GetParticipantInput",
+              "Type": "StoreCustomerInput",
               "Transitions": {
                 "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
                 "Errors": [
                   {
                     "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+                    "ErrorType": "InputTimeLimitExceeded"
+                  },
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
                     "ErrorType": "NoMatchingError"
                   }
                 ]
@@ -590,15 +654,33 @@ Resources:
             {
               "Parameters": {
                 "LambdaFunctionARN": "${ProcessBotTurnLambda.Arn}",
-                "InvocationTimeLimitSeconds": "8"
+                "InvocationTimeLimitSeconds": "28"
               },
               "Identifier": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
               "Type": "InvokeExternalResource",
               "Transitions": {
-                "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
+                "NextAction": "f8e7d6c5-b4a3-4210-9876-543210fedcba",
                 "Errors": [
                   {
                     "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "Text": "$.External.responseText",
+                "TextToSpeechType": "text",
+                "LanguageCode": "en-GB"
+              },
+              "Identifier": "f8e7d6c5-b4a3-4210-9876-543210fedcba",
+              "Type": "MessageParticipant",
+              "Transitions": {
+                "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
+                "Errors": [
+                  {
+                    "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
                     "ErrorType": "NoMatchingError"
                   }
                 ]
@@ -611,10 +693,10 @@ Resources:
               "Identifier": "739dff43-8a3b-4860-93fb-c45472855cf8",
               "Type": "Compare",
               "Transitions": {
-                "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
                 "Conditions": [
                   {
-                    "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
                     "Condition": {
                       "Operator": "Equals",
                       "Operands": [
@@ -636,35 +718,6 @@ Resources:
                   {
                     "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
                     "ErrorType": "NoMatchingCondition"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-              },
-              "Identifier": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
-              "Type": "UpdateRoutingProfile",
-              "Transitions": {
-                "NextAction": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
-                "Errors": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {},
-              "Identifier": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
-              "Type": "TransferParticipantToQueue",
-              "Transitions": {
-                "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                "Errors": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
                   }
                 ]
               }

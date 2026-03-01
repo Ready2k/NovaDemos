@@ -2,8 +2,6 @@
 .env
 **/node_modules
 **/.next
-**/dist
-**/out
 *.log
 test_logs
 logs

@@ -1,28 +1,27 @@
-# --- Build stage ---
-FROM node:22-alpine AS builder
-WORKDIR /app
-
-# Copy everything and install
-RUN apk add --no-cache python3 make g++ git
-COPY . .
-# Build
-RUN npm run install:all && npm run build
-# Cleanup to save space (though this is the builder stage)
-RUN apk del python3 make g++ git
-
-# --- Runtime stage ---
+# --- Lightweight Runtime ONLY Stage ---
+# This Dockerfile expects that the build artifacts (dist and out) were generated locally
+# to avoid overloading the remote build machine (i5 Mac) with compilation.
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
-# Copy built artefacts only
-COPY --from=builder /app/backend/dist          ./backend/dist
-COPY --from=builder /app/frontend-v2/out       ./frontend-v2/out
-COPY --from=builder /app/backend/node_modules  ./backend/node_modules
-COPY --from=builder /app/backend/package.json  ./backend/package.json
+# 1. Provide minimal essentials for production install
+COPY backend/package.json      ./backend/package.json
+COPY backend/package-lock.json ./backend/package-lock.json
 
-# Runtime assets needed by server.ts at startup
-COPY --from=builder /app/tools        ./tools
-COPY --from=builder /app/backend/prompts ./backend/prompts
+# 2. Run production install (lighter and faster than a full monorepo dev install)
+RUN cd backend && npm install --omit=dev
+
+# 3. Copy built artifacts from local machine context
+COPY backend/dist          ./backend/dist
+COPY frontend-v2/out       ./frontend-v2/out
+COPY tools                 ./tools
+COPY backend/prompts       ./backend/prompts
+
+
+# Workflow JSON files live in backend/src/ and are loaded at runtime via fs.readFileSync.
+# server.ts falls back to __dirname (backend/dist/) when ../src/ doesn't exist in the image.
+# We ensure them here since they are part of the 'dist' logic for runtime.
+COPY backend/src/workflow-*.json ./backend/dist/
 
 EXPOSE 8080
 CMD ["node", "backend/dist/server.js"]

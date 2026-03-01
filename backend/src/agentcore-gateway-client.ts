@@ -44,8 +44,14 @@ export class AgentCoreGatewayClient {
 
     async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
         if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
-            console.warn('[AgentCoreGateway] Call aborted: Missing AWS Credentials.');
-            throw new Error('AWS Credentials not configured. Please configure them in the Settings UI.');
+            console.log('[AgentCoreGateway] Explicit credentials missing, attempting to use SDK default chain / Environment...');
+            // Fallback to standard AWS env vars if present
+            this.config.awsAccessKey = this.config.awsAccessKey || process.env.AWS_ACCESS_KEY_ID || '';
+            this.config.awsSecretKey = this.config.awsSecretKey || process.env.AWS_SECRET_ACCESS_KEY || '';
+
+            if (!this.config.awsAccessKey) {
+                console.warn('[AgentCoreGateway] WARNING: No credentials found in config or environment.');
+            }
         }
 
         console.log(`[AgentCoreGateway] Calling tool: ${toolName} with args:`, args);
@@ -102,7 +108,8 @@ export class AgentCoreGatewayClient {
             // Sign the request with AWS credentials
             const signedRequest = aws4.sign(request, {
                 accessKeyId: this.config.awsAccessKey,
-                secretAccessKey: this.config.awsSecretKey
+                secretAccessKey: this.config.awsSecretKey,
+                sessionToken: process.env.AWS_SESSION_TOKEN || process.env.NOVA_AWS_SESSION_TOKEN
             });
 
             console.log(`[AgentCoreGateway] Making signed request to gateway...`);
