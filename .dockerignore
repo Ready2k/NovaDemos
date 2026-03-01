@@ -1,0 +1,13 @@
+.git
+.env
+**/node_modules
+**/.next
+**/dist
+**/out
+*.log
+test_logs
+logs
+.DS_Store
+agents/.venv
+chat_history
+screenshots
