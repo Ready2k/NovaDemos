@@ -1,0 +1,250 @@
+{
+    "Version": "2019-10-30",
+    "StartAction": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+    "Metadata": {
+        "entryPointPosition": {
+            "x": 20,
+            "y": 20
+        },
+        "ActionMetadata": {
+            "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614": {
+                "position": {
+                    "x": 194.4,
+                    "y": 14.4
+                }
+            },
+            "82e9b9c9-55ca-49d6-b9b2-df08afce69bb": {
+                "position": {
+                    "x": 425.6,
+                    "y": 19.2
+                },
+                "dynamicMetadata": {}
+            },
+            "c196b2ae-fa15-468e-ad72-c51f4961d15c": {
+                "position": {
+                    "x": 1205.6,
+                    "y": 25.6
+                },
+                "parameters": {
+                    "LambdaFunctionARN": {
+                        "displayName": "voice-s2s-ProcessBotTurn"
+                    }
+                },
+                "dynamicMetadata": {}
+            },
+            "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf": {
+                "position": {
+                    "x": 932.8,
+                    "y": -3.2
+                },
+                "audioPrompt": {
+                    "duration": "0",
+                    "mode": "Beep",
+                    "name": "Beep.wav"
+                },
+                "dynamicMetadata": {
+                    "audioPrompt": true
+                }
+            },
+            "739dff43-8a3b-4860-93fb-c45472855cf8": {
+                "position": {
+                    "x": 1459.2,
+                    "y": -22.4
+                }
+            },
+            "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd": {
+                "position": {
+                    "x": 1726.4,
+                    "y": 182.4
+                },
+                "parameters": {
+                    "RoutingProfile": {
+                        "displayName": "Basic Routing Profile"
+                    }
+                }
+            },
+            "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37": {
+                "position": {
+                    "x": 1968,
+                    "y": 185.6
+                }
+            },
+            "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c": {
+                "position": {
+                    "x": 1422.4,
+                    "y": 427.2
+                }
+            },
+            "6d7350cb-22dd-4e67-ab92-808fcb97fd40": {
+                "position": {
+                    "x": 673.6,
+                    "y": 27.2
+                },
+                "parameters": {
+                    "LambdaFunctionARN": {
+                        "displayName": "voice-s2s-StartBotSession"
+                    }
+                },
+                "dynamicMetadata": {}
+            }
+        },
+        "Annotations": [],
+        "name": "CF-Voice-S2S-Bot",
+        "description": "Blended voice bot with Amazon Connect and Voice S2S Nova",
+        "type": "contactFlow",
+        "status": "published",
+        "hash": "c044cb44ecb21efbde71f83fdd82c3c97ea8d672eaabaf0a87a255a6d71bcca1"
+    },
+    "Actions": [
+        {
+            "Parameters": {
+                "FlowLoggingBehavior": "Enabled"
+            },
+            "Identifier": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+            "Type": "UpdateFlowLoggingBehavior",
+            "Transitions": {
+                "NextAction": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb"
+            }
+        },
+        {
+            "Parameters": {
+                "MediaStreamingState": "Enabled",
+                "MediaStreamType": "Audio"
+            },
+            "Identifier": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb",
+            "Type": "UpdateMediaStreamingBehavior",
+            "Transitions": {
+                "NextAction": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
+                "Errors": [
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:us-east-1:000000000000:function:voice-s2s-StartBotSession",
+                "InvocationTimeLimitSeconds": "8"
+            },
+            "Identifier": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
+            "Type": "InvokeExternalResource",
+            "Transitions": {
+                "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+                "Errors": [
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "PromptId": "arn:aws:connect:us-east-1::prompt/beep.wav",
+                "MaxTimeoutMs": "10000"
+            },
+            "Identifier": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+            "Type": "GetParticipantInput",
+            "Transitions": {
+                "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+                "Errors": [
+                    {
+                        "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:us-east-1:000000000000:function:voice-s2s-ProcessBotTurn",
+                "InvocationTimeLimitSeconds": "8"
+            },
+            "Identifier": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+            "Type": "InvokeExternalResource",
+            "Transitions": {
+                "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
+                "Errors": [
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "ComparisonValue": "$.External.intent"
+            },
+            "Identifier": "739dff43-8a3b-4860-93fb-c45472855cf8",
+            "Type": "Compare",
+            "Transitions": {
+                "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                "Conditions": [
+                    {
+                        "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                        "Condition": {
+                            "Operator": "Equals",
+                            "Operands": [
+                                "transfer"
+                            ]
+                        }
+                    },
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "Condition": {
+                            "Operator": "Equals",
+                            "Operands": [
+                                "end"
+                            ]
+                        }
+                    }
+                ],
+                "Errors": [
+                    {
+                        "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+                        "ErrorType": "NoMatchingCondition"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "RoutingProfileId": "arn:aws:connect:us-east-1:000000000000:instance/dummy/routing-profile/dummy"
+            },
+            "Identifier": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+            "Type": "UpdateRoutingProfile",
+            "Transitions": {
+                "NextAction": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
+                "Errors": [
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {},
+            "Identifier": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
+            "Type": "TransferParticipantToQueue",
+            "Transitions": {
+                "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                "Errors": [
+                    {
+                        "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {},
+            "Identifier": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+            "Type": "DisconnectParticipant",
+            "Transitions": {}
+        }
+    ]
+}

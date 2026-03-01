@@ -1,0 +1,781 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Voice S2S Banking Demo — Data Layer
+  Recreates all DynamoDB tables, Lambda functions, and IAM execution roles for the
+  banking demo. After deploying, register each Lambda ARN as an AgentCore action-group
+  tool in Amazon Bedrock and run the seed script to restore table data.
+
+  KMS: all resources use AWS-managed default keys (aws/dynamodb, aws/lambda).
+       No customer CMKs are required.
+
+  Account ID at time of documentation: 388660028061
+  Region: us-east-1
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Naming }
+        Parameters: [NameSuffix]
+    ParameterLabels:
+      NameSuffix:
+        default: Name Suffix (optional, e.g. "-dev")
+
+Parameters:
+  NameSuffix:
+    Type: String
+    Default: ''
+    Description: >
+      Optional suffix appended to Lambda function names to allow parallel stacks
+      (e.g. "-dev"). Leave blank to match the original production names.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Resources
+# ══════════════════════════════════════════════════════════════════════════════
+Resources:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # DynamoDB Tables
+  # All use PAY_PER_REQUEST billing (no provisioned capacity required).
+  # ────────────────────────────────────────────────────────────────────────────
+
+  # Stores current account balances.
+  # PK: accountId (Number)  SK: sortCode (Number)
+  # Read by: get_Balance Lambda
+  TableBalance:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: db_balance
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: N
+        - AttributeName: sortCode
+          AttributeType: N
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+        - AttributeName: sortCode
+          KeyType: RANGE
+
+  # Stores up to 6 months of transaction history per account.
+  # PK: accountId (Number)  SK: sortCode (Number)
+  # transactions attribute: List of Maps { date, description, amount }
+  # Read by: get_TransactionalHistory Lambda
+  TableHistoricalTransactions:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: db_historicalTransactions
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: N
+        - AttributeName: sortCode
+          AttributeType: N
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+        - AttributeName: sortCode
+          KeyType: RANGE
+
+  # Customer identity and vulnerability data used for IDV checks.
+  # PK: accountId (Number)  SK: sortCode (Number)
+  # Key attributes: customer_name, account_status, vulnerability_score
+  # Read by: perform_idv_check Lambda
+  TableCustomers:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: demo_bank_customers
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: N
+        - AttributeName: sortCode
+          AttributeType: N
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+        - AttributeName: sortCode
+          KeyType: RANGE
+
+  # Active and historical dispute cases.
+  # PK: accountId (String)  SK: caseId (String, format: DSP-XXXXXX)
+  # Key attributes: merchantName, amount, status, reason, createdDate
+  # Read/write by: create_dispute_case, update_dispute_case, manage_recent_interactions Lambdas
+  TableDisputes:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: demo_bank_disputes
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: S
+        - AttributeName: caseId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+        - AttributeName: caseId
+          KeyType: RANGE
+
+  # Post-call interaction summaries for CRM-style history.
+  # PK: accountId (String)  SK: timestamp (String, ISO-8601 UTC)
+  # Key attributes: summary, outcome, sortCode
+  # Read/write by: manage_recent_interactions Lambda
+  TableInteractions:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: demo_bank_interactions
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: accountId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: accountId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
+  # Maps raw statement descriptions (aliases) to recognisable merchant names.
+  # PK: statementName (String) — no sort key
+  # Key attributes: tradingName, category
+  # Read by: lookup_merchant_alias Lambda
+  TableMerchants:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: demo_bank_merchants
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      AttributeDefinitions:
+        - AttributeName: statementName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: statementName
+          KeyType: HASH
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # IAM Execution Roles
+  # Each Lambda has its own least-privilege role granting only the DynamoDB
+  # actions it requires.  All roles also include AWSLambdaBasicExecutionRole
+  # for CloudWatch Logs access.
+  # ────────────────────────────────────────────────────────────────────────────
+
+  RoleGetBalance:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-get-balance-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt TableBalance.Arn
+
+  RoleGetTransactionalHistory:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-get-txn-history-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt TableHistoricalTransactions.Arn
+
+  RoleLookupMerchantAlias:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-lookup-merchant-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt TableMerchants.Arn
+
+  RoleCreateDisputeCase:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-create-dispute-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt TableDisputes.Arn
+
+  RoleUpdateDisputeCase:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-update-dispute-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource: !GetAtt TableDisputes.Arn
+
+  RoleManageRecentInteractions:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-manage-interactions-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt TableInteractions.Arn
+                  - !GetAtt TableDisputes.Arn
+
+  RolePerformIdvCheck:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-perform-idv-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt TableCustomers.Arn
+
+  RoleGetTime:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'demo-get-time-role${NameSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      # No DynamoDB access required — reads system clock only.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Lambda Functions
+  #
+  # Code is embedded inline (ZipFile). The handler is index.lambda_handler
+  # (CFN names the inline file 'index.py').
+  #
+  # Original live function names (with AgentCore-generated suffixes):
+  #   get_Balance-wfic2                  runtime: python3.12
+  #   get_TransactionalHistory-bz1ra     runtime: python3.12
+  #   lookup_merchant_alias-jv6ab        runtime: python3.12
+  #   create_dispute_case-uf1d1          runtime: python3.12
+  #   update_dispute_case-78rrd          runtime: python3.12
+  #   manage_recent_interactions-jdir8   runtime: python3.12
+  #   perform_idv_check-oqpk4            runtime: python3.12
+  #   get_Time                           runtime: python3.14*
+  #
+  # * python3.14 may not yet be available in all regions. Use python3.13 as
+  #   a fallback if deployment fails.
+  #
+  # After deploy: register each function ARN in your Bedrock AgentCore
+  # action group to restore the tool integrations.
+  # ────────────────────────────────────────────────────────────────────────────
+
+  # Reads current account balance from db_balance.
+  # Input:  accountId, sortCode (via Bedrock Agent params OR direct event keys)
+  # Output: { accountId, sortCode, balance, currency, message }
+  LambdaGetBalance:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'get_Balance${NameSuffix}'
+      Description: Returns current account balance from db_balance
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleGetBalance.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, boto3
+          from decimal import Decimal
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('db_balance')
+
+          def lambda_handler(event, context):
+              print(f"Event: {json.dumps(event)}")
+              params = {}
+              if 'parameters' in event:
+                  for p in event['parameters']: params[p['name']] = p['value']
+              elif 'requestBody' in event:
+                  for p in event.get('requestBody',{}).get('content',{}).get('application/json',{}).get('properties',[]):
+                      params[p['name']] = p['value']
+              else:
+                  params = event
+              account_id = params.get('accountId')
+              sort_code  = params.get('sortCode')
+              if not account_id or not sort_code:
+                  return _resp(event, 400, {'error': 'Missing accountId or sortCode'})
+              try:
+                  item = table.get_item(Key={'accountId': int(account_id), 'sortCode': int(sort_code)}).get('Item')
+                  if not item:
+                      return _resp(event, 404, {'message': f'Account {account_id} not found.'})
+                  balance = float(item.get('balance', 0))
+                  return _resp(event, 200, {'accountId': account_id, 'sortCode': sort_code,
+                      'balance': balance, 'currency': 'GBP', 'message': f'The balance is \u00a3{balance:,.2f}.'})
+              except Exception as e:
+                  return _resp(event, 500, {'error': str(e)})
+
+          def _resp(event, code, body):
+              ag = event.get('actionGroup')
+              if not ag: return body
+              return {'messageVersion': '1.0', 'response': {'actionGroup': ag,
+                  'apiPath': event.get('apiPath'), 'httpMethod': event.get('httpMethod'),
+                  'httpStatusCode': code, 'responseBody': {'application/json': {'body': json.dumps(body)}}}}
+
+  # Reads full transaction history for an account from db_historicalTransactions.
+  # Input:  accountId (or accountNumber), sortCode
+  # Output: { found, accountId, count, transactions[] }
+  LambdaGetTransactionalHistory:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'get_TransactionalHistory${NameSuffix}'
+      Description: Returns transaction history from db_historicalTransactions
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleGetTransactionalHistory.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, logging, boto3
+          from decimal import Decimal
+          logger = logging.getLogger(); logger.setLevel(logging.INFO)
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('db_historicalTransactions')
+
+          def dec(o):
+              if isinstance(o, Decimal): return float(o)
+              raise TypeError
+
+          def lambda_handler(event, context):
+              logger.info('Event: %s', json.dumps(event, default=str))
+              account_id = sort_code = None
+              if 'parameters' in event:
+                  for p in event['parameters']:
+                      if p['name'] in ['accountId','accountNumber']: account_id = p['value']
+                      if p['name'] == 'sortCode': sort_code = p['value']
+              if not account_id:
+                  account_id = event.get('accountId') or event.get('accountNumber')
+                  sort_code  = event.get('sortCode')
+              if not account_id and 'requestBody' in event:
+                  for p in event.get('requestBody',{}).get('content',{}).get('application/json',{}).get('properties',[]):
+                      if p['name'] in ['accountId','accountNumber']: account_id = p['value']
+                      if p['name'] == 'sortCode': sort_code = p['value']
+              if not account_id or not sort_code:
+                  result = {'error': 'Missing accountId or sortCode'}
+              else:
+                  try:
+                      item = table.get_item(Key={'accountId': int(account_id), 'sortCode': int(sort_code)}).get('Item')
+                      if not item:
+                          result = {'found': False, 'message': f'No history found for account {account_id}.'}
+                      else:
+                          txns = item.get('transactions', [])
+                          result = {'found': True, 'accountId': account_id, 'count': len(txns), 'transactions': txns}
+                  except Exception as e:
+                      result = {'error': str(e)}
+              if 'actionGroup' in event:
+                  return {'messageVersion': '1.0', 'response': {'actionGroup': event['actionGroup'],
+                      'apiPath': event.get('apiPath'), 'httpMethod': event.get('httpMethod'),
+                      'httpStatusCode': 200, 'responseBody': {'application/json': {'body': json.dumps(result, default=dec)}}}}
+              return json.loads(json.dumps(result, default=dec))
+
+  # Looks up a raw statement name against demo_bank_merchants to resolve alias.
+  # Input:  statementName (String)
+  # Output: { found, tradingName, category, originalName }
+  LambdaLookupMerchantAlias:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'lookup_merchant_alias${NameSuffix}'
+      Description: Resolves statement aliases to trading names via demo_bank_merchants
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleLookupMerchantAlias.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, boto3
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('demo_bank_merchants')
+
+          def lambda_handler(event, context):
+              print(f"Event: {json.dumps(event)}")
+              statement_name = event.get('statementName')
+              if not statement_name:
+                  return {'error': 'Missing statementName'}
+              try:
+                  item = table.get_item(Key={'statementName': statement_name}).get('Item')
+              except Exception as e:
+                  return {'error': f'Database error: {str(e)}'}
+              if item:
+                  return {'found': True, 'tradingName': item.get('tradingName'),
+                          'category': item.get('category'), 'originalName': statement_name}
+              return {'found': False, 'message': f"No alias found for '{statement_name}'"}
+
+  # Creates a new dispute case in demo_bank_disputes.
+  # Input:  accountNumber, merchantName, transactionAmount, disputeReason,
+  #         merchantContacted, [expectedAmount], [isPriorityRefund]
+  # Output: { status, caseId, message }
+  LambdaCreateDisputeCase:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'create_dispute_case${NameSuffix}'
+      Description: Creates a dispute case record in demo_bank_disputes
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleCreateDisputeCase.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, boto3, uuid
+          from datetime import datetime
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('demo_bank_disputes')
+
+          def lambda_handler(event, context):
+              print(f"Event: {json.dumps(event)}")
+              account_id       = event.get('accountNumber')
+              merchant         = event.get('merchantName')
+              amount           = event.get('transactionAmount')
+              reason           = event.get('disputeReason')
+              contacted        = event.get('merchantContacted')
+              expected_amount  = event.get('expectedAmount')
+              is_priority      = event.get('isPriorityRefund', False)
+              if not all([account_id, merchant, amount, reason]):
+                  return {'error': 'Missing required fields'}
+              case_id = f"DSP-{uuid.uuid4().hex[:6].upper()}"
+              item = {'accountId': account_id, 'caseId': case_id, 'merchantName': merchant,
+                      'amount': str(amount), 'status': 'OPEN',
+                      'createdDate': datetime.now().strftime('%Y-%m-%d'),
+                      'reason': reason, 'merchantContacted': contacted, 'isPriorityRefund': is_priority}
+              if expected_amount: item['expectedAmount'] = str(expected_amount)
+              try:
+                  table.put_item(Item=item)
+                  msg = f"Case {case_id} created."
+                  if is_priority: msg += " Priority Refund Logic Triggered."
+                  return {'status': 'success', 'caseId': case_id, 'message': msg}
+              except Exception as e:
+                  return {'error': f'Failed to create case: {str(e)}'}
+
+  # Updates status and details of an existing dispute case.
+  # Input:  caseId, status, additionalDetails
+  # Output: { status, message, timestamp }
+  # Note:   Uses Scan to locate accountId from caseId (acceptable for demo scale).
+  LambdaUpdateDisputeCase:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'update_dispute_case${NameSuffix}'
+      Description: Updates status/details of a dispute case in demo_bank_disputes
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleUpdateDisputeCase.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, logging, boto3, datetime
+          from boto3.dynamodb.conditions import Attr
+          logger = logging.getLogger(); logger.setLevel(logging.INFO)
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('demo_bank_disputes')
+
+          def lambda_handler(event, context):
+              logger.info(f"Event: {json.dumps(event)}")
+              case_id    = event.get('caseId')
+              details    = event.get('additionalDetails')
+              new_status = event.get('status')
+              if not all([case_id, details, new_status]):
+                  return {'error': 'Missing caseId, additionalDetails, or status'}
+              ts = datetime.datetime.utcnow().isoformat()
+              try:
+                  items = table.scan(FilterExpression=Attr('caseId').eq(case_id)).get('Items', [])
+                  if not items: return {'error': 'Case ID not found'}
+                  account_id = items[0]['accountId']
+                  table.update_item(
+                      Key={'accountId': account_id, 'caseId': case_id},
+                      UpdateExpression="set #s=:s, additionalDetails=:d, requiredInfo=:r, lastUpdatedTime=:t",
+                      ExpressionAttributeNames={'#s': 'status'},
+                      ExpressionAttributeValues={':s': new_status, ':d': details, ':r': None, ':t': ts},
+                      ReturnValues="UPDATED_NEW")
+                  return {'status': 'success', 'message': f"Case {case_id} updated. New status: {new_status}", 'timestamp': ts}
+              except Exception as e:
+                  logger.error(f"Error: {e}")
+                  return {'error': str(e)}
+
+  # RETRIEVE: returns open dispute cases for an account.
+  # PUBLISH:  writes a post-call interaction summary to demo_bank_interactions.
+  # Input:  action ("RETRIEVE"|"PUBLISH"), accountNumber, [sortCode], [summary], [outcome]
+  LambdaManageRecentInteractions:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'manage_recent_interactions${NameSuffix}'
+      Description: Retrieves open disputes or publishes interaction summaries
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleManageRecentInteractions.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, boto3
+          from datetime import datetime
+          from decimal import Decimal
+          from boto3.dynamodb.conditions import Key
+          dynamodb = boto3.resource('dynamodb')
+          disputes_table     = dynamodb.Table('demo_bank_disputes')
+          interactions_table = dynamodb.Table('demo_bank_interactions')
+
+          def dec(o):
+              if isinstance(o, Decimal): return float(o)
+              raise TypeError
+
+          def lambda_handler(event, context):
+              print(f"Event: {json.dumps(event)}")
+              action     = event.get('action')
+              account_id = event.get('accountNumber')
+              sort_code  = event.get('sortCode')
+              if not action or not account_id:
+                  return {'error': 'Missing required parameters'}
+              if action == 'RETRIEVE':
+                  items = disputes_table.query(KeyConditionExpression=Key('accountId').eq(account_id)).get('Items', [])
+                  active = [d for d in items if d.get('status') in ['OPEN', 'MORE_INFO']]
+                  return {'disputesOpen': len(active) > 0, 'activeDisputes': json.loads(json.dumps(active, default=dec))}
+              elif action == 'PUBLISH':
+                  summary = event.get('summary')
+                  outcome = event.get('outcome')
+                  if not summary or not outcome:
+                      return {'error': 'Missing summary or outcome'}
+                  ts = datetime.utcnow().isoformat()
+                  interactions_table.put_item(Item={'accountId': account_id, 'timestamp': ts,
+                      'sortCode': sort_code, 'summary': summary, 'outcome': outcome})
+                  return {'status': 'success', 'message': 'Interaction logged', 'id': ts}
+              return {'error': 'Invalid action. Use RETRIEVE or PUBLISH.'}
+
+  # Verifies customer identity against demo_bank_customers.
+  # Input:  accountNumber (or accountId), sortCode
+  # Output: { auth_status ("VERIFIED"|"FAILED"), account_status, marker_Vunl, customer_name }
+  LambdaPerformIdvCheck:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'perform_idv_check${NameSuffix}'
+      Description: Identity verification lookup against demo_bank_customers
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt RolePerformIdvCheck.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, boto3
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('demo_bank_customers')
+
+          def lambda_handler(event, context):
+              print(f"Event: {json.dumps(event)}")
+              account_input  = event.get('accountNumber') or event.get('accountId')
+              sort_code_input = event.get('sortCode')
+              if not account_input or not sort_code_input:
+                  return {'error': 'Missing accountNumber or sortCode'}
+              try:
+                  pk = int(account_input); sk = int(sort_code_input)
+              except ValueError:
+                  return {'error': 'Invalid format: details must be numeric'}
+              try:
+                  item = table.get_item(Key={'accountId': pk, 'sortCode': sk}).get('Item')
+              except Exception as e:
+                  return {'error': f'Database error: {str(e)}'}
+              if not item:
+                  return {'auth_status': 'FAILED', 'message': 'Customer details not found.'}
+              return {'auth_status': 'VERIFIED', 'account_status': item.get('account_status', 'OPEN'),
+                      'marker_Vunl': int(item.get('vulnerability_score', 0)),
+                      'customer_name': item.get('customer_name')}
+
+  # Returns the current date and time in a requested timezone.
+  # Input:  timezone (optional, default "UTC") — supports UTC, GMT, EST, PST, CET, JST
+  # Output: { statusCode, body: "The current time is ..." }
+  # Note:   Uses python3.13 here; live function runs python3.14 — update if available.
+  LambdaGetTime:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'get_Time${NameSuffix}'
+      Description: Returns the current date and time for a given timezone
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !GetAtt RoleGetTime.Arn
+      Timeout: 3
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json, logging
+          from datetime import datetime, timezone, timedelta
+          logger = logging.getLogger(); logger.setLevel(logging.INFO)
+
+          TZ_OFFSETS = {
+              'UTC': timedelta(0), 'GMT': timedelta(0),
+              'EST': timedelta(hours=-5), 'PST': timedelta(hours=-8),
+              'CET': timedelta(hours=1),  'JST': timedelta(hours=9),
+          }
+
+          def lambda_handler(event, context):
+              logger.info('Event: %s', json.dumps(event, indent=2))
+              tz_name = event.get('timezone', 'UTC').upper()
+              if tz_name not in TZ_OFFSETS: tz_name = 'UTC'
+              local_time = datetime.now(timezone.utc) + TZ_OFFSETS[tz_name]
+              msg = f"The current time is {local_time.strftime('%A, %B %d, %Y at %H:%M:%S')} {tz_name}."
+              logger.info(msg)
+              return {'statusCode': 200, 'body': msg}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Outputs
+# ══════════════════════════════════════════════════════════════════════════════
+Outputs:
+
+  # DynamoDB Table ARNs
+  TableBalanceArn:
+    Description: ARN of db_balance
+    Value: !GetAtt TableBalance.Arn
+
+  TableHistoricalTransactionsArn:
+    Description: ARN of db_historicalTransactions
+    Value: !GetAtt TableHistoricalTransactions.Arn
+
+  TableCustomersArn:
+    Description: ARN of demo_bank_customers
+    Value: !GetAtt TableCustomers.Arn
+
+  TableDisputesArn:
+    Description: ARN of demo_bank_disputes
+    Value: !GetAtt TableDisputes.Arn
+
+  TableInteractionsArn:
+    Description: ARN of demo_bank_interactions
+    Value: !GetAtt TableInteractions.Arn
+
+  TableMerchantsArn:
+    Description: ARN of demo_bank_merchants
+    Value: !GetAtt TableMerchants.Arn
+
+  # Lambda Function ARNs (register these in your AgentCore action groups)
+  LambdaGetBalanceArn:
+    Description: ARN of get_Balance Lambda
+    Value: !GetAtt LambdaGetBalance.Arn
+
+  LambdaGetTransactionalHistoryArn:
+    Description: ARN of get_TransactionalHistory Lambda
+    Value: !GetAtt LambdaGetTransactionalHistory.Arn
+
+  LambdaLookupMerchantAliasArn:
+    Description: ARN of lookup_merchant_alias Lambda
+    Value: !GetAtt LambdaLookupMerchantAlias.Arn
+
+  LambdaCreateDisputeCaseArn:
+    Description: ARN of create_dispute_case Lambda
+    Value: !GetAtt LambdaCreateDisputeCase.Arn
+
+  LambdaUpdateDisputeCaseArn:
+    Description: ARN of update_dispute_case Lambda
+    Value: !GetAtt LambdaUpdateDisputeCase.Arn
+
+  LambdaManageRecentInteractionsArn:
+    Description: ARN of manage_recent_interactions Lambda
+    Value: !GetAtt LambdaManageRecentInteractions.Arn
+
+  LambdaPerformIdvCheckArn:
+    Description: ARN of perform_idv_check Lambda
+    Value: !GetAtt LambdaPerformIdvCheck.Arn
+
+  LambdaGetTimeArn:
+    Description: ARN of get_Time Lambda
+    Value: !GetAtt LambdaGetTime.Arn

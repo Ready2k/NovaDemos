@@ -1,0 +1,687 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Voice S2S AWS & Amazon Connect Infrastructure (Phase 1 and 2)'
+Parameters:
+  ConnectInstanceArn:
+    Type: String
+    Description: 'ARN of the Amazon Connect Instance'
+  CertificateArn:
+    Type: String
+    Description: 'ARN of the ACM certificate for HTTPS (Leave empty for HTTP-only testing)'
+    Default: ''
+  LangfuseSecretArn:
+    Type: String
+    Description: 'ARN of the Secrets Manager secret containing Langfuse credentials'
+    Default: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:voice-s2s/langfuse-Dummy'
+  ImageUri:
+    Type: String
+    Description: 'URI of the Docker image for the ECS task'
+    Default: 'nginx:latest'
+  NovaSonicModelId:
+    Type: String
+    Description: 'Bedrock Nova Sonic Model ID'
+    Default: 'amazon.nova-2-sonic-v1:0'
+
+Conditions:
+  HasCert: !Not [!Equals [!Ref CertificateArn, '']]
+
+Resources:
+  # --------------------------------------------------------------------------
+  # VPC & Networking
+  # --------------------------------------------------------------------------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: '10.0.1.0/24'
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: '10.0.2.0/24'
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: '10.0.11.0/24'
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: '10.0.12.0/24'
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # --------------------------------------------------------------------------
+  # Storage
+  # --------------------------------------------------------------------------
+  SessionLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # --------------------------------------------------------------------------
+  # Load Balancing
+  # --------------------------------------------------------------------------
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow HTTP/HTTPS traffic to ALB'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: 'voice-s2s-alb'
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '3600' # Required for WebSockets long calls
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '3600'
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - !If
+          - HasCert
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: '443'
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref TargetGroup
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCert
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # --------------------------------------------------------------------------
+  # ECS Fargate
+  # --------------------------------------------------------------------------
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow traffic from ALB'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: 'voice-s2s-cluster'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: '/ecs/voice-s2s'
+      RetentionInDays: 7
+
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'ecs-tasks.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: 'SecretsAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Ref LangfuseSecretArn
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'ecs-tasks.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: 'VoiceS2SAccess'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'bedrock:InvokeModelWithResponseStream'
+                  - 'bedrock:InvokeModel'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'transcribe:StartStreamTranscription'
+                  - 'transcribe:StartStreamTranscriptionWebSocket'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub '${SessionLogsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Ref LangfuseSecretArn
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+
+  EcsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: 'voice-s2s-task'
+      Cpu: '1024'
+      Memory: '2048'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: 'voice-s2s'
+          Image: !Ref ImageUri
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: NOVA_AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: NOVA_SONIC_MODEL_ID
+              Value: !Ref NovaSonicModelId
+          Secrets:
+            - Name: LANGFUSE_PUBLIC_KEY
+              ValueFrom: !Sub '${LangfuseSecretArn}:PUBLIC_KEY::'
+            - Name: LANGFUSE_SECRET_KEY
+              ValueFrom: !Sub '${LangfuseSecretArn}:SECRET_KEY::'
+            - Name: LANGFUSE_HOST
+              ValueFrom: !Sub '${LangfuseSecretArn}:HOST::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: HttpListener
+    Properties:
+      Cluster: !Ref EcsCluster
+      ServiceName: 'voice-s2s-service'
+      TaskDefinition: !Ref EcsTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+      LoadBalancers:
+        - ContainerName: 'voice-s2s'
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+      HealthCheckGracePeriodSeconds: 60
+
+  # --------------------------------------------------------------------------
+  # Phase 2: Connect Lambdas & Infrastructure
+  # --------------------------------------------------------------------------
+  ConnectIntegrationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: 'ConnectIntegrationPolicy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'kinesisvideo:GetDataEndpoint'
+                  - 'kinesisvideo:GetMedia'
+                  - 's3:PutObject'
+                Resource: '*'
+
+  StartBotSessionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'voice-s2s-StartBotSession'
+      Runtime: nodejs20.x
+      Role: !GetAtt ConnectIntegrationRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const sessionId = `connect-${event.ContactId}`;
+              console.log('Starting Connect session:', sessionId);
+              return { sessionId, status: 'started' };
+          };
+
+  ProcessBotTurnLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'voice-s2s-ProcessBotTurn'
+      Runtime: nodejs20.x
+      Role: !GetAtt ConnectIntegrationRole.Arn
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              const { sessionId, audioS3Key } = event;
+              console.log('Processing turn for session:', sessionId);
+              return { responseAudioUrl: 's3://dummy/audio.wav', intent: 'continue' };
+          };
+  VoiceS2SContactFlow:
+    Type: AWS::Connect::ContactFlow
+    Properties:
+      InstanceArn: !Ref ConnectInstanceArn
+      Name: "CF-Voice-S2S-Bot"
+      Description: "Blended voice bot with Amazon Connect and Voice S2S Nova"
+      Type: "CONTACT_FLOW"
+      Content: !Sub |
+        {
+          "Version": "2019-10-30",
+          "StartAction": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+          "Metadata": {
+            "entryPointPosition": {
+              "x": 20,
+              "y": 20
+            },
+            "ActionMetadata": {
+              "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614": {
+                "position": {
+                  "x": 194.4,
+                  "y": 14.4
+                }
+              },
+              "82e9b9c9-55ca-49d6-b9b2-df08afce69bb": {
+                "position": {
+                  "x": 425.6,
+                  "y": 19.2
+                },
+                "dynamicMetadata": {}
+              },
+              "c196b2ae-fa15-468e-ad72-c51f4961d15c": {
+                "position": {
+                  "x": 1205.6,
+                  "y": 25.6
+                },
+                "parameters": {
+                  "LambdaFunctionARN": {
+                    "displayName": "voice-s2s-ProcessBotTurn"
+                  }
+                },
+                "dynamicMetadata": {}
+              },
+              "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf": {
+                "position": {
+                  "x": 932.8,
+                  "y": -3.2
+                },
+                "audioPrompt": {
+                  "duration": "0",
+                  "mode": "Beep",
+                  "name": "Beep.wav"
+                },
+                "dynamicMetadata": {
+                  "audioPrompt": true
+                }
+              },
+              "739dff43-8a3b-4860-93fb-c45472855cf8": {
+                "position": {
+                  "x": 1459.2,
+                  "y": -22.4
+                }
+              },
+              "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd": {
+                "position": {
+                  "x": 1726.4,
+                  "y": 182.4
+                }
+              },
+              "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37": {
+                "position": {
+                  "x": 1968,
+                  "y": 185.6
+                }
+              },
+              "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c": {
+                "position": {
+                  "x": 1422.4,
+                  "y": 427.2
+                }
+              },
+              "6d7350cb-22dd-4e67-ab92-808fcb97fd40": {
+                "position": {
+                  "x": 673.6,
+                  "y": 27.2
+                },
+                "parameters": {
+                  "LambdaFunctionARN": {
+                    "displayName": "voice-s2s-StartBotSession"
+                  }
+                },
+                "dynamicMetadata": {}
+              }
+            },
+            "Annotations": [],
+            "name": "CF-Voice-S2S-Bot",
+            "description": "Blended voice bot with Amazon Connect and Voice S2S Nova",
+            "type": "contactFlow"
+          },
+          "Actions": [
+            {
+              "Parameters": {
+                "FlowLoggingBehavior": "Enabled"
+              },
+              "Identifier": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
+              "Type": "UpdateFlowLoggingBehavior",
+              "Transitions": {
+                "NextAction": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb"
+              }
+            },
+            {
+              "Parameters": {
+                "MediaStreamingState": "Enabled",
+                "MediaStreamType": "Audio"
+              },
+              "Identifier": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb",
+              "Type": "UpdateMediaStreamingBehavior",
+              "Transitions": {
+                "NextAction": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
+                "Errors": [
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "LambdaFunctionARN": "${StartBotSessionLambda.Arn}",
+                "InvocationTimeLimitSeconds": "8"
+              },
+              "Identifier": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
+              "Type": "InvokeExternalResource",
+              "Transitions": {
+                "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+                "Errors": [
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "MaxTimeoutMs": "10000"
+              },
+              "Identifier": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+              "Type": "GetParticipantInput",
+              "Transitions": {
+                "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+                "Errors": [
+                  {
+                    "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "LambdaFunctionARN": "${ProcessBotTurnLambda.Arn}",
+                "InvocationTimeLimitSeconds": "8"
+              },
+              "Identifier": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
+              "Type": "InvokeExternalResource",
+              "Transitions": {
+                "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
+                "Errors": [
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "ComparisonValue": "$.External.intent"
+              },
+              "Identifier": "739dff43-8a3b-4860-93fb-c45472855cf8",
+              "Type": "Compare",
+              "Transitions": {
+                "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                "Conditions": [
+                  {
+                    "NextAction": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+                    "Condition": {
+                      "Operator": "Equals",
+                      "Operands": [
+                        "transfer"
+                      ]
+                    }
+                  },
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "Condition": {
+                      "Operator": "Equals",
+                      "Operands": [
+                        "end"
+                      ]
+                    }
+                  }
+                ],
+                "Errors": [
+                  {
+                    "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
+                    "ErrorType": "NoMatchingCondition"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+              },
+              "Identifier": "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd",
+              "Type": "UpdateRoutingProfile",
+              "Transitions": {
+                "NextAction": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
+                "Errors": [
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {},
+              "Identifier": "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37",
+              "Type": "TransferParticipantToQueue",
+              "Transitions": {
+                "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                "Errors": [
+                  {
+                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {},
+              "Identifier": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
+              "Type": "DisconnectParticipant",
+              "Transitions": {}
+            }
+          ]
+        }
+
+Outputs:
+  AlbUrl:
+    Description: 'HTTP URL of the ALB'
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
+  SessionLogsBucketName:
+    Description: 'S3 Bucket for Session Logs'
+    Value: !Ref SessionLogsBucket
