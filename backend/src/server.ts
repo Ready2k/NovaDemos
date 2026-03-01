@@ -4699,7 +4699,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 // WORKFLOW UI UPDATE: Capture inputs for ID&V
                 if (actualToolName === 'perform_idv_check') {
-                    const input: any = toolUse.content || toolUse.input || {};
+                    const input: any = toolUse.content ? JSON.parse(toolUse.content) : (toolUse.input || {});
                     if (!session.workflowChecks) session.workflowChecks = {};
 
                     // Store inputs for UI

@@ -2,10 +2,13 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Copy everything and install + build
+# Copy everything and install
 RUN apk add --no-cache python3 make g++ git
 COPY . .
-RUN npm run install:all --loglevel=verbose && npm run build
+# Build
+RUN npm run install:all && npm run build
+# Cleanup to save space (though this is the builder stage)
+RUN apk del python3 make g++ git
 
 # --- Runtime stage ---
 FROM node:22-alpine AS runtime
@@ -19,7 +22,6 @@ COPY --from=builder /app/backend/package.json  ./backend/package.json
 
 # Runtime assets needed by server.ts at startup
 COPY --from=builder /app/tools        ./tools
-COPY --from=builder /app/workflows    ./workflows
 COPY --from=builder /app/backend/prompts ./backend/prompts
 
 EXPOSE 8080
