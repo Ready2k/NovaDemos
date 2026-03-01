@@ -186,7 +186,8 @@ export default function Home() {
             updateLastMessage({
               content: cleanText,
               isFinal: true,
-              sentiment: message.sentiment
+              sentiment: message.sentiment,
+              acousticFeatures: message.acousticFeatures,
             });
           } else {
             // Otherwise add new final message
@@ -196,6 +197,7 @@ export default function Home() {
               timestamp: message.timestamp || Date.now(),
               isFinal: true,
               sentiment: message.sentiment,
+              acousticFeatures: message.acousticFeatures,
             });
           }
         } else {

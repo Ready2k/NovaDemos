@@ -18,12 +18,15 @@ export interface AudioMessage extends WebSocketMessage {
     audio: ArrayBuffer;
 }
 
+import type { AcousticFeatures } from './session';
+
 export interface TranscriptMessage extends WebSocketMessage {
     type: 'transcript';
     role: 'user' | 'assistant';
     text: string;
     isFinal: boolean;
     sentiment?: number;
+    acousticFeatures?: AcousticFeatures;
 }
 
 export interface ToolUseMessage extends WebSocketMessage {

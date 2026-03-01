@@ -1,0 +1,295 @@
+{
+  "sessionId": "0e5ab3d1-75c1-48a5-9a21-26e7ac8c2d65",
+  "startTime": 1772270934717,
+  "endTime": 1772271165841,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.",
+      "timestamp": 1772270934717,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1772270935932,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.How can I help today?",
+      "timestamp": 1772270936454,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'd like to check my account balance and recent transactions please.",
+      "timestamp": 1772270938712
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772270939504,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To check your balance and transactions, I need your account number and sort code.",
+      "timestamp": 1772270939505,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To check your balance and transactions, I need your account number and sort code.Could you please provide those details?",
+      "timestamp": 1772270941135,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, welcome to Barclays Bank. I’m your banking assistant.I can help with that. To check your balance and transactions, I need your account number and sort code.Could you please provide those details?",
+      "timestamp": 1772270941702,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Sure, my account number is 12345678.",
+      "timestamp": 1772270943443
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: request_details",
+      "timestamp": 1772270944235,
+      "metadata": {
+        "stepId": "request_details"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I can help with that. To check your balance and transactions, I need your account number and sort code.Thanks for the account number. I also need your 6-digit sort code to verify your identity.",
+      "timestamp": 1772270944236,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I can help with that. To check your balance and transactions, I need your account number and sort code.Thanks for the account number. I also need your 6-digit sort code to verify your identity.",
+      "timestamp": 1772270945782,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "My sort code is 112233.",
+      "timestamp": 1772270947488
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1772270948469,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Thanks. Let me verify those details now.",
+      "timestamp": 1772270948475,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1772270949972,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: agentcore_balance",
+      "timestamp": 1772270951627,
+      "toolName": "agentcore_balance",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: get_account_transactions",
+      "timestamp": 1772270952450,
+      "toolName": "get_account_transactions",
+      "toolInput": "{\"accountId\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: The balance is £1,200.00.",
+      "timestamp": 1772270952904,
+      "toolName": "agentcore_balance",
+      "result": "The balance is £1,200.00."
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}",
+      "timestamp": 1772270953911,
+      "toolName": "get_account_transactions",
+      "result": "{\"found\":true,\"accountId\":\"12345678\",\"count\":26,\"transactions\":[{\"date\":\"2026-01-14\",\"description\":\"Pret A Manger\",\"amount\":-4.5},{\"date\":\"2026-01-13\",\"description\":\"Tesco Express\",\"amount\":-32.15},{\"date\":\"2026-01-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2026-01-08\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2026-01-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2026-01-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2026-01-01\",\"description\":\"Council Tax DD\",\"amount\":-145},{\"date\":\"2025-12-24\",\"description\":\"Amazon UK Retail\",\"amount\":-85},{\"date\":\"2025-12-23\",\"description\":\"Sainsburys Big Shop\",\"amount\":-155.4},{\"date\":\"2025-12-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-12-12\",\"description\":\"TFL-Travel-CHG\",\"amount\":-5.6},{\"date\":\"2025-12-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-12-10\",\"description\":\"ABC-Holdings\",\"amount\":-4.5},{\"date\":\"2025-12-06\",\"description\":\"The Red Lion Pub\",\"amount\":-65},{\"date\":\"2025-12-05\",\"description\":\"Zara Fashion\",\"amount\":-45},{\"date\":\"2025-12-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-12-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-30\",\"description\":\"GBL-Bet-365-Online\",\"amount\":-50},{\"date\":\"2025-11-29\",\"description\":\"Waitrose Weekend\",\"amount\":-88.5},{\"date\":\"2025-11-20\",\"description\":\"TechGadgets Ltd\",\"amount\":-199.99},{\"date\":\"2025-11-20\",\"description\":\"British Gas DD\",\"amount\":-120},{\"date\":\"2025-11-15\",\"description\":\"Uber Rides\",\"amount\":-14.5},{\"date\":\"2025-11-12\",\"description\":\"Netflix\",\"amount\":-12},{\"date\":\"2025-11-05\",\"description\":\"EE Limited DD\",\"amount\":-45},{\"date\":\"2025-11-01\",\"description\":\"SO: Landlord Rent\",\"amount\":-1200},{\"date\":\"2025-11-01\",\"description\":\"Council Tax DD\",\"amount\":-145}]}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: show_balance",
+      "timestamp": 1772270954752,
+      "metadata": {
+        "stepId": "show_balance"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.",
+      "timestamp": 1772270954752,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Your account balance is £1,200.00.Let me get your recent transactions now.",
+      "timestamp": 1772270955623,
+      "type": "speculative"
+    },
+    {
+      "role": "user",
+      "text": "Great, thank you. Could you also please show me my last 2 transactions?",
+      "timestamp": 1772270960215
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772270981088,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, just checking in to see if you still need any help today?",
+      "timestamp": 1772270981088,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, just checking in to see if you still need any help today?",
+      "timestamp": 1772270982241,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help you today?",
+      "timestamp": 1772270984084
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, just checking in to see if you still need any help today?[DIALECT: en-GB|0.95] Hello again! How can I help you with today?",
+      "timestamp": 1772270984763,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello, just checking in to see if you still need any help today?[DIALECT: en-GB|0.95] Hello again! How can I help you with today?",
+      "timestamp": 1772270985625,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, how can I assist you today? What would you like help with?",
+      "timestamp": 1772270988233
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello again! How can I help you with today?[DIALECT: en-GB|0.95] I’m here to help. What would you like assistance with today?",
+      "timestamp": 1772270988921,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] Hello again! How can I help you with today?[DIALECT: en-GB|0.95] I’m here to help. What would you like assistance with today?",
+      "timestamp": 1772270989882,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me get started. Could you please provide your account number?",
+      "timestamp": 1772270991753
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: request_details",
+      "timestamp": 1772270992549,
+      "metadata": {
+        "stepId": "request_details"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I’m here to help. What would you like assistance with today?I’ll need both your account number and sort code to verify your identity.",
+      "timestamp": 1772270992549,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I’m here to help. What would you like assistance with today?I’ll need both your account number and sort code to verify your identity.Could you please share your 8-digit account number and 6-digit sort code?",
+      "timestamp": 1772270993813,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I’m here to help. What would you like assistance with today?I’ll need both your account number and sort code to verify your identity.Could you please share your 8-digit account number and 6-digit sort code?",
+      "timestamp": 1772270994966,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Certainly, my account number is 12345678 and my sort code is 112233.",
+      "timestamp": 1772270997184
+    },
+    {
+      "role": "assistant",
+      "text": "I’ll need both your account number and sort code to verify your identity.Thanks for sharing those details. Let me confirm them before I proceed.",
+      "timestamp": 1772270998122,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I have account number 12345678 and sort code 112233.",
+      "timestamp": 1772270999328,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "agentcore_balance",
+    "get_account_transactions",
+    "calculate_max_loan",
+    "check_credit_score",
+    "create_dispute_case",
+    "get_mortgage_rates",
+    "get_server_time",
+    "lookup_merchant_alias",
+    "manage_recent_interactions",
+    "perform_idv_check",
+    "search_knowledge_base",
+    "uk_branch_lookup",
+    "update_dispute_case",
+    "value_property"
+  ],
+  "usage": {
+    "inputTokens": 594,
+    "outputTokens": 0,
+    "totalTokens": 594,
+    "cost": 0.001782,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

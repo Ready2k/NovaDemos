@@ -985,6 +985,14 @@ interface Tool {
     };
 }
 
+interface AcousticFeatures {
+    energy: number;         // 0–1 (mean RMS normalised)
+    energyVariance: number; // 0–1 (std dev of RMS samples)
+    energyTrend: number;    // -1 (calming) to +1 (escalating)
+    speakingRate: number;   // words/sec
+    pauseCount: number;     // number of silent chunks
+}
+
 interface ClientSession {
     ws: WebSocket;
     sonicClient: SonicClient;
@@ -1082,6 +1090,15 @@ interface ClientSession {
     inactivityTimeout?: number; // Configurable timeout in seconds
     inactivityMaxChecks?: number; // Max number of checks before closing
     inactivityEnabled?: boolean; // Toggle inactivity detection
+
+    // Acoustic Feature Extraction
+    userTurnRmsSamples?: number[];  // RMS value per audio chunk for current user turn
+    userTurnStartTime?: number;     // Date.now() when first audio chunk arrives for this turn
+
+    // Duplicate Tool Call Queueing
+    // When Nova Sonic emits the same tool twice before the first result arrives, we queue the
+    // second ID here and re-deliver the real result once the first call completes.
+    pendingDuplicateToolIds?: Map<string, string[]>; // toolName → [toolUseId, ...]
 }
 
 // --- Helper for Broadcasting Workflow State ---
@@ -3219,6 +3236,13 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                     }
 
                     console.log(`[Server] Received audio chunk (Raw Nova): ${audioBuffer.length} bytes`);
+
+                    // Accumulate RMS samples for acoustic feature extraction
+                    const chunkRms = calculateRMS(audioBuffer);
+                    if (!session.userTurnStartTime) session.userTurnStartTime = Date.now();
+                    if (!session.userTurnRmsSamples) session.userTurnRmsSamples = [];
+                    session.userTurnRmsSamples.push(chunkRms);
+
                     // Ensure session is started
                     if (!sonicClient.getSessionId()) {
                         await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
@@ -3274,19 +3298,20 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                     console.log(`[Server] Auto-save parameters: accountNumber=${accountNumber}, sortCode=${sortCode}`);
 
-                    // Generate a simple summary from the transcript
-                    const interactionSummary = session.transcript
-                        .filter(t => t.role === 'user' || t.role === 'assistant')
-                        .map(t => `${t.role.toUpperCase()}: ${t.text}`)
-                        .join('\n')
-                        .substring(0, 500) + (session.transcript.length > 10 ? '...' : '');
+                    const interactionSummary = generateInteractionSummary(session);
+
+                    // Determine outcome from session state
+                    const toolsUsed = session.transcript.filter(t => t.role === 'tool_result').map(t => (t as any).toolName as string);
+                    let outcome = 'Completed';
+                    if (toolsUsed.includes('transfer_to_agent')) outcome = 'Escalated to Agent';
+                    else if (!session.isAuthenticated) outcome = 'Authentication Failed';
 
                     await agentCoreGatewayClient.callTool('manage_recent_interactions', {
                         action: 'PUBLISH',
                         accountNumber: accountNumber,
                         sortCode: sortCode,
-                        summary: interactionSummary || "No transcript available.",
-                        outcome: "Completed"
+                        summary: interactionSummary,
+                        outcome
                     });
                     console.log('[Server] ✅ History Auto-Saved Successfully.');
                 } catch (err) {
@@ -4412,13 +4437,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 messageSentiment = parseFloat(sentimentMatch[1]);
                             }
 
+                            // Compute acoustic features for user turns
+                            let acousticFeatures: AcousticFeatures | undefined;
+                            if (role === 'user' && session.userTurnRmsSamples && session.userTurnRmsSamples.length > 0 && session.userTurnStartTime) {
+                                const wordCount = (finalText.match(/\S+/g) || []).length;
+                                acousticFeatures = extractAcousticFeatures(session.userTurnRmsSamples, wordCount, session.userTurnStartTime);
+                                console.log('[Server] Acoustic features:', JSON.stringify(acousticFeatures));
+                            }
+
                             ws.send(JSON.stringify({
                                 type: 'transcript',
                                 role: role,
                                 text: finalText,
                                 isFinal: true,
                                 isStreaming: false,
-                                sentiment: messageSentiment
+                                sentiment: messageSentiment,
+                                acousticFeatures
                             }));
 
                             // Track message for deduplication (store original full response)
@@ -4489,24 +4523,20 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
 
             // CRITICAL FIX: AGGRESSIVE DEBOUNCING BY NAME WITHIN TURN
-            // If we have already called this tool name significantly recently in this turn (or even just once), we should suspect duplication.
-            // Nova sometimes emits multiple events for the same logical call if latency is high.
+            // Nova sometimes emits multiple toolUse events for the same logical call (high-latency race).
+            // Instead of sending a confusing "[SYSTEM] Duplicate..." message (which makes the model loop),
+            // queue the duplicate ID and re-deliver the real result once the first call completes.
             if (session.toolsCalledThisTurn && session.toolsCalledThisTurn.includes(actualToolName)) {
-                console.log(`[Server] 🛡️ AGGRESSIVE DEBOUNCE: Tool ${actualToolName} already called this turn. Ignoring duplicate. (Turn History: ${session.toolsCalledThisTurn.join(', ')})`);
+                console.log(`[Server] 🛡️ AGGRESSIVE DEBOUNCE: Tool ${actualToolName} already called this turn. Queuing ID for real result. (Turn History: ${session.toolsCalledThisTurn.join(', ')})`);
 
-                // CRITICAL FIX: Even if we debounce, we MUST send a result to Bedrock/Nova to unblock it.
-                // Otherwise it hangs waiting for the tool result until timeout.
-                if (session.sonicClient && session.sonicClient.getSessionId()) {
-                    await session.sonicClient.sendToolResult(
-                        toolUse.toolUseId,
-                        {
-                            text: `[SYSTEM] Duplicate tool invocation skipped. The action '${actualToolName}' was already performed in this turn.`
-                        },
-                        false
-                    );
-                    // Mark as processed so we don't try again if re-emitted
-                    if (session.processedToolIds) session.processedToolIds.add(toolUse.toolUseId);
-                }
+                if (!session.pendingDuplicateToolIds) session.pendingDuplicateToolIds = new Map();
+                const pending = session.pendingDuplicateToolIds.get(actualToolName) || [];
+                pending.push(toolUse.toolUseId);
+                session.pendingDuplicateToolIds.set(actualToolName, pending);
+                console.log(`[Server] 📋 Queued duplicate ${toolUse.toolUseId} for ${actualToolName} (${pending.length} queued)`);
+
+                // Mark as processed so we don't re-enter this block if the same ID re-emits
+                if (session.processedToolIds) session.processedToolIds.add(toolUse.toolUseId);
                 return;
             }
 
@@ -4869,6 +4899,19 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
 
+                            // Flush any duplicate IDs queued while this call was in-flight
+                            const pendingDupes = session.pendingDuplicateToolIds?.get(actualToolName) || [];
+                            if (pendingDupes.length > 0) {
+                                console.log(`[Server] 📋 Flushing ${pendingDupes.length} queued duplicate(s) for ${actualToolName} with real result`);
+                                for (const dupeId of pendingDupes) {
+                                    if (session.sonicClient && session.sonicClient.getSessionId()) {
+                                        await session.sonicClient.sendToolResult(dupeId, cleanResult, false);
+                                        console.log(`[Server] 📋 Re-delivered real result to duplicate ID: ${dupeId}`);
+                                    }
+                                }
+                                session.pendingDuplicateToolIds?.delete(actualToolName);
+                            }
+
                             // Add Tool Result to Transcript History
                             session.transcript.push({
                                 role: 'tool_result',
@@ -5026,6 +5069,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Reset flow state for next interaction
             session.hasFlowedAudio = false;
             session.toolsCalledThisTurn = []; // Clear tool tracker
+            session.pendingDuplicateToolIds = new Map(); // Clear any leftover queued duplicate IDs
+            // Reset acoustic accumulation for next user turn
+            session.userTurnRmsSamples = [];
+            session.userTurnStartTime = undefined;
             // Agent finished speaking - restart inactivity timer waiting for user
             session.inactivityCheckCount = 0;
             startInactivityTimer(session);
@@ -5058,6 +5105,84 @@ process.on('SIGINT', async () => {
 });
 
 /**
+ * Generate a concise, human-readable interaction summary for manage_recent_interactions.
+ * Produces a bullet-point list of what the customer did, suitable for agent history review.
+ */
+function generateInteractionSummary(session: ClientSession): string {
+    const lines: string[] = [];
+
+    // Strip all internal model tags from display text
+    function clean(text: string): string {
+        return text
+            .replace(/\[DIALECT:[^\]]+\]/gi, '')
+            .replace(/\[SENTIMENT:[^\]]+\]/gi, '')
+            .replace(/\[STEP:[^\]]+\]/gi, '')
+            .replace(/\[HIDDEN\][^\n]*/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // Deduplicate transcript entries: only keep the last final version of each role-run
+    const seen = new Set<string>();
+    const uniqueTranscript = session.transcript.filter(t => {
+        if (t.role === 'tool_result') return true; // always keep tool results
+        const key = `${t.role}:${clean(t.text || '')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    // --- Authentication ---
+    if (session.isAuthenticated) {
+        lines.push('- Authentication: IDV passed');
+    }
+
+    // --- User's primary intent (first user message, cleaned) ---
+    const firstUser = uniqueTranscript.find(t => t.role === 'user');
+    if (firstUser) {
+        const intent = clean(firstUser.text || '').substring(0, 120);
+        if (intent) lines.push(`- Customer request: "${intent}"`);
+    }
+
+    // --- Tool outcomes (map tool names to plain English) ---
+    const TOOL_LABELS: Record<string, (result: string) => string> = {
+        agentcore_balance:          r => `Balance enquiry: ${r}`,
+        get_account_transactions:   () => 'Transactions reviewed',
+        create_dispute_case:        r => `Dispute raised: ${r.substring(0, 80)}`,
+        update_dispute_case:        r => `Dispute updated: ${r.substring(0, 80)}`,
+        calculate_max_loan:         r => `Loan eligibility checked: ${r}`,
+        check_credit_score:         r => `Credit score checked: ${r}`,
+        get_mortgage_rates:         () => 'Mortgage rates reviewed',
+        uk_branch_lookup:           r => `Branch looked up: ${r.substring(0, 60)}`,
+        value_property:             r => `Property valued: ${r}`,
+        lookup_merchant_alias:      r => `Merchant looked up: ${r.substring(0, 60)}`,
+        get_server_time:            () => 'Server time checked',
+        search_knowledge_base:      () => 'Knowledge base searched',
+    };
+
+    const addedTools = new Set<string>();
+    for (const entry of uniqueTranscript) {
+        if (entry.role !== 'tool_result') continue;
+        const toolName = (entry as any).toolName as string | undefined;
+        if (!toolName || toolName === 'manage_recent_interactions' || toolName === 'perform_idv_check' || toolName === 'start_workflow') continue;
+        if (addedTools.has(toolName)) continue; // only mention each tool once
+        addedTools.add(toolName);
+
+        const rawResult = clean(String((entry as any).result || entry.text || ''));
+        const labelFn = TOOL_LABELS[toolName];
+        const line = labelFn ? labelFn(rawResult) : `${toolName.replace(/_/g, ' ')}: completed`;
+        lines.push(`- ${line}`);
+    }
+
+    // --- Fallback if nothing actionable was captured ---
+    if (lines.length === 0) {
+        lines.push('- General enquiry (no transactions performed)');
+    }
+
+    return lines.join('\n');
+}
+
+/**
  * Calculate Root Mean Square (RMS) of audio buffer
  */
 function calculateRMS(buffer: Buffer): number {
@@ -5071,4 +5196,51 @@ function calculateRMS(buffer: Buffer): number {
     }
 
     return Math.sqrt(sum / int16Buffer.length);
+}
+
+const VAD_THRESHOLD = 100; // RMS below this value indicates silence / pause
+
+/**
+ * Extract acoustic/prosodic features from accumulated RMS samples for a user turn.
+ * All computation is in-process; no external API is called.
+ */
+function extractAcousticFeatures(
+    rmsSamples: number[],
+    wordCount: number,
+    startTime: number
+): AcousticFeatures {
+    if (rmsSamples.length === 0) {
+        return { energy: 0, energyVariance: 0, energyTrend: 0, speakingRate: 0, pauseCount: 0 };
+    }
+
+    // energy: mean RMS normalised to 0-1 (max PCM16 amplitude = 32768)
+    const mean = rmsSamples.reduce((a, b) => a + b, 0) / rmsSamples.length;
+    const energy = Math.min(mean / 32768, 1);
+
+    // energyVariance: std dev of samples, normalised to 0-1
+    const variance = rmsSamples.reduce((sum, v) => sum + (v - mean) ** 2, 0) / rmsSamples.length;
+    const energyVariance = Math.min(Math.sqrt(variance) / 32768, 1);
+
+    // energyTrend: slope of a linear regression over the RMS sequence, clamped to -1..+1
+    // Positive = rising energy (escalating), Negative = falling (calming)
+    const n = rmsSamples.length;
+    const xMean = (n - 1) / 2;
+    let numerator = 0;
+    let denominator = 0;
+    for (let i = 0; i < n; i++) {
+        numerator += (i - xMean) * (rmsSamples[i] - mean);
+        denominator += (i - xMean) ** 2;
+    }
+    const slope = denominator !== 0 ? numerator / denominator : 0;
+    // A slope of ~500 RMS units per chunk is considered extreme; normalise relative to that
+    const energyTrend = Math.max(-1, Math.min(1, slope / 500));
+
+    // speakingRate: words per second
+    const durationSec = (Date.now() - startTime) / 1000;
+    const speakingRate = durationSec > 0.1 ? wordCount / durationSec : 0;
+
+    // pauseCount: number of chunks where RMS was below the VAD threshold
+    const pauseCount = rmsSamples.filter(v => v < VAD_THRESHOLD).length;
+
+    return { energy, energyVariance, energyTrend, speakingRate, pauseCount };
 }

@@ -55,6 +55,16 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
     const { formattedDuration, inputTokens, outputTokens, cost, formatCost, formatTokens } = useSessionStats();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
+    // Latest acoustic features from the most recent user message that has them
+    const latestAcoustic = useMemo(() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'user' && messages[i].acousticFeatures) {
+                return messages[i].acousticFeatures!;
+            }
+        }
+        return null;
+    }, [messages]);
+
     const messagesWithSentiment = useMemo(() => {
         return messages.map(m => {
             if (m.sentiment !== undefined && !isNaN(m.sentiment)) {
@@ -65,9 +75,13 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
         });
     }, [messages]);
 
-    const averageSentiment = messagesWithSentiment.length > 0
-        ? messagesWithSentiment.reduce((sum, m) => sum + (m.sentiment || 0), 0) / messagesWithSentiment.length
-        : 0;
+    const averageSentiment = useMemo(() => {
+        if (messagesWithSentiment.length === 0) return 0;
+        const base = messagesWithSentiment.reduce((sum, m) => sum + (m.sentiment || 0), 0) / messagesWithSentiment.length;
+        // Acoustic adjustment: high energy + high variance signals agitation → push sentiment negative
+        const acousticAdjustment = latestAcoustic && latestAcoustic.energy > 0.6 && latestAcoustic.energyVariance > 0.3 ? -0.2 : 0;
+        return Math.max(-1, Math.min(1, base + acousticAdjustment));
+    }, [messagesWithSentiment, latestAcoustic]);
 
     const sentimentPercentage = ((averageSentiment + 1) * 50).toFixed(0);
 
@@ -206,6 +220,59 @@ export default function InsightPanel({ className, isDarkMode = true }: InsightPa
                     </div>
                 </div>
             </div>
+
+            {/* Acoustic Signal */}
+            {latestAcoustic && (
+                <div className={cn(
+                    "p-3 rounded-xl transition-colors duration-300 flex flex-col gap-3",
+                    isDarkMode ? "bg-ink-surface/50" : "bg-white border border-gray-200"
+                )}>
+                    <div className={cn(
+                        "uppercase tracking-wider font-semibold text-[10px] transition-colors duration-300",
+                        isDarkMode ? "text-ink-text-muted" : "!text-gray-500"
+                    )}>Acoustic Signal</div>
+
+                    {/* Energy bar */}
+                    <div>
+                        <div className={cn("uppercase tracking-wider font-semibold text-[10px] mb-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>Energy</div>
+                        <div className={cn("w-full h-2 rounded-full overflow-hidden", isDarkMode ? "bg-white/10" : "bg-gray-200")}>
+                            <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                    width: `${Math.round(latestAcoustic.energy * 100)}%`,
+                                    backgroundColor: latestAcoustic.energy > 0.6 ? '#f87171' : latestAcoustic.energy > 0.3 ? '#fbbf24' : '#34d399'
+                                }}
+                            />
+                        </div>
+                        <div className={cn("text-[10px] mt-0.5", isDarkMode ? "text-ink-text-muted" : "text-gray-400")}>
+                            {Math.round(latestAcoustic.energy * 100)}%
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                        <StatRow
+                            label="Speaking Rate"
+                            isDarkMode={isDarkMode}
+                            value={`${latestAcoustic.speakingRate.toFixed(1)} w/s`}
+                        />
+                        <StatRow
+                            label="Pauses"
+                            isDarkMode={isDarkMode}
+                            value={String(latestAcoustic.pauseCount)}
+                        />
+                        <StatRow
+                            label="Trend"
+                            isDarkMode={isDarkMode}
+                            value={latestAcoustic.energyTrend > 0.15 ? '↑ Escalating' : latestAcoustic.energyTrend < -0.15 ? '↓ Calming' : '→ Stable'}
+                        />
+                        <StatRow
+                            label="Volatility"
+                            isDarkMode={isDarkMode}
+                            value={latestAcoustic.energyVariance > 0.3 ? 'High' : latestAcoustic.energyVariance > 0.1 ? 'Med' : 'Low'}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* Session Stats */}
             <div className={cn(

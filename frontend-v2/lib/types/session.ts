@@ -1,5 +1,13 @@
 // Session and transcript types
 
+export interface AcousticFeatures {
+    energy: number;
+    energyVariance: number;
+    energyTrend: number;
+    speakingRate: number;
+    pauseCount: number;
+}
+
 export interface Message {
     role: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result' | 'tool';
     content: string;
@@ -10,6 +18,7 @@ export interface Message {
     feedback?: 'up' | 'down';
     type?: 'final' | 'speculative' | 'tool_use' | 'tool_result' | 'workflow_step';
     metadata?: any;
+    acousticFeatures?: AcousticFeatures;
 }
 
 export interface Session {
@@ -30,6 +39,8 @@ export interface Session {
     lastLatency?: number;
     avgLatency?: number;
     latencyTurns?: number;
+    lastEnergy?: number;
+    lastSpeakingRate?: number;
 }
 
 export interface SessionStats {
