@@ -1,10 +1,22 @@
 #!/bin/bash
 
 # A simple script to stop AWS resources that cost money when left running
-# Resources covered: EC2 instances, RDS DB instances, and SageMaker Notebook instances
+# Resources covered: EC2 instances, RDS DB instances, SageMaker Notebook instances, and ECS Services
 #
 # SBC Elastic IP: disassociated before stopping the SBC instance so that AWS does
 # not charge for an unassociated EIP while the instance is stopped (~$0.005/hr).
+
+# Stop the AWS CLI from using a pager
+export AWS_PAGER=""
+
+# Quick check to see if AWS CLI is configured with valid credentials and a default region
+if ! aws sts get-caller-identity > /dev/null 2>&1; then
+    echo "========================================="
+    echo "ERROR: AWS credentials missing, expired, or no default region set!"
+    echo "Please ensure you have authenticated (e.g., aws sso login) and have a region set."
+    echo "========================================="
+    exit 1
+fi
 
 # ── SBC config ─────────────────────────────────────────────────────────────────
 SBC_INSTANCE_ID="i-0ecafa787315efb44"
@@ -85,6 +97,33 @@ if [ -n "$RUNNING_SAGEMAKER" ] && [ "$RUNNING_SAGEMAKER" != "None" ]; then
     done
 else
     echo "  -> No active SageMaker Notebooks found."
+fi
+echo ""
+
+# 4. Stop all running ECS Services (scale to 0)
+echo "Checking for active ECS Services..."
+CLUSTERS=$(aws ecs list-clusters --query "clusterArns" --output text 2>/dev/null)
+
+if [ -n "$CLUSTERS" ] && [ "$CLUSTERS" != "None" ]; then
+    ECS_FOUND=false
+    for CLUSTER in $CLUSTERS; do
+        SERVICES=$(aws ecs list-services --cluster "$CLUSTER" --query "serviceArns" --output text 2>/dev/null)
+        if [ -n "$SERVICES" ] && [ "$SERVICES" != "None" ]; then
+            for SERVICE in $SERVICES; do
+                DESIRED_COUNT=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query "services[0].desiredCount" --output text 2>/dev/null)
+                if [ -n "$DESIRED_COUNT" ] && [ "$DESIRED_COUNT" -gt 0 ] 2>/dev/null; then
+                    echo "  - Stopping ECS Service ${SERVICE##*/} in cluster ${CLUSTER##*/}..."
+                    aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 > /dev/null 2>&1
+                    ECS_FOUND=true
+                fi
+            done
+        fi
+    done
+    if [ "$ECS_FOUND" = false ]; then
+        echo "  -> No active ECS Services found."
+    fi
+else
+    echo "  -> No ECS Clusters found."
 fi
 echo ""
 
