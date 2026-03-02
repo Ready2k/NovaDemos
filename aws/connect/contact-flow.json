@@ -1,322 +1,156 @@
 {
     "Version": "2019-10-30",
-    "StartAction": "5443b9b0-7a63-41e7-8840-cd0832dfdc35",
+    "StartAction": "b0000001-0000-0000-0000-000000000001",
     "Metadata": {
-        "entryPointPosition": {
-            "x": -950.4,
-            "y": 163.2
-        },
+        "entryPointPosition": { "x": 20, "y": 20 },
         "ActionMetadata": {
-            "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e": {
-                "position": {
-                    "x": 826.4,
-                    "y": 261.6
-                },
-                "conditions": [],
+            "b0000001-0000-0000-0000-000000000001": { "position": { "x": 20, "y": 20 } },
+            "b0000001-0000-0000-0000-000000000002": { "position": { "x": 280, "y": 20 }, "dynamicMetadata": {} },
+            "b0000001-0000-0000-0000-000000000003": { "position": { "x": 540, "y": 20 }, "dynamicMetadata": {} },
+            "b0000001-0000-0000-0000-000000000004": { "position": { "x": 800, "y": 20 } },
+            "b0000001-0000-0000-0000-000000000005": { "position": { "x": 280, "y": 280 }, "dynamicMetadata": {} },
+            "b0000001-0000-0000-0000-000000000006": { "position": { "x": 540, "y": 280 } },
+            "b0000001-0000-0000-0000-000000000007": {
+                "position": { "x": 800, "y": 280 },
                 "conditionMetadata": [
-                    {
-                        "id": "5618b428-e42d-412d-b035-d7c5b52585ab",
-                        "operator": {
-                            "name": "Equals",
-                            "value": "Equals",
-                            "shortDisplay": "="
-                        },
-                        "value": "transfer"
-                    },
-                    {
-                        "id": "2d8471b1-dd60-49ea-b712-bfefae78e8fe",
-                        "operator": {
-                            "name": "Equals",
-                            "value": "Equals",
-                            "shortDisplay": "="
-                        },
-                        "value": "end"
-                    }
+                    { "id": "cond-transfer", "operator": { "name": "Equals", "value": "Equals", "shortDisplay": "=" }, "value": "transfer" },
+                    { "id": "cond-end",      "operator": { "name": "Equals", "value": "Equals", "shortDisplay": "=" }, "value": "end" }
                 ]
             },
-            "acaeea36-f22c-48ee-bb83-cc6440ae6f5f": {
-                "position": {
-                    "x": 1152.8,
-                    "y": 188
-                }
-            },
-            "3c586622-d5b9-45ed-849a-39c0ad7126d7": {
-                "position": {
-                    "x": 1717.6,
-                    "y": 777.6
-                }
-            },
-            "5443b9b0-7a63-41e7-8840-cd0832dfdc35": {
-                "position": {
-                    "x": -956.8,
-                    "y": 394.4
-                }
-            },
-            "1d8fb22a-0d79-43a4-8679-633da04431ed": {
-                "position": {
-                    "x": 381.6,
-                    "y": 284.8
-                }
-            },
-            "57ca79bd-a6aa-456c-81d9-c7e1077fd5fd": {
-                "position": {
-                    "x": -936.8,
-                    "y": 666.4
-                },
-                "toCustomer": true,
-                "fromCustomer": true
-            },
-            "6ca89536-daeb-4183-b68f-67058d58e3c7": {
-                "position": {
-                    "x": 1367.2,
-                    "y": 742.4
-                }
-            },
-            "2a577f44-2df8-47f0-adce-b0e2926277b4": {
-                "position": {
-                    "x": 74.4,
-                    "y": 390.4
-                },
-                "parameters": {
-                    "LambdaFunctionARN": {
-                        "displayName": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-ProcessBotTurn"
-                    }
-                },
-                "dynamicMetadata": {}
-            },
-            "65bc25b2-3418-4ff7-b4fb-a2d2baead88b": {
-                "position": {
-                    "x": -528.8,
-                    "y": 593.6
-                },
-                "parameters": {
-                    "LambdaFunctionARN": {
-                        "displayName": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-StartBotSession"
-                    }
-                },
-                "dynamicMetadata": {}
-            },
-            "7c9a1cac-398b-4890-adb0-e339fa8c40cb": {
-                "position": {
-                    "x": -244,
-                    "y": 432
-                },
-                "conditionMetadata": []
-            }
+            "b0000001-0000-0000-0000-000000000008": { "position": { "x": 1060, "y": 400 } },
+            "b0000001-0000-0000-0000-000000000009": { "position": { "x": 1060, "y": 20 } },
+            "b0000001-0000-0000-0000-000000000010": { "position": { "x": 1320, "y": 20 } }
         },
         "Annotations": [],
-        "name": "James_test_draft",
-        "description": "",
-        "type": "contactFlow",
-        "status": "published",
-        "hash": {}
+        "name": "CF-Voice-S2S-KVS-Bridge",
+        "description": "Real-time KVS Nova Sonic bridge — ECS streams audio, Lambda polls for WAV result",
+        "type": "contactFlow"
     },
     "Actions": [
         {
-            "Parameters": {
-                "ComparisonValue": "$.External.intent"
-            },
-            "Identifier": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-            "Type": "Compare",
-            "Transitions": {
-                "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                "Conditions": [
-                    {
-                        "NextAction": "acaeea36-f22c-48ee-bb83-cc6440ae6f5f",
-                        "Condition": {
-                            "Operator": "Equals",
-                            "Operands": [
-                                "transfer"
-                            ]
-                        }
-                    },
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "Condition": {
-                            "Operator": "Equals",
-                            "Operands": [
-                                "end"
-                            ]
-                        }
-                    }
-                ],
-                "Errors": [
-                    {
-                        "NextAction": "7c9a1cac-398b-4890-adb0-e339fa8c40cb",
-                        "ErrorType": "NoMatchingCondition"
-                    }
-                ]
-            }
-        },
-        {
-            "Parameters": {},
-            "Identifier": "acaeea36-f22c-48ee-bb83-cc6440ae6f5f",
-            "Type": "TransferContactToQueue",
-            "Transitions": {
-                "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                "Errors": [
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "QueueAtCapacity"
-                    },
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "NoMatchingError"
-                    }
-                ]
-            }
-        },
-        {
-            "Parameters": {},
-            "Identifier": "3c586622-d5b9-45ed-849a-39c0ad7126d7",
-            "Type": "DisconnectParticipant",
-            "Transitions": {}
-        },
-        {
-            "Parameters": {
-                "FlowLoggingBehavior": "Enabled"
-            },
-            "Identifier": "5443b9b0-7a63-41e7-8840-cd0832dfdc35",
+            "Identifier": "b0000001-0000-0000-0000-000000000001",
             "Type": "UpdateFlowLoggingBehavior",
-            "Transitions": {
-                "NextAction": "57ca79bd-a6aa-456c-81d9-c7e1077fd5fd"
-            }
+            "Parameters": { "FlowLoggingBehavior": "Enabled" },
+            "Transitions": { "NextAction": "b0000001-0000-0000-0000-000000000002" }
         },
         {
-            "Parameters": {
-                "Text": "$.External.responseText"
-            },
-            "Identifier": "1d8fb22a-0d79-43a4-8679-633da04431ed",
-            "Type": "MessageParticipant",
-            "Transitions": {
-                "NextAction": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-                "Errors": [
-                    {
-                        "NextAction": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-                        "ErrorType": "NoMatchingError"
-                    }
-                ]
-            }
-        },
-        {
+            "Identifier": "b0000001-0000-0000-0000-000000000002",
+            "Type": "UpdateContactMediaStreamingBehavior",
             "Parameters": {
                 "MediaStreamingState": "Enabled",
                 "MediaStreamType": "Audio",
                 "Participants": [
-                    {
-                        "ParticipantType": "Customer",
-                        "MediaDirections": [
-                            "To",
-                            "From"
-                        ]
-                    }
+                    { "ParticipantType": "Customer", "MediaDirections": ["To", "From"] }
                 ]
             },
-            "Identifier": "57ca79bd-a6aa-456c-81d9-c7e1077fd5fd",
-            "Type": "UpdateContactMediaStreamingBehavior",
             "Transitions": {
-                "NextAction": "65bc25b2-3418-4ff7-b4fb-a2d2baead88b",
-                "Errors": [
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "NoMatchingError"
-                    }
-                ]
+                "NextAction": "b0000001-0000-0000-0000-000000000003",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000009", "ErrorType": "NoMatchingError" }]
             }
         },
         {
-            "Parameters": {
-                "MediaStreamingState": "Disabled",
-                "Participants": [
-                    {
-                        "ParticipantType": "Customer",
-                        "MediaDirections": [
-                            "To",
-                            "From"
-                        ]
-                    }
-                ],
-                "MediaStreamType": "Audio"
-            },
-            "Identifier": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-            "Type": "UpdateContactMediaStreamingBehavior",
-            "Transitions": {
-                "NextAction": "3c586622-d5b9-45ed-849a-39c0ad7126d7",
-                "Errors": [
-                    {
-                        "NextAction": "3c586622-d5b9-45ed-849a-39c0ad7126d7",
-                        "ErrorType": "NoMatchingError"
-                    }
-                ]
-            }
-        },
-        {
-            "Parameters": {
-                "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-ProcessBotTurn",
-                "InvocationTimeLimitSeconds": "25",
-                "InvocationType": "SYNCHRONOUS",
-                "ResponseValidation": {
-                    "ResponseType": "JSON"
-                }
-            },
-            "Identifier": "2a577f44-2df8-47f0-adce-b0e2926277b4",
+            "Identifier": "b0000001-0000-0000-0000-000000000003",
             "Type": "InvokeLambdaFunction",
-            "Transitions": {
-                "NextAction": "1d8fb22a-0d79-43a4-8679-633da04431ed",
-                "Errors": [
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "NoMatchingError"
-                    }
-                ]
-            }
-        },
-        {
             "Parameters": {
-                "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-StartBotSession",
+                "LambdaFunctionARN": "arn:aws:lambda:us-east-1:388660028061:function:voice-s2s-StartBotSession",
                 "InvocationTimeLimitSeconds": "8",
                 "InvocationType": "SYNCHRONOUS",
-                "ResponseValidation": {
-                    "ResponseType": "JSON"
-                }
+                "ResponseValidation": { "ResponseType": "JSON" }
             },
-            "Identifier": "65bc25b2-3418-4ff7-b4fb-a2d2baead88b",
-            "Type": "InvokeLambdaFunction",
             "Transitions": {
-                "NextAction": "7c9a1cac-398b-4890-adb0-e339fa8c40cb",
-                "Errors": [
+                "NextAction": "b0000001-0000-0000-0000-000000000004",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000009", "ErrorType": "NoMatchingError" }]
+            }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000004",
+            "Type": "MessageParticipant",
+            "Parameters": {
+                "Text": "Thank you for calling. Please hold for a moment while I connect you.",
+                "TextToSpeechType": "text",
+                "LanguageCode": "en-GB"
+            },
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000005",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000005", "ErrorType": "NoMatchingError" }]
+            }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000005",
+            "Type": "InvokeLambdaFunction",
+            "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:us-east-1:388660028061:function:voice-s2s-GetBotResult",
+                "InvocationTimeLimitSeconds": "8",
+                "InvocationType": "SYNCHRONOUS",
+                "ResponseValidation": { "ResponseType": "JSON" }
+            },
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000006",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000009", "ErrorType": "NoMatchingError" }]
+            }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000006",
+            "Type": "MessageParticipant",
+            "Parameters": {
+                "Prompt": { "S3Uri": "$.External.audioS3Uri" }
+            },
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000007",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000007", "ErrorType": "NoMatchingError" }]
+            }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000007",
+            "Type": "Compare",
+            "Parameters": { "ComparisonValue": "$.External.intent" },
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000005",
+                "Conditions": [
                     {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "NoMatchingError"
+                        "NextAction": "b0000001-0000-0000-0000-000000000008",
+                        "Condition": { "Operator": "Equals", "Operands": ["transfer"] }
+                    },
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "Condition": { "Operator": "Equals", "Operands": ["end"] }
                     }
+                ],
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000005", "ErrorType": "NoMatchingCondition" }]
+            }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000008",
+            "Type": "TransferContactToQueue",
+            "Parameters": {},
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000009",
+                "Errors": [
+                    { "NextAction": "b0000001-0000-0000-0000-000000000009", "ErrorType": "QueueAtCapacity" },
+                    { "NextAction": "b0000001-0000-0000-0000-000000000009", "ErrorType": "NoMatchingError" }
                 ]
             }
         },
         {
+            "Identifier": "b0000001-0000-0000-0000-000000000009",
+            "Type": "UpdateContactMediaStreamingBehavior",
             "Parameters": {
-                "StoreInput": "False",
-                "InputTimeLimitSeconds": "5",
-                "Text": " "
-            },
-            "Identifier": "7c9a1cac-398b-4890-adb0-e339fa8c40cb",
-            "Type": "GetParticipantInput",
-            "Transitions": {
-                "NextAction": "2a577f44-2df8-47f0-adce-b0e2926277b4",
-                "Errors": [
-                    {
-                        "NextAction": "2a577f44-2df8-47f0-adce-b0e2926277b4",
-                        "ErrorType": "InputTimeLimitExceeded"
-                    },
-                    {
-                        "NextAction": "2a577f44-2df8-47f0-adce-b0e2926277b4",
-                        "ErrorType": "NoMatchingCondition"
-                    },
-                    {
-                        "NextAction": "6ca89536-daeb-4183-b68f-67058d58e3c7",
-                        "ErrorType": "NoMatchingError"
-                    }
+                "MediaStreamingState": "Disabled",
+                "MediaStreamType": "Audio",
+                "Participants": [
+                    { "ParticipantType": "Customer", "MediaDirections": ["To", "From"] }
                 ]
+            },
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000010",
+                "Errors": [{ "NextAction": "b0000001-0000-0000-0000-000000000010", "ErrorType": "NoMatchingError" }]
             }
+        },
+        {
+            "Identifier": "b0000001-0000-0000-0000-000000000010",
+            "Type": "DisconnectParticipant",
+            "Parameters": {},
+            "Transitions": {}
         }
     ]
 }

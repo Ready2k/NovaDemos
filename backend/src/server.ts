@@ -13,6 +13,7 @@ import { SimulationService } from './simulation-service';
 
 import { formatVoicesForFrontend } from './voice-service';
 import { PromptService } from './services/prompt-service';
+import { ConnectSessionManager, ConnectSessionOptions } from './connect-session-manager';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
@@ -1219,6 +1220,9 @@ function stopInactivityTimer(session: ClientSession) {
 // --- Serve Frontend ---
 const activeSessions = new Map<WebSocket, ClientSession>();
 
+// ── Amazon Connect PSTN bridge ────────────────────────────────────────────────
+const connectSessionManager = new ConnectSessionManager();
+
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
     // Strip query parameters for routing
@@ -1239,6 +1243,70 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('OK');
+        return;
+    }
+
+    // ── POST /connect/call-start ──────────────────────────────────────────────
+    // Called by StartBotSession Lambda when a new Connect call arrives.
+    // Body: { contactId, streamArn, startFragment, startTimestamp, instanceArn }
+    if (req.method === 'POST' && pathname === '/connect/call-start') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { contactId, streamArn, startFragment, startTimestamp, instanceArn } = JSON.parse(body);
+                if (!contactId || !streamArn) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'contactId and streamArn are required' }));
+                    return;
+                }
+                const sessionId = `connect-${contactId}`;
+                const opts: ConnectSessionOptions = {
+                    contactId, sessionId, streamArn,
+                    startFragment:  startFragment  || '',
+                    startTimestamp: startTimestamp || null,
+                    instanceArn:    instanceArn   || '',
+                };
+                console.log(`[Server] Connect call-start: contactId=${contactId}`);
+                // Fire-and-forget — createSession resolves once session handshake is done.
+                connectSessionManager.createSession(opts).catch(e =>
+                    console.error('[Server] ConnectSessionManager.createSession failed:', e)
+                );
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ sessionId }));
+            } catch (e: any) {
+                console.error('[Server] /connect/call-start error:', e);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // ── POST /connect/call-end ────────────────────────────────────────────────
+    // Called by Connect (or a Lambda) when the call disconnects.
+    // Body: { contactId }
+    if (req.method === 'POST' && pathname === '/connect/call-end') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { contactId } = JSON.parse(body);
+                if (!contactId) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'contactId is required' }));
+                    return;
+                }
+                console.log(`[Server] Connect call-end: contactId=${contactId}`);
+                await connectSessionManager.endSession(contactId);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+            } catch (e: any) {
+                console.error('[Server] /connect/call-end error:', e);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
         return;
     }
 

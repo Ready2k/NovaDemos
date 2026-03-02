@@ -27,6 +27,10 @@ Parameters:
     Type: String
     Description: 'S3 key for the KVS bridge Lambda zip — produced by aws/lambdas/build.sh'
     Default: 'lambdas/kvs-bridge.zip'
+  EcsEndpoint:
+    Type: String
+    Description: 'Internal HTTP URL for the ECS service (e.g. http://internal-alb-dns or http://localhost:8080 for local dev). Used by StartBotSession Lambda to notify ECS of new calls.'
+    Default: ''
 
 Conditions:
   HasCert: !Not [!Equals [!Ref CertificateArn, '']]
@@ -156,8 +160,24 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
+  # Allow Amazon Connect to read WAV response files that ECS uploads.
+  SessionLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SessionLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: connect.amazonaws.com
+            Action: 's3:GetObject'
+            Resource: !Sub '${SessionLogsBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+
   # DynamoDB session state table for the KVS bridge Lambdas.
-  # Keyed on sessionId (= "connect-<ContactId>").  TTL auto-expires rows after 2 hours.
   VoiceSessionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -337,6 +357,18 @@ Resources:
                 Action:
                   - 'cloudwatch:PutMetricData'
                 Resource: '*'
+              # KVS real-time streaming (Connect KVS bridge)
+              - Effect: Allow
+                Action:
+                  - 'kinesisvideo:GetDataEndpoint'
+                  - 'kinesisvideo:GetMedia'
+                Resource: '*'
+              # DynamoDB access for Connect session state
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:UpdateItem'
+                Resource: !GetAtt VoiceSessionsTable.Arn
 
   EcsTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -360,6 +392,10 @@ Resources:
               Value: !Ref AWS::Region
             - Name: NOVA_SONIC_MODEL_ID
               Value: !Ref NovaSonicModelId
+            - Name: SESSION_TABLE
+              Value: !Ref VoiceSessionsTable
+            - Name: RESPONSE_BUCKET
+              Value: !Ref SessionLogsBucket
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -447,6 +483,33 @@ Resources:
       Environment:
         Variables:
           SESSION_TABLE: !Ref VoiceSessionsTable
+          ECS_ENDPOINT: !Sub '${EcsEndpoint}/connect/call-start'
+
+  GetBotResultLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'voice-s2s-GetBotResult'
+      Description: 'Polls DynamoDB until ECS signals a Nova Sonic turn is complete, then returns the WAV S3 URI and intent to Connect.'
+      Runtime: nodejs20.x
+      Role: !GetAtt ConnectIntegrationRole.Arn
+      Handler: get-bot-result.handler
+      Timeout: 10
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref DeployBucket
+        S3Key: !Ref KvsBridgePackageS3Key
+      Environment:
+        Variables:
+          SESSION_TABLE: !Ref VoiceSessionsTable
+          RESPONSE_BUCKET: !Ref SessionLogsBucket
+
+  GetBotResultLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref GetBotResultLambda
+      Principal: 'connect.amazonaws.com'
+      SourceArn: !Ref ConnectInstanceArn
 
   ProcessBotTurnLambda:
     Type: AWS::Lambda::Function
@@ -465,6 +528,7 @@ Resources:
           SESSION_TABLE: !Ref VoiceSessionsTable
           RESPONSE_BUCKET: !Ref SessionLogsBucket
           NOVA_SONIC_MODEL_ID: !Ref NovaSonicModelId
+
   StartBotSessionLambdaPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -481,255 +545,50 @@ Resources:
       Principal: 'connect.amazonaws.com'
       SourceArn: !Ref ConnectInstanceArn
 
-  VoiceS2SContactFlow:
-    Type: AWS::Connect::ContactFlow
-    Properties:
-      InstanceArn: !Ref ConnectInstanceArn
-      Name: "CF-Voice-S2S-Bot"
-      Description: "Blended voice bot with Amazon Connect and Voice S2S Nova"
-      Type: "CONTACT_FLOW"
-      Content: !Sub |
-        {
-          "Version": "2019-10-30",
-          "StartAction": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
-          "Metadata": {
-            "entryPointPosition": {
-              "x": 20,
-              "y": 20
-            },
-            "ActionMetadata": {
-              "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614": {
-                "position": {
-                  "x": 194.4,
-                  "y": 14.4
-                }
-              },
-              "82e9b9c9-55ca-49d6-b9b2-df08afce69bb": {
-                "position": {
-                  "x": 425.6,
-                  "y": 19.2
-                },
-                "dynamicMetadata": {}
-              },
-              "c196b2ae-fa15-468e-ad72-c51f4961d15c": {
-                "position": {
-                  "x": 1205.6,
-                  "y": 25.6
-                },
-                "parameters": {
-                  "LambdaFunctionARN": {
-                    "displayName": "voice-s2s-ProcessBotTurn"
-                  }
-                },
-                "dynamicMetadata": {}
-              },
-              "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf": {
-                "position": {
-                  "x": 932.8,
-                  "y": -3.2
-                },
-                "audioPrompt": {
-                  "duration": "0",
-                  "mode": "Beep",
-                  "name": "Beep.wav"
-                },
-                "dynamicMetadata": {
-                  "audioPrompt": true
-                }
-              },
-              "f8e7d6c5-b4a3-4210-9876-543210fedcba": {
-                "position": {
-                  "x": 1459.2,
-                  "y": -22.4
-                }
-              },
-              "739dff43-8a3b-4860-93fb-c45472855cf8": {
-                "position": {
-                  "x": 1726.4,
-                  "y": -22.4
-                }
-              },
-              "b6e3f0ae-4638-4e89-bdc9-2d1aecee88fd": {
-                "position": {
-                  "x": 1726.4,
-                  "y": 182.4
-                }
-              },
-              "1c4d4fa7-01ed-4fa8-ab88-75211d2d3a37": {
-                "position": {
-                  "x": 1968,
-                  "y": 185.6
-                }
-              },
-              "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c": {
-                "position": {
-                  "x": 1422.4,
-                  "y": 427.2
-                }
-              },
-              "6d7350cb-22dd-4e67-ab92-808fcb97fd40": {
-                "position": {
-                  "x": 673.6,
-                  "y": 27.2
-                },
-                "parameters": {
-                  "LambdaFunctionARN": {
-                    "displayName": "voice-s2s-StartBotSession"
-                  }
-                },
-                "dynamicMetadata": {}
-              }
-            },
-            "Annotations": [],
-            "name": "CF-Voice-S2S-Bot",
-            "description": "Blended voice bot with Amazon Connect and Voice S2S Nova",
-            "type": "contactFlow"
-          },
-          "Actions": [
-            {
-              "Parameters": {
-                "FlowLoggingBehavior": "Enabled"
-              },
-              "Identifier": "0e59ee20-56d1-4dc7-a3af-4ceaf3bc8614",
-              "Type": "UpdateFlowLoggingBehavior",
-              "Transitions": {
-                "NextAction": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb"
-              }
-            },
-            {
-              "Parameters": {
-                "MediaStreamingState": "Enabled",
-                "MediaStreamType": "Audio"
-              },
-              "Identifier": "82e9b9c9-55ca-49d6-b9b2-df08afce69bb",
-              "Type": "UpdateMediaStreamingBehavior",
-              "Transitions": {
-                "NextAction": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
-                "Errors": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-                "LambdaFunctionARN": "${StartBotSessionLambda.Arn}",
-                "InvocationTimeLimitSeconds": "8"
-              },
-              "Identifier": "6d7350cb-22dd-4e67-ab92-808fcb97fd40",
-              "Type": "InvokeExternalResource",
-              "Transitions": {
-                "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
-                "Errors": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-                "StoreInput": "False",
-                "InputTimeLimitSeconds": "8"
-              },
-              "Identifier": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
-              "Type": "StoreCustomerInput",
-              "Transitions": {
-                "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
-                "Errors": [
-                  {
-                    "NextAction": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
-                    "ErrorType": "InputTimeLimitExceeded"
-                  },
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-                "LambdaFunctionARN": "${ProcessBotTurnLambda.Arn}",
-                "InvocationTimeLimitSeconds": "28"
-              },
-              "Identifier": "c196b2ae-fa15-468e-ad72-c51f4961d15c",
-              "Type": "InvokeExternalResource",
-              "Transitions": {
-                "NextAction": "f8e7d6c5-b4a3-4210-9876-543210fedcba",
-                "Errors": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-                "Text": "$.External.responseText",
-                "TextToSpeechType": "text",
-                "LanguageCode": "en-GB"
-              },
-              "Identifier": "f8e7d6c5-b4a3-4210-9876-543210fedcba",
-              "Type": "MessageParticipant",
-              "Transitions": {
-                "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
-                "Errors": [
-                  {
-                    "NextAction": "739dff43-8a3b-4860-93fb-c45472855cf8",
-                    "ErrorType": "NoMatchingError"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {
-                "ComparisonValue": "$.External.intent"
-              },
-              "Identifier": "739dff43-8a3b-4860-93fb-c45472855cf8",
-              "Type": "Compare",
-              "Transitions": {
-                "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                "Conditions": [
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "Condition": {
-                      "Operator": "Equals",
-                      "Operands": [
-                        "transfer"
-                      ]
-                    }
-                  },
-                  {
-                    "NextAction": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-                    "Condition": {
-                      "Operator": "Equals",
-                      "Operands": [
-                        "end"
-                      ]
-                    }
-                  }
-                ],
-                "Errors": [
-                  {
-                    "NextAction": "0f66c0d0-fb17-48de-87b6-ccb60a2de2cf",
-                    "ErrorType": "NoMatchingCondition"
-                  }
-                ]
-              }
-            },
-            {
-              "Parameters": {},
-              "Identifier": "4bdde3db-fc26-47e2-93cb-6eaf0bdfdd7c",
-              "Type": "DisconnectParticipant",
-              "Transitions": {}
-            }
-          ]
-        }
+#  VoiceS2SContactFlow:
+#    Type: AWS::Connect::ContactFlow
+#    Properties:
+#      InstanceArn: !Ref ConnectInstanceArn
+#      Name: "CF-Voice-S2S-Bot"
+#      Description: "Real-time KVS Nova Sonic bridge"
+#      Type: "CONTACT_FLOW"
+#      Content: !Sub |
+#        {
+#          "Version": "2019-10-30",
+#          "StartAction": "b0000001",
+#          "Actions": [
+#            {
+#              "Identifier": "b0000001",
+#              "Type": "UpdateFlowLoggingBehavior",
+#              "Parameters": { "FlowLoggingBehavior": "Enabled" },
+#              "Transitions": { "NextAction": "b0000002" }
+#            },
+#            {
+#              "Identifier": "b0000002",
+#              "Type": "UpdateMediaStreamingBehavior",
+#              "Parameters": {
+#                "MediaStreamingState": "Enabled",
+#                "MediaStreamType": "Audio"
+#              },
+#              "Transitions": {
+#                "NextAction": "b0000003",
+#                "Errors": [{ "NextAction": "b0000010", "ErrorType": "NoMatchingError" }]
+#              }
+#            },
+#            {
+#              "Identifier": "b0000003",
+#              "Type": "InvokeExternalResource",
+#              "Parameters": {
+#                "LambdaFunctionARN": "${StartBotSessionLambda.Arn}",
+#                "InvocationTimeLimitSeconds": "8"
+#              },
+#              "Transitions": {
+#                "NextAction": "b0000004",
+#                "Errors": [{ "NextAction": "b0000010", "ErrorType": "NoMatchingError" }]
+#              }
+#            }
+#          ]
+#        }
 
 Outputs:
   AlbUrl:
@@ -738,3 +597,15 @@ Outputs:
   SessionLogsBucketName:
     Description: 'S3 Bucket for Session Logs'
     Value: !Ref SessionLogsBucket
+  VoiceSessionsTableName:
+    Description: 'DynamoDB table for Connect session state'
+    Value: !Ref VoiceSessionsTable
+  GetBotResultLambdaArn:
+    Description: 'ARN of the GetBotResult Lambda'
+    Value: !GetAtt GetBotResultLambda.Arn
+  StartBotSessionLambdaArn:
+    Description: 'ARN of the StartBotSession Lambda'
+    Value: !GetAtt StartBotSessionLambda.Arn
+  ProcessBotTurnLambdaArn:
+    Description: 'ARN of the ProcessBotTurn Lambda'
+    Value: !GetAtt ProcessBotTurnLambda.Arn
