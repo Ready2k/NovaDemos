@@ -235,6 +235,54 @@ export class CallSession {
         });
     }
 
+    /**
+     * Sanitize caller number for use as an AgentCore Memory actorId.
+     * Memory API requires [a-zA-Z0-9][a-zA-Z0-9-_/]* — strip leading '+' and any
+     * other non-alphanumeric characters (e.g. +441234567890 → 441234567890).
+     */
+    private get safeActorId(): string {
+        return this.from.replace(/[^a-zA-Z0-9]/g, '') || 'unknown';
+    }
+
+    /** Enrich a system prompt with per-caller memory context from the main backend. */
+    private async _enrichWithMemory(systemPrompt: string): Promise<string> {
+        const backendUrl = process.env.SBC_BACKEND_URL || 'http://localhost:8080';
+        try {
+            const res = await fetch(`${backendUrl}/api/sbc-memory-context`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ actorId: this.safeActorId, systemPrompt }),
+                signal:  AbortSignal.timeout(5000),
+            });
+            if (res.ok) {
+                const data = await res.json() as { systemPrompt: string };
+                if (data.systemPrompt && data.systemPrompt.length > systemPrompt.length) {
+                    console.log(`[CallSession:${this.callId}] Memory context injected for caller ${this.from}`);
+                }
+                return data.systemPrompt || systemPrompt;
+            }
+        } catch (e) {
+            console.warn(`[CallSession:${this.callId}] Memory context fetch failed (non-fatal):`, e);
+        }
+        return systemPrompt;
+    }
+
+    /** Store a final transcript turn in memory via the main backend (fire-and-forget). */
+    private _storeMemoryEvent(role: 'USER' | 'ASSISTANT', text: string): void {
+        const backendUrl = process.env.SBC_BACKEND_URL || 'http://localhost:8080';
+        fetch(`${backendUrl}/api/sbc-memory-event`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                actorId:   this.safeActorId,
+                sessionId: `sbc-${this.callId}`,
+                role,
+                text,
+            }),
+            signal: AbortSignal.timeout(3000),
+        }).catch(() => { /* non-fatal */ });
+    }
+
     private async _fetchConfig(): Promise<SbcConfig> {
         const backendUrl = process.env.SBC_BACKEND_URL || 'http://localhost:8080';
         try {
@@ -253,8 +301,9 @@ export class CallSession {
     }
 
     private async _start(): Promise<void> {
-        const config       = await this._fetchConfig();
-        const systemPrompt = buildSystemPrompt(config);
+        const config            = await this._fetchConfig();
+        const basePrompt        = buildSystemPrompt(config);
+        const systemPrompt      = await this._enrichWithMemory(basePrompt);
 
         // Nova Sonic expects tools wrapped as { toolSpec: ... }
         const mappedTools = this.tools.map(t => ({ toolSpec: t.toolSpec }));
@@ -402,8 +451,16 @@ export class CallSession {
                         this._rtpFifo = Buffer.alloc(0);
                         this._activeToolIds.clear();
                     }
-                    const role = event.data?.role || 'unknown';
+                    const role    = event.data?.role || 'unknown';
+                    const isFinal = event.data?.isFinal !== false; // default true if absent
                     console.log(`[CallSession:${this.callId}] [${role}] ${text}`);
+
+                    // Store final turns in memory (phone number = actorId for cross-call recall)
+                    if (isFinal && role === 'user') {
+                        this._storeMemoryEvent('USER', text);
+                    } else if (isFinal && role === 'assistant') {
+                        this._storeMemoryEvent('ASSISTANT', text);
+                    }
 
                     // Emit transcript event to frontend
                     this.bridge.emit({

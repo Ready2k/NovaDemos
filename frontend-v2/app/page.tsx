@@ -114,6 +114,7 @@ export default function Home() {
                 inactivityEnabled: settings.inactivityEnabled ?? true,
                 inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
                 inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
+                memoryEnabled: settings.memoryEnabled,
               },
             });
           }
@@ -433,6 +434,7 @@ export default function Home() {
           inactivityEnabled: settings.inactivityEnabled ?? true,
           inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
           inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
+          memoryEnabled: settings.memoryEnabled,
         }
       });
     }
@@ -444,12 +446,12 @@ export default function Home() {
     settings.systemPrompt,
     settings.speechPrompt,
     settings.enableGuardrails,
-    settings.enableGuardrails,
     settings.enabledTools,
     settings.linkedWorkflows,
     settings.inactivityEnabled,
     settings.inactivityTimeout,
-    settings.inactivityMaxChecks
+    settings.inactivityMaxChecks,
+    settings.memoryEnabled,
   ]);
 
   // Handle send text message

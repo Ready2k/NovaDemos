@@ -702,11 +702,13 @@ export class SonicClient {
                 };
                 yield { chunk: { bytes: Buffer.from(JSON.stringify(textEndEvent)) } };
 
-                // 3. Send Silent Audio (Required by Nova Sonic if no other audio is present)
+                // 3. Open a persistent keepalive audio block so Nova Sonic keeps the stream
+                //    alive between text turns. Without this the stream closes after each
+                //    response and a new session (with no history) starts on the next message.
                 if (!this.currentContentName) {
-                    const silenceContentName = `audio-silence-${Date.now()}`;
+                    const silenceContentName = `audio-keepalive-${Date.now()}`;
+                    this.currentContentName = silenceContentName; // Keep it open
 
-                    // Start Silence Audio
                     const silenceStartEvent = {
                         event: {
                             contentStart: {
@@ -728,7 +730,6 @@ export class SonicClient {
                     };
                     yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceStartEvent)) } };
 
-                    // Send Silence Data
                     const silenceInputEvent = {
                         event: {
                             audioInput: {
@@ -739,18 +740,8 @@ export class SonicClient {
                         }
                     };
                     yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceInputEvent)) } };
-
-                    // End Silence Audio
-                    const silenceEndEvent = {
-                        event: {
-                            contentEnd: {
-                                promptName: promptName,
-                                contentName: silenceContentName
-                            }
-                        }
-                    };
-                    yield { chunk: { bytes: Buffer.from(JSON.stringify(silenceEndEvent)) } };
-                    console.log('[SonicClient] Sent silent audio frame to satisfy protocol');
+                    // NOTE: intentionally NOT sending contentEnd — block stays open as keepalive
+                    console.log('[SonicClient] Opened keepalive audio block to maintain stream between text turns');
                 }
             }
 
@@ -807,8 +798,30 @@ export class SonicClient {
                 // Check if we need to stop
                 if (!this.isProcessing) break;
 
-                // Wait briefly before checking queue again
-                await new Promise(resolve => setTimeout(resolve, 10));
+                // If a keepalive audio block is open and both queues are empty, send a
+                // periodic silence frame to prevent Nova Sonic from closing the stream
+                // (which would cause session reset and loss of conversation history).
+                const now = Date.now();
+                if (this.currentContentName &&
+                    this.inputQueue.length === 0 &&
+                    this.textQueue.length === 0 &&
+                    this.toolResultQueue.length === 0 &&
+                    (now - ((this as any)._lastKeepaliveSent || 0)) > 500
+                ) {
+                    (this as any)._lastKeepaliveSent = now;
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify({
+                        event: {
+                            audioInput: {
+                                promptName: promptName,
+                                contentName: this.currentContentName,
+                                content: this.SILENCE_FRAME.toString('base64')
+                            }
+                        }
+                    })) } };
+                } else {
+                    // Wait briefly before checking queue again
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
             }
         }
 
@@ -1295,14 +1308,28 @@ export class SonicClient {
                             this.hasCommittedToTool &&
                             !this.hasCalledTool) {
 
-                            console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
                             this.hasCommittedToTool = false; // Prevent double trigger
 
-                            // Programmatic Prompt Injection (Only if session is still active)
-                            if (this.sessionId && this.isProcessing) {
-                                this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
+                            // Suppress nudge when model is legitimately requesting information from the user
+                            // before it can act (e.g. "One moment, I'll need your account number first").
+                            // A trailing question mark or an explicit "I'll need / could you provide"
+                            // phrase are reliable signals that the model has not stalled — it is waiting.
+                            const transcript = this.currentTurnTranscript.trimEnd();
+                            const isRequestingInfo =
+                                transcript.endsWith('?') ||
+                                /\b(I'll need|I need your|could you (provide|give|share|tell|confirm)|can you (provide|give|share|tell|confirm)|please (provide|give|confirm|enter|share|tell me)|what('s| is) your|what are your)\b/i.test(transcript);
+
+                            if (isRequestingInfo) {
+                                console.log(`[SonicClient] Auto-Nudge suppressed — model is requesting information from user before acting.`);
                             } else {
-                                console.warn('[SonicClient] Skipping Auto-Nudge injection - Session is inactive');
+                                console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
+
+                                // Programmatic Prompt Injection (Only if session is still active)
+                                if (this.sessionId && this.isProcessing) {
+                                    this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
+                                } else {
+                                    console.warn('[SonicClient] Skipping Auto-Nudge injection - Session is inactive');
+                                }
                             }
                         }
 

@@ -366,6 +366,36 @@ export default function GeneralSettings() {
                     </div>
                 </div>
             </section>
+
+            {/* AgentCore Memory */}
+            <section className="flex flex-col gap-4 pt-4 border-t border-white/5">
+                <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    AgentCore Memory
+                </h3>
+                <div className={cn("p-4 rounded-xl border flex items-center justify-between", isDarkMode ? "border-white/10 bg-white/5" : "border-gray-200 bg-white")}>
+                    <div>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Enable Memory</div>
+                        <div className={cn("text-xs", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Recall context from previous sessions (requires MEMORY_ID on server)
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => updateSettings({ memoryEnabled: settings.memoryEnabled === false ? undefined : false })}
+                        className={cn(
+                            "w-12 h-6 rounded-full transition-colors relative",
+                            settings.memoryEnabled !== false ? "bg-emerald-500" : "bg-gray-600"
+                        )}
+                    >
+                        <div className={cn(
+                            "w-4 h-4 rounded-full bg-white absolute top-1 transition-transform",
+                            settings.memoryEnabled !== false ? "left-7" : "left-1"
+                        )} />
+                    </button>
+                </div>
+                <div className={cn("text-xs px-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    When enabled and MEMORY_ID is configured server-side, the AI will recall relevant facts from past conversations. Safe to leave on — disabling only saves cost if MEMORY_ID is set.
+                </div>
+            </section>
         </div>
     );
 }

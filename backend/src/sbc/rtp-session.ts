@@ -71,6 +71,10 @@ export class RtpSession extends EventEmitter {
     private txTimestamp:  number = Math.floor(Math.random() * 0xFFFFFFFF);
     private txSsrc:       number = Math.floor(Math.random() * 0xFFFFFFFF);
 
+    // Symmetric RTP: once the first real RTP packet arrives we know the NAT-translated
+    // source IP/port and update this.remote so outbound audio goes to the right place.
+    private _sourceFixed: boolean = false;
+
     // Jitter buffer state (60 ms window)
     private jitterBuf:    Map<number, JitterEntry> = new Map();
     private nextExpected: number = -1;  // -1 = not yet initialised
@@ -132,10 +136,14 @@ export class RtpSession extends EventEmitter {
         if (headerLen >= buf.length) return;
         const payload = buf.slice(headerLen);
 
-        // Infer remote endpoint from first packet (useful if SDP omits it)
-        if (!this.remote) {
+        // Symmetric RTP (RFC 4961): update remote from the first valid RTP packet.
+        // SDP from NAT'd clients contains a private IP (e.g. 192.168.x.x) which is
+        // unreachable from EC2.  The actual routable address is the packet's source.
+        if (!this._sourceFixed) {
+            this._sourceFixed = true;
+            const prev = this.remote ? `${this.remote.ip}:${this.remote.port}` : 'unset';
             this.remote = { ip: rinfo.address, port: rinfo.port };
-            console.log(`[RtpSession:${this.localPort}] Remote inferred from first RTP packet: ${rinfo.address}:${rinfo.port}`);
+            console.log(`[RtpSession:${this.localPort}] Symmetric RTP: remote updated ${prev} → ${rinfo.address}:${rinfo.port}`);
         }
 
         // Seed expected sequence on first packet
