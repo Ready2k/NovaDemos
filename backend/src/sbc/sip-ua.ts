@@ -31,7 +31,7 @@ interface PendingInvite {
     callId:     string;
     from:       string;
     to:         string;
-    via:        string;
+    vias:       string[];   // ALL Via headers from the INVITE, topmost first
     cseq:       string;
     toTag:      string;
     remoteAddr: string;
@@ -41,29 +41,46 @@ interface PendingInvite {
 
 // ─── SIP message parsing helpers ───────────────────────────────────────────────
 
-function parseHeaders(lines: string[]): Map<string, string> {
+interface ParsedRequest {
+    headers: Map<string, string>;
+    vias:    string[];   // Ordered list of Via header values (topmost first)
+}
+
+/**
+ * Parse SIP header lines into a single-value map (last value wins for duplicates)
+ * PLUS a dedicated ordered list of all Via header values.
+ *
+ * RFC 3261 §20.42 allows multiple Via headers, each carrying a hop's branch.
+ * A UAS response MUST echo ALL of them unchanged (except RFC 3581 on the topmost).
+ */
+function parseRequest(lines: string[]): ParsedRequest {
     const headers = new Map<string, string>();
+    const vias: string[] = [];
+    const canonMap: Record<string, string> = {
+        'v': 'via', 'f': 'from', 't': 'to', 'i': 'call-id',
+        'm': 'contact', 'l': 'content-length', 'c': 'content-type',
+        'k': 'supported', 'o': 'allow-events',
+    };
+
     for (const line of lines) {
         const idx = line.indexOf(':');
         if (idx === -1) continue;
-        const key = line.slice(0, idx).trim().toLowerCase();
-        const val = line.slice(idx + 1).trim();
-        // Compact forms
-        const canonMap: Record<string, string> = {
-            'v': 'via', 'f': 'from', 't': 'to', 'i': 'call-id',
-            'm': 'contact', 'l': 'content-length', 'c': 'content-type'
-        };
-        headers.set(canonMap[key] || key, val);
+        const rawKey = line.slice(0, idx).trim().toLowerCase();
+        const key    = canonMap[rawKey] || rawKey;
+        const val    = line.slice(idx + 1).trim();
+
+        if (key === 'via') {
+            vias.push(val);  // preserve all Via headers in order
+        } else {
+            headers.set(key, val);
+        }
     }
-    return headers;
+
+    return { headers, vias };
 }
 
 function extractCallId(headers: Map<string, string>): string {
     return headers.get('call-id') || '';
-}
-
-function extractVia(headers: Map<string, string>): string {
-    return headers.get('via') || '';
 }
 
 function extractField(headers: Map<string, string>, field: string): string {
@@ -72,19 +89,6 @@ function extractField(headers: Map<string, string>, field: string): string {
 
 function extractCSeq(headers: Map<string, string>): string {
     return headers.get('cseq') || '';
-}
-
-/**
- * Extract the first Via header's sent-by host:port.
- * Used to route responses back to the sender.
- */
-function parseViaAddr(via: string): { host: string; port: number } {
-    // Via: SIP/2.0/UDP host:port;...
-    const match = via.match(/SIP\/2\.0\/UDP\s+([^\s;:]+)(?::(\d+))?/i);
-    if (match) {
-        return { host: match[1], port: parseInt(match[2] || '5060', 10) };
-    }
-    return { host: '', port: 5060 };
 }
 
 /**
@@ -124,23 +128,58 @@ function buildSdpAnswer(localIp: string, localRtpPort: number): string {
     ].join('\r\n');
 }
 
+// ─── RFC 3581: add received/rport to the topmost Via header ───────────────────
+
+/**
+ * RFC 3581 §4: When the source address/port of the request differs from the
+ * Via sent-by value, the UAS MUST add `received=<src-ip>` and (if the request
+ * contained ;rport) fill in `rport=<src-port>`.  We always add both since it
+ * dramatically improves NAT traversal with SIP proxies.
+ */
+function addRfc3581(via: string, sourceIp: string, sourcePort: number): string {
+    let v = via;
+    // Fill a bare ;rport (client asked for NAT traversal without specifying port)
+    v = v.replace(/;rport(?!=)/, `;rport=${sourcePort}`);
+    // If there was no rport at all, insert it right after the sent-by token
+    if (!v.includes('rport')) {
+        v = v.replace(/(SIP\/2\.0\/UDP\s+[^\s;,\r\n]+)/, `$1;rport=${sourcePort}`);
+    }
+    // Append received= with the actual observed source IP
+    if (!v.includes('received=')) {
+        v += `;received=${sourceIp}`;
+    }
+    return v;
+}
+
 // ─── SIP response builder ─────────────────────────────────────────────────────
 
+/**
+ * Build a SIP response, echoing ALL Via headers from the request (RFC 3261 §8.2.6).
+ * RFC 3581 parameters (received=, rport=) are applied only to the topmost Via.
+ */
 function buildResponse(
-    statusCode: number,
+    statusCode:   number,
     reasonPhrase: string,
-    via: string,
-    from: string,
-    to: string,
-    callId: string,
-    cseq: string,
-    localIp: string,
+    vias:         string[],
+    from:         string,
+    to:           string,
+    callId:       string,
+    cseq:         string,
+    localIp:      string,
     localSipPort: number,
-    body: string = ''
+    body:         string = '',
+    rinfo?:       { address: string; port: number }
 ): string {
+    // Apply RFC 3581 to the topmost Via, leave the rest unchanged
+    const viaLines = vias.map((v, i) =>
+        i === 0 && rinfo
+            ? `Via: ${addRfc3581(v, rinfo.address, rinfo.port)}`
+            : `Via: ${v}`
+    );
+
     const lines: string[] = [
         `SIP/2.0 ${statusCode} ${reasonPhrase}`,
-        `Via: ${via}`,
+        ...viaLines,
         `From: ${from}`,
         `To: ${to}`,
         `Call-ID: ${callId}`,
@@ -193,7 +232,7 @@ export class SipUa extends EventEmitter {
 
     private _onMessage(buf: Buffer, rinfo: dgram.RemoteInfo): void {
         const raw = buf.toString('utf8');
-        console.log(`[SipUa] Received from ${rinfo.address}:${rinfo.port}:\n${raw.substring(0, 300)}`);
+        console.log(`[SipUa] Received from ${rinfo.address}:${rinfo.port}:\n${raw.substring(0, 500)}`);
 
         // Split headers from body
         const headerBodySep = raw.indexOf('\r\n\r\n');
@@ -202,7 +241,7 @@ export class SipUa extends EventEmitter {
 
         const headerLines = headerPart.split('\r\n');
         const requestLine = headerLines[0] || '';
-        const headers     = parseHeaders(headerLines.slice(1));
+        const { headers, vias } = parseRequest(headerLines.slice(1));
 
         // Determine method from request-line (e.g. "INVITE sip:... SIP/2.0")
         const methodMatch = requestLine.match(/^([A-Z]+)\s+/);
@@ -211,14 +250,15 @@ export class SipUa extends EventEmitter {
         const method = methodMatch[1];
         const callId = extractCallId(headers);
 
+        console.log(`[SipUa] ${method} Call-ID=${callId} vias=${vias.length}`);
+
         switch (method) {
-            case 'INVITE': this._handleInvite(headers, body, rinfo, callId); break;
-            case 'ACK':    this._handleAck(callId);                          break;
-            case 'BYE':    this._handleBye(headers, rinfo, callId);          break;
-            case 'CANCEL': this._handleCancel(headers, rinfo, callId);       break;
+            case 'INVITE': this._handleInvite(headers, vias, body, rinfo, callId); break;
+            case 'ACK':    this._handleAck(callId);                                break;
+            case 'BYE':    this._handleBye(headers, vias, rinfo, callId);          break;
+            case 'CANCEL': this._handleCancel(headers, vias, rinfo, callId);       break;
             default:
-                // Respond 405 Method Not Allowed for anything else
-                this._send405(headers, rinfo, callId);
+                this._send405(headers, vias, rinfo, callId);
         }
     }
 
@@ -226,29 +266,39 @@ export class SipUa extends EventEmitter {
 
     private _handleInvite(
         headers:  Map<string, string>,
+        vias:     string[],
         body:     string,
         rinfo:    dgram.RemoteInfo,
         callId:   string
     ): void {
-        console.log(`[SipUa] INVITE for Call-ID: ${callId}`);
+        // If this Call-ID is already pending, retransmit the 200 OK
+        const existing = this.pending.get(callId);
+        if (existing) {
+            console.log(`[SipUa] Retransmitted INVITE for Call-ID ${callId} — resending 200 OK`);
+            const sdpAnswer = buildSdpAnswer(this.localIp, existing.rtpSession.localPort);
+            const ok = buildResponse(200, 'OK', existing.vias, existing.from, existing.to,
+                callId, existing.cseq, this.localIp, this.localSipPort, sdpAnswer,
+                { address: existing.remoteAddr, port: existing.remotePort });
+            this._sendRaw(ok, rinfo.address, rinfo.port);
+            return;
+        }
 
-        const via   = extractVia(headers);
         const from  = extractField(headers, 'from');
         const to    = extractField(headers, 'to');
         const cseq  = extractCSeq(headers);
         const toTag = `tag-${crypto.randomBytes(4).toString('hex')}`;
 
         // 1. Send 100 Trying (no To-tag)
-        const trying = buildResponse(100, 'Trying', via, from, to, callId, cseq,
-            this.localIp, this.localSipPort);
+        const trying = buildResponse(100, 'Trying', vias, from, to, callId, cseq,
+            this.localIp, this.localSipPort, '', rinfo);
         this._sendRaw(trying, rinfo.address, rinfo.port);
 
         // 2. Parse remote RTP endpoint from SDP
         const remoteRtp = parseSdpMedia(body);
         if (!remoteRtp) {
             console.error(`[SipUa] No audio in SDP for Call-ID ${callId} — rejecting`);
-            const err = buildResponse(488, 'Not Acceptable Here', via, from, to, callId, cseq,
-                this.localIp, this.localSipPort);
+            const err = buildResponse(488, 'Not Acceptable Here', vias, from, to, callId, cseq,
+                this.localIp, this.localSipPort, '', rinfo);
             this._sendRaw(err, rinfo.address, rinfo.port);
             return;
         }
@@ -264,7 +314,7 @@ export class SipUa extends EventEmitter {
             callId,
             from,
             to: toWithTag,
-            via,
+            vias,
             cseq,
             toTag,
             remoteAddr: rinfo.address,
@@ -274,10 +324,10 @@ export class SipUa extends EventEmitter {
 
         // 4. Build SDP answer and send 200 OK
         const sdpAnswer = buildSdpAnswer(this.localIp, rtpSession.localPort);
-        const ok = buildResponse(200, 'OK', via, from, toWithTag, callId, cseq,
-            this.localIp, this.localSipPort, sdpAnswer);
+        const ok = buildResponse(200, 'OK', vias, from, toWithTag, callId, cseq,
+            this.localIp, this.localSipPort, sdpAnswer, rinfo);
         this._sendRaw(ok, rinfo.address, rinfo.port);
-        console.log(`[SipUa] Sent 200 OK for Call-ID ${callId}`);
+        console.log(`[SipUa] Sent 200 OK for Call-ID ${callId} (${vias.length} Via headers)`);
     }
 
     // ── ACK ───────────────────────────────────────────────────────────────────
@@ -300,18 +350,18 @@ export class SipUa extends EventEmitter {
 
     private _handleBye(
         headers:  Map<string, string>,
+        vias:     string[],
         rinfo:    dgram.RemoteInfo,
         callId:   string
     ): void {
         console.log(`[SipUa] BYE for Call-ID: ${callId}`);
 
-        const via  = extractVia(headers);
         const from = extractField(headers, 'from');
         const to   = extractField(headers, 'to');
         const cseq = extractCSeq(headers);
 
-        const ok = buildResponse(200, 'OK', via, from, to, callId, cseq,
-            this.localIp, this.localSipPort);
+        const ok = buildResponse(200, 'OK', vias, from, to, callId, cseq,
+            this.localIp, this.localSipPort, '', rinfo);
         this._sendRaw(ok, rinfo.address, rinfo.port);
 
         this.emit('hangup', callId);
@@ -321,27 +371,28 @@ export class SipUa extends EventEmitter {
 
     private _handleCancel(
         headers:  Map<string, string>,
+        vias:     string[],
         rinfo:    dgram.RemoteInfo,
         callId:   string
     ): void {
         console.log(`[SipUa] CANCEL for Call-ID: ${callId}`);
 
-        const via  = extractVia(headers);
         const from = extractField(headers, 'from');
         const to   = extractField(headers, 'to');
         const cseq = extractCSeq(headers);
 
         // Acknowledge CANCEL
-        const ok = buildResponse(200, 'OK', via, from, to, callId, cseq,
-            this.localIp, this.localSipPort);
+        const ok = buildResponse(200, 'OK', vias, from, to, callId, cseq,
+            this.localIp, this.localSipPort, '', rinfo);
         this._sendRaw(ok, rinfo.address, rinfo.port);
 
         // If we sent a 200 OK for the INVITE, send 487 Request Terminated
         const inv = this.pending.get(callId);
         if (inv) {
             const invCseq = inv.cseq.replace('CANCEL', 'INVITE');
-            const term = buildResponse(487, 'Request Terminated', inv.via, inv.from, inv.to,
-                callId, invCseq, this.localIp, this.localSipPort);
+            const term = buildResponse(487, 'Request Terminated', inv.vias, inv.from, inv.to,
+                callId, invCseq, this.localIp, this.localSipPort, '',
+                { address: inv.remoteAddr, port: inv.remotePort });
             this._sendRaw(term, inv.remoteAddr, inv.remotePort);
             inv.rtpSession.close();
             this.pending.delete(callId);
@@ -354,15 +405,15 @@ export class SipUa extends EventEmitter {
 
     private _send405(
         headers: Map<string, string>,
+        vias:    string[],
         rinfo:   dgram.RemoteInfo,
         callId:  string
     ): void {
-        const via  = extractVia(headers);
         const from = extractField(headers, 'from');
         const to   = extractField(headers, 'to');
         const cseq = extractCSeq(headers);
-        const resp = buildResponse(405, 'Method Not Allowed', via, from, to, callId, cseq,
-            this.localIp, this.localSipPort);
+        const resp = buildResponse(405, 'Method Not Allowed', vias, from, to, callId, cseq,
+            this.localIp, this.localSipPort, '', rinfo);
         this._sendRaw(resp, rinfo.address, rinfo.port);
     }
 

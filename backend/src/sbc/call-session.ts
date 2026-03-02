@@ -174,12 +174,27 @@ function buildSystemPrompt(): string {
 // ─── CallSession ──────────────────────────────────────────────────────────────
 
 export class CallSession {
-    private callId:    string;
-    private sonic:     SonicClient;
-    private gateway:   AgentCoreGatewayClient;
-    private rtp:       RtpSession;
-    private tools:     ToolSpec[];
-    private ended:     boolean = false;
+    private callId:         string;
+    private sonic:          SonicClient;
+    private gateway:        AgentCoreGatewayClient;
+    private rtp:            RtpSession;
+    private tools:          ToolSpec[];
+    private ended:          boolean = false;
+
+    // Tracks toolUseIds currently awaiting a gateway response.
+    // Cleared on barge-in so stale results from interrupted turns are discarded
+    // rather than sent to Nova Sonic (which closes the stream on unexpected results).
+    private _activeToolIds: Set<string> = new Set();
+
+    // Carry buffer: holds leftover bytes when a Nova Sonic audio chunk is not a
+    // multiple of 6 bytes (3 samples × 2 bytes) needed for 3:1 decimation.
+    private _audioCarry:    Buffer  = Buffer.alloc(0);
+
+    // Playout FIFO + clock: Nova Sonic delivers audio in bursts (many tiny chunks
+    // per response).  A 20 ms interval timer drains exactly one 160-byte RTP frame
+    // per tick, producing a steady packet stream regardless of when Bedrock delivers.
+    private _rtpFifo:       Buffer  = Buffer.alloc(0);
+    private _playoutTimer:  ReturnType<typeof setInterval> | null = null;
 
     constructor(rtpSession: RtpSession, meta: CallMeta) {
         this.callId  = meta.callId;
@@ -190,9 +205,8 @@ export class CallSession {
 
         console.log(`[CallSession:${this.callId}] Starting — ${this.tools.length} tools loaded`);
 
-        // Wire up audio bridge: RTP → Nova Sonic
-        this.rtp.on('audio', (g711: Buffer) => this._onRtpAudio(g711));
-
+        // Audio bridge is wired AFTER startSession() completes to avoid
+        // "Session not started" errors caused by RTP arriving before Bedrock connects.
         this._start().catch(err => {
             console.error(`[CallSession:${this.callId}] Failed to start:`, err);
         });
@@ -215,7 +229,30 @@ export class CallSession {
             `sbc-${this.callId}`
         );
 
-        console.log(`[CallSession:${this.callId}] Nova Sonic session started`);
+        console.log(`[CallSession:${this.callId}] Nova Sonic session started — wiring RTP audio bridge`);
+
+        // Wire RTP → Nova Sonic only now that the session is open
+        this.rtp.on('audio', (g711: Buffer) => this._onRtpAudio(g711));
+
+        // Start the 20 ms playout clock.  Drains exactly one 160-byte RTP frame per
+        // tick so the outbound stream is steady regardless of Nova Sonic burst timing.
+        this._playoutTimer = setInterval(() => this._drainRtpFifo(), 20);
+
+        // Trigger initial greeting
+        setTimeout(() => {
+            if (!this.ended) {
+                console.log(`[CallSession:${this.callId}] Injecting greeting trigger`);
+                this.sonic.sendText('[CALL CONNECTED] Please deliver your opening greeting now.').catch(() => {});
+            }
+        }, 500);
+    }
+
+    // ── Playout clock ──────────────────────────────────────────────────────────
+
+    private _drainRtpFifo(): void {
+        if (this.ended || this._rtpFifo.length < 160) return;
+        this.rtp.send(this._rtpFifo.slice(0, 160));
+        this._rtpFifo = this._rtpFifo.slice(160);
     }
 
     // ── RTP → Nova Sonic ───────────────────────────────────────────────────────
@@ -227,8 +264,8 @@ export class CallSession {
         const pcm8  = ulawToLinear16(g711);
         const pcm16 = resample8to16kHz(pcm8);
 
-        this.sonic.sendAudioChunk({ buffer: pcm16, timestamp: Date.now() }).catch(err => {
-            console.error(`[CallSession:${this.callId}] sendAudioChunk error:`, err);
+        this.sonic.sendAudioChunk({ buffer: pcm16, timestamp: Date.now() }).catch(() => {
+            // Ignore — session may have ended; end() will be called by the error handler.
         });
     }
 
@@ -240,36 +277,68 @@ export class CallSession {
         switch (event.type) {
 
             case 'audio': {
-                // LPCM @24kHz → PCM16 @8kHz → G.711 μ-law → RTP
-                const lpcm24 = Buffer.isBuffer(event.data)
-                    ? event.data
-                    : Buffer.from(event.data, 'base64');
+                // LPCM @24kHz → PCM16 @8kHz → G.711 μ-law → playout FIFO
+                // sonic-client emits: { type: 'audio', data: { audio: Buffer } }
+                const raw   = event.data?.audio ?? event.data;
+                const chunk = Buffer.isBuffer(raw)
+                    ? raw
+                    : Buffer.from(raw, 'base64');
 
-                const pcm8  = resample24to8kHz(lpcm24);
-                const g711  = linear16ToUlaw(pcm8);
-                this.rtp.send(g711);
+                // Prepend any leftover bytes so the 3:1 decimation always operates
+                // on complete 6-byte triplets (3 samples × 2 bytes/sample).
+                const lpcm24 = this._audioCarry.length > 0
+                    ? Buffer.concat([this._audioCarry, chunk])
+                    : chunk;
+
+                const usable = Math.floor(lpcm24.length / 6) * 6;
+                this._audioCarry = usable < lpcm24.length
+                    ? lpcm24.slice(usable)
+                    : Buffer.alloc(0);
+
+                if (usable === 0) break;
+
+                const pcm8 = resample24to8kHz(lpcm24.slice(0, usable));
+                const g711 = linear16ToUlaw(pcm8);
+
+                // Feed the playout FIFO; the 20 ms timer drains it at the right pace.
+                this._rtpFifo = Buffer.concat([this._rtpFifo, g711]);
                 break;
             }
 
             case 'toolUse': {
+                // Register the toolUseId as active before dispatching so the
+                // interrupt handler (transcript case below) can cancel it.
+                const toolId = event.data?.toolUseId || event.data?.id;
+                if (toolId) this._activeToolIds.add(toolId);
+
                 this._handleToolUse(event.data).catch(err => {
-                    console.error(`[CallSession:${this.callId}] Tool execution error:`, err);
-                    // Best-effort: send error result back to Nova Sonic
-                    const toolId = event.data?.toolUseId || event.data?.id || 'unknown';
-                    this.sonic.sendToolResult(toolId, `Error: ${err.message}`, true).catch(() => {});
+                    console.error(`[CallSession:${this.callId}] Unhandled tool error:`, err);
                 });
                 break;
             }
 
             case 'error': {
                 console.error(`[CallSession:${this.callId}] Nova Sonic error:`, event.data);
+                // End the call cleanly so the caller doesn't hear silence forever.
+                this.end();
                 break;
             }
 
             case 'transcript': {
-                const text = event.data?.text || event.data;
+                // sonic-client emits: { type: 'transcript', data: { transcript, role, isFinal, ... } }
+                const text = event.data?.transcript || event.data?.text;
                 if (text) {
-                    console.log(`[CallSession:${this.callId}] Transcript: ${text}`);
+                    // When the assistant is barged-in on, Nova Sonic abandons the
+                    // current turn (including any pending tool calls).  Clear the
+                    // active-tool set so we don't send stale results back, and flush
+                    // the outbound RTP FIFO so the caller stops hearing Amy immediately.
+                    if (event.data?.role === 'assistant' && text.includes('"interrupted"')) {
+                        console.log(`[CallSession:${this.callId}] Barge-in detected — flushing audio + discarding ${this._activeToolIds.size} pending tool result(s)`);
+                        this._rtpFifo = Buffer.alloc(0);
+                        this._activeToolIds.clear();
+                    }
+                    const role = event.data?.role || 'unknown';
+                    console.log(`[CallSession:${this.callId}] [${role}] ${text}`);
                 }
                 break;
             }
@@ -283,8 +352,8 @@ export class CallSession {
     // ── Tool dispatch ──────────────────────────────────────────────────────────
 
     private async _handleToolUse(data: any): Promise<void> {
-        // Tool use event from Nova Sonic native mode
-        const toolName = data?.toolSpec?.name || data?.name;
+        // Nova Sonic native toolUse event shape: { toolName, toolUseId, content }
+        const toolName = data?.toolName || data?.toolSpec?.name || data?.name;
         const toolId   = data?.toolUseId || data?.id || `tool-${Date.now()}`;
 
         // Parse input — Nova Sonic sends it as a JSON string in 'content'
@@ -299,16 +368,38 @@ export class CallSession {
         console.log(`[CallSession:${this.callId}] Tool call: ${toolName}`, args);
 
         // Find gateway target from tool definition
-        const toolDef      = this.tools.find(t => t.toolSpec.name === toolName);
+        const toolDef       = this.tools.find(t => t.toolSpec.name === toolName);
         const gatewayTarget = toolDef?.gatewayTarget;
 
+        // Call the gateway (may take 1-3s)
+        let result: string;
+        let isError = false;
         try {
-            const result = await this.gateway.callTool(toolName, args, gatewayTarget);
+            result  = await this.gateway.callTool(toolName, args, gatewayTarget);
             console.log(`[CallSession:${this.callId}] Tool result for ${toolName}:`, result);
-            await this.sonic.sendToolResult(toolId, result);
         } catch (err: any) {
             console.error(`[CallSession:${this.callId}] Gateway error for ${toolName}:`, err.message);
-            await this.sonic.sendToolResult(toolId, `Tool error: ${err.message}`, true);
+            result  = `Tool error: ${err.message}`;
+            isError = true;
+        }
+
+        // If a barge-in happened while the gateway was in-flight, this toolUseId
+        // was removed from _activeToolIds.  Sending a result for a cancelled tool
+        // call causes Nova Sonic to close the stream, so we discard it instead.
+        if (this.ended || !this._activeToolIds.has(toolId)) {
+            console.log(`[CallSession:${this.callId}] Tool result discarded (interrupted/ended): ${toolName}`);
+            return;
+        }
+
+        this._activeToolIds.delete(toolId);
+
+        try {
+            await this.sonic.sendToolResult(toolId, result, isError);
+        } catch (err: any) {
+            // sendToolResult failing means the Nova Sonic stream has already died.
+            // End the call cleanly rather than hanging.
+            console.error(`[CallSession:${this.callId}] sendToolResult failed for ${toolName}:`, err.message);
+            this.end();
         }
     }
 
@@ -318,6 +409,11 @@ export class CallSession {
         if (this.ended) return;
         this.ended = true;
         console.log(`[CallSession:${this.callId}] Ending call`);
+
+        if (this._playoutTimer) {
+            clearInterval(this._playoutTimer);
+            this._playoutTimer = null;
+        }
 
         this.sonic.stopSession().catch(err => {
             console.error(`[CallSession:${this.callId}] stopSession error:`, err);

@@ -1,4 +1,5 @@
 const aws4 = require('aws4');
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
 interface AgentCoreGatewayConfig {
     gatewayUrl: string;
@@ -42,17 +43,24 @@ export class AgentCoreGatewayClient {
         console.log('[AgentCoreGateway] Credentials updated via runtime configuration.');
     }
 
-    async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
-        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
-            console.log('[AgentCoreGateway] Explicit credentials missing, attempting to use SDK default chain / Environment...');
-            // Fallback to standard AWS env vars if present
-            this.config.awsAccessKey = this.config.awsAccessKey || process.env.AWS_ACCESS_KEY_ID || '';
-            this.config.awsSecretKey = this.config.awsSecretKey || process.env.AWS_SECRET_ACCESS_KEY || '';
-
-            if (!this.config.awsAccessKey) {
-                console.warn('[AgentCoreGateway] WARNING: No credentials found in config or environment.');
-            }
+    /** Resolve AWS credentials: explicit config → env vars → credential chain (EC2 IMDSv2, etc.) */
+    private async _resolveCredentials(): Promise<{ accessKeyId: string; secretAccessKey: string; sessionToken?: string }> {
+        if (this.config.awsAccessKey && this.config.awsSecretKey) {
+            return {
+                accessKeyId:     this.config.awsAccessKey,
+                secretAccessKey: this.config.awsSecretKey,
+                sessionToken:    process.env.AWS_SESSION_TOKEN || process.env.NOVA_AWS_SESSION_TOKEN,
+            };
         }
+        // No explicit credentials — use the SDK provider chain.
+        // On EC2 this resolves via IMDSv2 (instance profile / task role).
+        console.log('[AgentCoreGateway] No explicit credentials; resolving via SDK credential chain...');
+        const creds = await defaultProvider()();
+        console.log(`[AgentCoreGateway] Resolved credentials for ${creds.accessKeyId.substring(0, 8)}...`);
+        return creds;
+    }
+
+    async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
 
         console.log(`[AgentCoreGateway] Calling tool: ${toolName} with args:`, args);
 
@@ -89,27 +97,24 @@ export class AgentCoreGatewayClient {
         };
 
         try {
-            const url = new URL(this.config.gatewayUrl);
+            const url  = new URL(this.config.gatewayUrl);
             const body = JSON.stringify(payload);
+            const creds = await this._resolveCredentials();
 
-            // Create AWS request object for signing
             const request = {
-                host: url.hostname,
-                method: 'POST',
-                path: url.pathname,
+                host:    url.hostname,
+                method:  'POST',
+                path:    url.pathname,
                 service: 'bedrock-agentcore',
-                region: this.config.awsRegion,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: body
+                region:  this.config.awsRegion,
+                headers: { 'Content-Type': 'application/json' },
+                body,
             };
 
-            // Sign the request with AWS credentials
             const signedRequest = aws4.sign(request, {
-                accessKeyId: this.config.awsAccessKey,
-                secretAccessKey: this.config.awsSecretKey,
-                sessionToken: process.env.AWS_SESSION_TOKEN || process.env.NOVA_AWS_SESSION_TOKEN
+                accessKeyId:     creds.accessKeyId,
+                secretAccessKey: creds.secretAccessKey,
+                sessionToken:    creds.sessionToken,
             });
 
             console.log(`[AgentCoreGateway] Making signed request to gateway...`);
