@@ -41,17 +41,23 @@ exports.handler = async (event) => {
     }));
     console.log(`Session ${sessionId} created. streamArn=${streamArn}`);
 
-    // ── 2. Notify ECS to open Nova Sonic session (fire-and-forget) ────────────
+    // ── 2. Notify ECS to open Nova Sonic session ─────────────────────────────
+    // Must be awaited — Lambda freezes the process on return, killing any
+    // pending fire-and-forget fetches before they can send.
     if (ECS_ENDPOINT) {
         const body = JSON.stringify({ contactId, streamArn, startFragment, startTimestamp, instanceArn });
-        fetch(ECS_ENDPOINT, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-            signal:  AbortSignal.timeout(3000),
-        }).then(r => console.log(`ECS notify: ${r.status}`))
-          .catch(e => console.error('ECS notify failed:', e.message));
-        // Intentionally not awaited — we return to Connect immediately.
+        try {
+            const r = await fetch(ECS_ENDPOINT, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+                signal:  AbortSignal.timeout(5000),
+            });
+            console.log(`ECS notify: ${r.status}`);
+        } catch (e) {
+            console.error('ECS notify failed:', e.message);
+            // Non-fatal — DDB record is written; ECS can still poll if needed.
+        }
     } else {
         console.warn('ECS_ENDPOINT not set — skipping ECS notification');
     }

@@ -14,11 +14,11 @@
 
 const { DynamoDBClient, GetItemCommand, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 
-const ddb             = new DynamoDBClient({});
-const SESSION_TABLE   = process.env.SESSION_TABLE;
+const ddb = new DynamoDBClient({});
+const SESSION_TABLE = process.env.SESSION_TABLE;
 const RESPONSE_BUCKET = process.env.RESPONSE_BUCKET || '';
-const MAX_RETRIES   = 14;        // 14 × 500 ms = 7 s
-const RETRY_DELAY   = 500;       // ms
+const MAX_RETRIES = 10;        // 10 × 500 ms = 5 s (total path < 8s)
+const RETRY_DELAY = 500;       // ms
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -27,7 +27,7 @@ function sleep(ms) {
 exports.handler = async (event) => {
     console.log('GetBotResult event:', JSON.stringify(event));
 
-    const cd        = event.Details?.ContactData ?? {};
+    const cd = event.Details?.ContactData ?? {};
     const contactId = cd.ContactId ?? event.ContactId ?? 'unknown';
     const sessionId = `connect-${contactId}`;
 
@@ -42,12 +42,12 @@ exports.handler = async (event) => {
             item = Item;
         } catch (e) {
             console.error('GetItem failed:', e.message);
-            return { audioKey: null, intent: 'continue' };
+            return { audioS3Uri: null, intent: 'continue' };
         }
 
         if (!item) {
             console.warn(`Session ${sessionId} not found`);
-            return { audioKey: null, intent: 'continue' };
+            return { audioS3Uri: null, intent: 'continue' };
         }
 
         const status = item.status?.S || 'waiting';
@@ -56,14 +56,14 @@ exports.handler = async (event) => {
         if (status === 'ready') {
             try {
                 await ddb.send(new UpdateItemCommand({
-                    TableName:                 SESSION_TABLE,
-                    Key:                       { sessionId: { S: sessionId } },
-                    UpdateExpression:          'SET #s = :waiting',
-                    ConditionExpression:       '#s = :ready',
-                    ExpressionAttributeNames:  { '#s': 'status' },
+                    TableName: SESSION_TABLE,
+                    Key: { sessionId: { S: sessionId } },
+                    UpdateExpression: 'SET #s = :waiting',
+                    ConditionExpression: '#s = :ready',
+                    ExpressionAttributeNames: { '#s': 'status' },
                     ExpressionAttributeValues: {
                         ':waiting': { S: 'waiting' },
-                        ':ready':   { S: 'ready' },
+                        ':ready': { S: 'ready' },
                     },
                 }));
             } catch (e) {
@@ -77,10 +77,10 @@ exports.handler = async (event) => {
                 throw e;
             }
 
-            const audioKey    = item.audioKey?.S || '';
-            const intent      = item.intent?.S   || 'continue';
+            const audioKey = item.audioKey?.S || '';
+            const intent = item.intent?.S || 'continue';
             // Build full S3 URI so Connect's Play Prompt block can use it directly.
-            const audioS3Uri  = audioKey && RESPONSE_BUCKET
+            const audioS3Uri = audioKey && RESPONSE_BUCKET
                 ? `s3://${RESPONSE_BUCKET}/${audioKey}`
                 : '';
             console.log(`GetBotResult: returning audioS3Uri=${audioS3Uri} intent=${intent}`);
@@ -96,5 +96,5 @@ exports.handler = async (event) => {
 
     // ── 4. Timeout ────────────────────────────────────────────────────────────
     console.warn(`GetBotResult timed out for session ${sessionId}`);
-    return { audioKey: null, intent: 'continue' };
+    return { audioS3Uri: null, intent: 'continue' };
 };

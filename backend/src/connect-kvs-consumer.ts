@@ -48,37 +48,29 @@ export class ConnectKvsConsumer {
     ): Promise<void> {
         // Derive KVS region from the stream ARN (may differ from the ECS region).
         const regionMatch = streamArn.match(/^arn:aws:kinesisvideo:([^:]+):/);
-        const kvsRegion   = regionMatch ? regionMatch[1] : REGION;
+        const kvsRegion = regionMatch ? regionMatch[1] : REGION;
 
         const kvs = new KinesisVideoClient({ region: kvsRegion });
         const { DataEndpoint } = await kvs.send(new GetDataEndpointCommand({
             StreamARN: streamArn,
-            APIName:   'GET_MEDIA',
+            APIName: 'GET_MEDIA',
         }));
 
         const kvsMedia = new KinesisVideoMediaClient({ region: kvsRegion, endpoint: DataEndpoint });
 
         // Choose start selector:
-        //   No fragment        → EARLIEST (call just started)
-        //   First turn (ts)    → PRODUCER_TIMESTAMP (reliable start point)
-        //   Subsequent turns   → FRAGMENT_NUMBER / AfterFragmentNumber
-        let selector: any;
-        if (!startFragment) {
-            selector = { StartSelectorType: 'EARLIEST' };
-        } else if (startTimestamp) {
-            selector = {
-                StartSelectorType:      'PRODUCER_TIMESTAMP',
-                ProducerStartTimestamp: new Date(parseInt(startTimestamp, 10)),
-            };
-        } else {
-            selector = {
-                StartSelectorType:    'FRAGMENT_NUMBER',
-                AfterFragmentNumber:  startFragment,
-            };
-        }
+        //   No fragment  → EARLIEST (Connect only starts the KVS stream when
+        //                  media streaming is enabled, so EARLIEST = call start)
+        //   Has fragment → FRAGMENT_NUMBER (resume after the given fragment)
+        //
+        // PRODUCER_TIMESTAMP is avoided: the AWS SDK v3 serialises the Date
+        // incorrectly for some KVS stream configurations, causing a 400 error.
+        const selector: any = startFragment
+            ? { StartSelectorType: 'FRAGMENT_NUMBER', AfterFragmentNumber: startFragment }
+            : { StartSelectorType: 'EARLIEST' };
 
         const resp = await kvsMedia.send(new GetMediaCommand({
-            StreamARN:     streamArn,
+            StreamARN: streamArn,
             StartSelector: selector,
         }));
 
@@ -88,39 +80,57 @@ export class ConnectKvsConsumer {
         // delivered, so we can emit only the newly extracted audio on each chunk.
         const rawAccumulator: Buffer[] = [];
         let sentAudioBytes = 0;
+        let totalChunks = 0;
+        let payloadChunks = 0;
 
         try {
             for await (const chunk of resp.Payload as AsyncIterable<any>) {
                 if (this.stopped) break;
+                totalChunks++;
 
+                let data: Uint8Array | undefined;
                 if (chunk.PayloadChunk?.Payload) {
-                    rawAccumulator.push(Buffer.from(chunk.PayloadChunk.Payload));
+                    payloadChunks++;
+                    data = chunk.PayloadChunk.Payload;
+                } else if (chunk.EndOfShard) {
+                    console.log('[ConnectKvsConsumer] EndOfShard received');
+                    break;
+                } else if (chunk instanceof Uint8Array || Buffer.isBuffer(chunk) || (chunk && typeof chunk === 'object' && 'length' in chunk)) {
+                    // Broad check for raw bytes (Uint8Array, Buffer, or array-like from SDK stream)
+                    payloadChunks++;
+                    data = chunk as Uint8Array;
+                }
+
+                if (data) {
+                    rawAccumulator.push(Buffer.from(data));
 
                     // Extract all audio from the accumulated MKV data.
                     const combined = Buffer.concat(rawAccumulator);
-                    const audio    = extractAudioFromMkv(combined);
+                    const audio = extractAudioFromMkv(combined);
 
                     if (audio.length > sentAudioBytes) {
-                        // Only convert and deliver the newly extracted portion.
                         const newAudio = audio.slice(sentAudioBytes);
-                        const pcm8     = ulawToLinear16(newAudio);
-                        const pcm16    = resample8to16kHz(pcm8);
+                        const pcm8 = ulawToLinear16(newAudio);
+                        const pcm16 = resample8to16kHz(pcm8);
                         if (pcm16.length > 0) {
                             onAudio(pcm16);
                         }
                         sentAudioBytes = audio.length;
                     }
-                } else if (chunk.EndOfShard) {
-                    console.log('[ConnectKvsConsumer] EndOfShard received');
-                    break;
+                } else {
+                    console.log('[ConnectKvsConsumer] Unknown chunk type:', chunk?.constructor?.name || typeof chunk, JSON.stringify(Object.keys(chunk || {})));
                 }
-                // MKV metadata chunks (tags, fragment boundaries) are ignored;
-                // we rely on Connect's DynamoDB record for fragment tracking.
             }
         } catch (e: any) {
             // KVS streams close naturally when the caller stops speaking.
             console.log('[ConnectKvsConsumer] Stream ended:', e.message);
         }
+
+        const accumulatedBytes = rawAccumulator.reduce((n, b) => n + b.length, 0);
+        console.log(
+            `[ConnectKvsConsumer] Loop done — totalChunks=${totalChunks} payloadChunks=${payloadChunks} ` +
+            `accumulatedBytes=${accumulatedBytes} extractedAudioBytes=${sentAudioBytes}`
+        );
 
         console.log(
             `[ConnectKvsConsumer] Done — delivered ${sentAudioBytes} raw audio bytes ` +

@@ -16,32 +16,32 @@ import { SonicClient, SonicEvent } from './sonic-client';
 import { ConnectKvsConsumer } from './connect-kvs-consumer';
 import { downsample24to8kHz, encodeWav } from './audio-converter';
 
-const SESSION_TABLE   = process.env.SESSION_TABLE   || '';
+const SESSION_TABLE = process.env.SESSION_TABLE || '';
 const RESPONSE_BUCKET = process.env.RESPONSE_BUCKET || '';
 
 // Send caller audio to Nova Sonic in 4096-sample (8192-byte) chunks.
 const AUDIO_CHUNK_BYTES = 8192;
 
 export interface ConnectSessionOptions {
-    contactId:      string;
-    sessionId:      string;   // e.g. "connect-<contactId>"
-    streamArn:      string;
-    startFragment:  string;
+    contactId: string;
+    sessionId: string;   // e.g. "connect-<contactId>"
+    streamArn: string;
+    startFragment: string;
     startTimestamp: string | null;
-    instanceArn:    string;
+    instanceArn: string;
 }
 
 // ─── Per-call session ─────────────────────────────────────────────────────────
 
 class ConnectPhoneSession {
-    private sonicClient:   SonicClient;
-    private kvsConsumer:   ConnectKvsConsumer;
-    private audioFrames:   Buffer[] = [];
-    private responseText:  string   = '';
-    private history:       Array<{ role: string; text: string }> = [];
+    private sonicClient: SonicClient;
+    private kvsConsumer: ConnectKvsConsumer;
+    private audioFrames: Buffer[] = [];
+    private responseText: string = '';
+    private history: Array<{ role: string; text: string }> = [];
 
     private readonly ddb = new DynamoDBClient({});
-    private readonly s3  = new S3Client({});
+    private readonly s3 = new S3Client({});
 
     constructor(private readonly opts: ConnectSessionOptions) {
         this.sonicClient = new SonicClient();
@@ -53,7 +53,7 @@ class ConnectPhoneSession {
 
         this.sonicClient.setConfig({
             systemPrompt: this.buildSystemPrompt(),
-            voiceId:      'matthew',
+            voiceId: 'Matthew',
         });
 
         await this.sonicClient.startSession(
@@ -64,14 +64,19 @@ class ConnectPhoneSession {
         // Set DynamoDB status to "processing" so GetBotResult knows a turn is active.
         await this.updateDdbStatus('processing');
 
-        // Begin streaming KVS audio to Nova Sonic.
+        // Trigger the greeting — Nova Sonic speaks first without waiting for caller audio.
+        // This fires interactionTurnEnd, which runs processTurnEnd and marks status=ready.
+        console.log(`[ConnectPhoneSession:${this.opts.contactId}] Triggering greeting`);
+        await this.sonicClient.sendText('Greet the customer and ask how you can help them today.');
+
+        // Begin streaming KVS audio to Nova Sonic for subsequent caller turns.
         // startStreaming() is async but we don't await it here — it runs concurrently.
         this.kvsConsumer.startStreaming(
             this.opts.streamArn,
             this.opts.startFragment,
             this.opts.startTimestamp,
             (pcm16: Buffer) => this.forwardAudioToSonic(pcm16),
-            ()              => console.log(`[ConnectPhoneSession:${this.opts.contactId}] KVS stream ended`),
+            () => console.log(`[ConnectPhoneSession:${this.opts.contactId}] KVS stream ended`),
         ).catch(e => console.error(`[ConnectPhoneSession:${this.opts.contactId}] KVS error:`, e));
     }
 
@@ -107,23 +112,54 @@ class ConnectPhoneSession {
     private handleSonicEvent(event: SonicEvent): void {
         switch (event.type) {
             case 'audio':
-                // event.data.audio is already a decoded Buffer (24 kHz LPCM).
-                if (event.data?.audio instanceof Buffer) {
-                    this.audioFrames.push(event.data.audio);
+                if (event.data?.audio) {
+                    const isBuf = Buffer.isBuffer(event.data.audio);
+                    if (isBuf) {
+                        this.audioFrames.push(event.data.audio);
+                    } else {
+                        console.warn(`[ConnectPhoneSession:${this.opts.contactId}] Received non-Buffer audio: ${typeof event.data.audio}, constructor: ${event.data.audio?.constructor?.name}`);
+                        // Emergency conversion if it's a Uint8Array
+                        if (event.data.audio instanceof Uint8Array) {
+                            this.audioFrames.push(Buffer.from(event.data.audio));
+                        }
+                    }
                 }
                 break;
 
             case 'transcript':
-                // Accumulate assistant text across streaming tokens.
-                if (event.data?.role === 'ASSISTANT' && typeof event.data?.transcript === 'string') {
-                    this.responseText += event.data.transcript;
+                if (typeof event.data?.transcript === 'string') {
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] Transcript: "${event.data.transcript}" (Role: ${event.data.role}, Final: ${event.data.isFinal})`);
+                    if (event.data.role === 'assistant' || event.data.role === 'ASSISTANT') {
+                        this.responseText = event.data.transcript;
+                    }
                 }
                 break;
 
-            case 'interactionTurnEnd':
-                this.processTurnEnd().catch(e =>
-                    console.error(`[ConnectPhoneSession:${this.opts.contactId}] processTurnEnd:`, e)
-                );
+            case 'contentStart':
+                console.log(`[ConnectPhoneSession:${this.opts.contactId}] ContentStart: role=${event.data?.role}, type=${event.data?.type}`);
+                if (event.data?.role === 'assistant' || event.data?.role === 'ASSISTANT') {
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] Marking session as processing in DDB`);
+                    this.updateDdbStatus('processing').catch(e =>
+                        console.error(`[ConnectPhoneSession:${this.opts.contactId}] DDB update failed:`, e)
+                    );
+                }
+                break;
+
+            case 'contentEnd':
+                console.log(`[ConnectPhoneSession:${this.opts.contactId}] ContentEnd: stopReason=${event.data?.stopReason}`);
+                if (event.data?.stopReason === 'END_TURN') {
+                    this.processTurnEnd().catch(e =>
+                        console.error(`[ConnectPhoneSession:${this.opts.contactId}] Error in processTurnEnd:`, e)
+                    );
+                }
+                break;
+
+            default:
+                // Only log transcript/audio at debug level to avoid spam
+                const etype = event.type as any;
+                if (etype !== 'transcript' && etype !== 'audio') {
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] Event: ${event.type}`);
+                }
                 break;
         }
     }
@@ -131,33 +167,37 @@ class ConnectPhoneSession {
     private async processTurnEnd(): Promise<void> {
         // Snapshot and reset per-turn accumulators atomically.
         const frames = this.audioFrames.splice(0);
-        const text   = this.responseText;
+        const text = this.responseText;
         this.responseText = '';
+
+        if (frames.length === 0 && text.length === 0) {
+            console.log(`[ConnectPhoneSession:${this.opts.contactId}] Turn end skipped — no content gathered in this turn`);
+            return;
+        }
 
         const lpcm24 = frames.length ? Buffer.concat(frames) : Buffer.alloc(0);
         console.log(
-            `[ConnectPhoneSession:${this.opts.contactId}] Turn end — ` +
-            `${lpcm24.length} audio bytes, text="${text.substring(0, 80)}"`
+            `[ConnectPhoneSession:${this.opts.contactId}] Turn end — processing ${lpcm24.length} audio bytes, text="${text}"`
         );
 
         // ── Determine intent from response text ──────────────────────────────
-        const upper  = text.toUpperCase();
-        let   intent: 'continue' | 'transfer' | 'end' = 'continue';
-        if (upper.includes('GOODBYE') || upper.includes('BYE'))      intent = 'end';
-        if (upper.includes('TRANSFER') || upper.includes('AGENT'))   intent = 'transfer';
+        const upper = text.toUpperCase();
+        let intent: 'continue' | 'transfer' | 'end' = 'continue';
+        if (upper.includes('GOODBYE') || upper.includes('BYE')) intent = 'end';
+        if (upper.includes('TRANSFER') || upper.includes('AGENT')) intent = 'transfer';
 
         // ── Store response audio as WAV in S3 ────────────────────────────────
         let audioKey = '';
         if (lpcm24.length > 0 && RESPONSE_BUCKET) {
             try {
-                const pcm8k   = downsample24to8kHz(lpcm24);
+                const pcm8k = downsample24to8kHz(lpcm24);
                 const wavData = encodeWav(pcm8k);
-                audioKey      = `turns/${this.opts.sessionId}/${Date.now()}.wav`;
+                audioKey = `turns/${this.opts.sessionId}/${Date.now()}.wav`;
 
                 await this.s3.send(new PutObjectCommand({
-                    Bucket:      RESPONSE_BUCKET,
-                    Key:         audioKey,
-                    Body:        wavData,
+                    Bucket: RESPONSE_BUCKET,
+                    Key: audioKey,
+                    Body: wavData,
                     ContentType: 'audio/wav',
                 }));
                 console.log(`[ConnectPhoneSession:${this.opts.contactId}] WAV uploaded → s3://${RESPONSE_BUCKET}/${audioKey}`);
@@ -177,11 +217,11 @@ class ConnectPhoneSession {
             try {
                 await this.ddb.send(new UpdateItemCommand({
                     TableName: SESSION_TABLE,
-                    Key:       { sessionId: { S: this.opts.sessionId } },
+                    Key: { sessionId: { S: this.opts.sessionId } },
                     UpdateExpression:
                         'SET #s = :s, audioKey = :a, intent = :i, history = :h, #ttl = :t',
                     ExpressionAttributeNames: {
-                        '#s':   'status',
+                        '#s': 'status',
                         '#ttl': 'ttl',
                     },
                     ExpressionAttributeValues: {
@@ -204,9 +244,9 @@ class ConnectPhoneSession {
         try {
             await this.ddb.send(new UpdateItemCommand({
                 TableName: SESSION_TABLE,
-                Key:       { sessionId: { S: this.opts.sessionId } },
+                Key: { sessionId: { S: this.opts.sessionId } },
                 UpdateExpression: 'SET #s = :s',
-                ExpressionAttributeNames:  { '#s': 'status' },
+                ExpressionAttributeNames: { '#s': 'status' },
                 ExpressionAttributeValues: { ':s': { S: status } },
             }));
         } catch (e) {

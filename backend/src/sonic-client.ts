@@ -308,7 +308,7 @@ export class SonicClient {
         this.currentPromptName = promptName;
         this.currentContentName = undefined; // Lazily initialized
 
-        const voiceId = this.sessionConfig.voiceId || "matthew";
+        const voiceId = this.sessionConfig.voiceId || "Matthew";
         console.log(`[SonicClient] Using Voice ID: ${voiceId}`);
 
         // 1. Session Start
@@ -342,7 +342,7 @@ export class SonicClient {
                         sampleRateHertz: 24000,  // Nova 2 Sonic outputs at 24kHz for better quality
                         sampleSizeBits: 16,
                         channelCount: 1,
-                        voiceId: this.sessionConfig.voiceId || "matthew",
+                        voiceId: this.sessionConfig.voiceId || "Matthew",
                         encoding: "base64",
                         audioType: "SPEECH"
                     },
@@ -1191,11 +1191,15 @@ export class SonicClient {
 
                     if (eventData.audioOutput) {
                         const content = eventData.audioOutput.content;
-                        // console.log(`[SonicClient] Received audio chunk: ${content.length} bytes`);
-                        this.eventCallback?.({
-                            type: 'audio',
-                            data: { audio: Buffer.from(content, 'base64') }
-                        });
+                        if (content) {
+                            console.log(`[SonicClient] Received audio chunk: ${content.length} base64 chars`);
+                            this.eventCallback?.({
+                                type: 'audio',
+                                data: { audio: Buffer.from(content, 'base64') }
+                            });
+                        } else {
+                            console.warn('[SonicClient] Received audioOutput event but content is null or empty!');
+                        }
                     }
 
                     if (eventData.textOutput) {
@@ -1280,37 +1284,14 @@ export class SonicClient {
                     }
 
                     if (eventData.contentEnd) {
-                        console.log(`[SonicClient] Content End: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
+                        console.log(`[SonicClient] Content End logic start: ${eventData.contentEnd.promptName} (${eventData.contentEnd.stopReason})`);
 
-                        // Pass event to callback
-                        this.eventCallback?.({
-                            type: 'contentEnd',
-                            data: eventData.contentEnd
-                        });
-
-                        // AUTO-NUDGE EXECUTION
-                        // If model stopped speaking (END_TURN or PARTIAL_TURN) and promised a tool but didn't call it
-                        if (eventData.contentEnd.stopReason === 'END_TURN' &&
-                            this.currentRole === 'ASSISTANT' &&
-                            this.hasCommittedToTool &&
-                            !this.hasCalledTool) {
-
-                            console.warn(`[SonicClient] ⚠️ Auto-Nudge Triggered: Model promised action but stopped without tool call.`);
-                            this.hasCommittedToTool = false; // Prevent double trigger
-
-                            // Programmatic Prompt Injection (Only if session is still active)
-                            if (this.sessionId && this.isProcessing) {
-                                this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW. Do not speak, just call the tool.");
-                            } else {
-                                console.warn('[SonicClient] Skipping Auto-Nudge injection - Session is inactive');
-                            }
-                        }
-
-                        // Send final transcript when turn ends
+                        // 1. Emit FINAL transcript BEFORE contentEnd/END_TURN
+                        // This ensures that listeners (like ConnectPhoneSession) have the full text 
+                        // when they receive the turn-completion signal.
                         if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
-                            // Determine stage from content name if possible
                             const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
-
+                            console.log('[SonicClient] Emitting FINAL transcript before contentEnd');
                             this.eventCallback?.({
                                 type: 'transcript',
                                 data: {
@@ -1322,149 +1303,59 @@ export class SonicClient {
                                 },
                             });
 
-                            // Capture USER transcript for Langfuse
+                            // Capture for Langfuse
                             if (this.currentRole === 'USER') {
                                 this.lastUserTranscript = this.currentTurnTranscript;
-                                console.log(`[SonicClient] Captured user voice transcript for Langfuse: "${this.lastUserTranscript.substring(0, 50)}..."`);
-
-                                // Langfuse: Track User Voice Input as a generation
                                 if (this.trace) {
                                     const userGen = this.trace.generation({
                                         name: "user-input",
                                         model: this.config.modelId,
                                         startTime: new Date()
                                     });
-                                    userGen.end({
-                                        input: this.lastUserTranscript,
-                                        output: this.lastUserTranscript  // Echo for tracking
-                                    });
+                                    userGen.end({ input: this.lastUserTranscript, output: this.lastUserTranscript });
                                 }
-                            }
-
-                            // Langfuse: End Assistant Generation
-                            if (this.currentGeneration && this.currentRole === 'ASSISTANT') {
-                                const endTime = new Date();
-                                const metadata: any = {};
-
-                                // Add latency metrics
-                                if (this.currentGenerationStartTime) {
-                                    const totalDuration = endTime.getTime() - this.currentGenerationStartTime.getTime();
-                                    metadata.latency_ms = totalDuration;
-
-                                    if (this.firstTokenTime) {
-                                        const ttft = this.firstTokenTime.getTime() - this.currentGenerationStartTime.getTime();
-                                        metadata.time_to_first_token_ms = ttft;
-
-                                        // Score: Latency (lower is better, normalize to some scale or just track raw)
-                                        // For now, we'll just track it as a score for visibility
-                                        this.trace?.score({
-                                            name: "latency-score",
-                                            value: ttft < 1000 ? 1 : (ttft < 3000 ? 0.7 : 0.3),
-                                            comment: `TTFT: ${ttft}ms`
-                                        });
-
-                                        // Emit latency event so the frontend can display it
-                                        this.eventCallback?.({
-                                            type: 'latency_update',
-                                            data: {
-                                                ttft_ms: ttft,
-                                                latency_ms: totalDuration,
-                                            }
-                                        });
-                                    }
-                                }
-
-                                // Score: Success/Accuracy (1 for successful turn completion)
-                                this.trace?.score({
-                                    name: "turn-success",
-                                    value: 1,
-                                    comment: "Turn completed successfully"
-                                });
-
-                                this.currentGeneration.end({
-                                    output: this.currentTurnTranscript,
-                                    completionStartTime: endTime,
-                                    metadata: {
-                                        ...metadata, // Include latency metrics
-                                        stage: stage // OVERWRITE 'SPECULATIVE' with 'FINAL' (or whatever stage we ended on)
-                                    }
-                                });
-                                this.currentGeneration = null;
-                                this.currentGenerationStartTime = null;
-                                this.firstTokenTime = null;
-
-                                // FIX: Clear transcript after ending generation to prevent duplication/concatenation
-                                // in subsequent generations (e.g. if tool use triggers multiple gens per turn)
-                                this.currentTurnTranscript = '';
                             }
                         }
 
-                        // If interrupted, mark the current transcript as cancelled
-                        if (eventData.contentEnd.stopReason === 'INTERRUPTED' && this.currentTurnTranscript.length > 0) {
-                            this.eventCallback?.({
-                                type: 'transcript',
-                                data: {
-                                    transcript: this.currentTurnTranscript,
-                                    role: this.currentRole === 'USER' ? 'user' : 'assistant',
-                                    isFinal: false,
-                                    isStreaming: false,
-                                    isCancelled: true
-                                },
+                        // 2. Pass contentEnd event to callback (This triggers processTurnEnd in Connect)
+                        this.eventCallback?.({
+                            type: 'contentEnd',
+                            data: eventData.contentEnd
+                        });
+
+                        // 3. Auto-Nudge & Cleanup logic
+                        if (eventData.contentEnd.stopReason === 'END_TURN' &&
+                            this.currentRole === 'ASSISTANT' &&
+                            this.hasCommittedToTool &&
+                            !this.hasCalledTool) {
+                            console.warn(`[SonicClient] Auto-Nudge Triggered`);
+                            this.hasCommittedToTool = false;
+                            if (this.sessionId && this.isProcessing) {
+                                this.sendText("[SYSTEM_INJECTION]: You said you would perform an action. CALL THE TOOL NOW.");
+                            }
+                        }
+
+                        // 4. Langfuse Generation End
+                        if (this.currentGeneration && this.currentRole === 'ASSISTANT' && eventData.contentEnd.stopReason === 'END_TURN') {
+                            const endTime = new Date();
+                            const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                            this.currentGeneration.end({
+                                output: this.currentTurnTranscript,
+                                completionStartTime: endTime,
+                                metadata: { stage: stage }
                             });
+                            this.currentGeneration = null;
                         }
 
-                        // Mark turn as complete if END_TURN or INTERRUPTED
+                        // 5. Cleanup transcript and state
                         if (eventData.contentEnd.stopReason === 'END_TURN' || eventData.contentEnd.stopReason === 'INTERRUPTED') {
                             this.isTurnComplete = true;
-                            // Save transcript before resetting — needed to detect model self-interruptions below
-                            const transcriptBeforeReset = this.currentTurnTranscript;
-                            // Also reset the transcript immediately for the next turn
-                            // This prevents accumulation across multiple assistant responses
-                            console.log(`[SonicClient] Turn ended (${eventData.contentEnd.stopReason}). Resetting transcript for next turn.`);
+                            console.log(`[SonicClient] Turn ended (${eventData.contentEnd.stopReason}). Clearing transcript.`);
                             this.currentTurnTranscript = '';
+                        }
 
-                            if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
-                                // Detect model self-interruption: the content was ONLY the {"interrupted": true}
-                                // JSON signal with no real speech content. This happens when the model sends
-                                // a second self-correction after a tool result (triggered by context like "no").
-                                // In that case, suppressing the interruption event prevents the frontend from
-                                // incorrectly clearing the audio queue for the correct response already playing.
-                                const strippedTranscript = transcriptBeforeReset
-                                    .replace(/\{\s*"interrupted"\s*:\s*true\s*\}/g, '')
-                                    .trim();
-                                const isSelfInterruption = strippedTranscript.length === 0;
-
-                                if (isSelfInterruption) {
-                                    console.log('[SonicClient] Suppressing model self-interruption event (pure {"interrupted": true} content — no real speech)');
-                                } else {
-                                    console.log('[SonicClient] Interruption detected!');
-
-                                    // Langfuse: Track interruption as an event
-                                    if (this.trace) {
-                                        this.trace.event({
-                                            name: "interruption",
-                                            metadata: {
-                                                role: this.currentRole,
-                                                transcriptLength: transcriptBeforeReset.length,
-                                                partialTranscript: transcriptBeforeReset.substring(0, 100)
-                                            },
-                                            level: "WARNING"
-                                        });
-
-                                        // Score: Turn Impact
-                                        this.trace.score({
-                                            name: "turn-success",
-                                            value: 0,
-                                            comment: "Interrupted by user"
-                                        });
-                                    }
-
-                                    this.eventCallback?.({
-                                        type: 'interruption',
-                                        data: {}
-                                    });
-                                }
-                            }
+                        if (eventData.contentEnd.stopReason === 'INTERRUPTED') {
+                            this.eventCallback?.({ type: 'interruption', data: {} });
                         }
                     }
 
