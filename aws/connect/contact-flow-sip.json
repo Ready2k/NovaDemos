@@ -1,0 +1,79 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "set-logging",
+  "Metadata": {
+    "entryPointPosition": { "x": 60, "y": 115 },
+    "ActionMetadata": {
+      "set-logging":         { "position": { "x": 60,  "y": 115 } },
+      "play-hold":           { "position": { "x": 260, "y": 115 } },
+      "transfer-to-chime":   { "position": { "x": 460, "y": 115 } },
+      "disconnect-fallback": { "position": { "x": 460, "y": 285 } }
+    },
+    "name": "SIP-SBC-Transfer",
+    "description": "Transfer PSTN caller to the Nova 2 Sonic SBC via Amazon Chime SDK Voice Connector"
+  },
+  "Actions": [
+    {
+      "Identifier": "set-logging",
+      "Type": "UpdateContactEventHooks",
+      "Parameters": {
+        "Logging": { "Behavior": "Enable" }
+      },
+      "Transitions": {
+        "NextAction": "play-hold",
+        "Errors": [{ "NextAction": "play-hold", "ErrorType": "NoMatchingError" }]
+      }
+    },
+    {
+      "Identifier": "play-hold",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Please hold while we connect you to your banking assistant.",
+        "TextToSpeechType": "text",
+        "VoiceId": "Amy"
+      },
+      "Transitions": {
+        "NextAction": "transfer-to-chime",
+        "Errors": [{ "NextAction": "transfer-to-chime", "ErrorType": "NoMatchingError" }]
+      }
+    },
+    {
+      "Identifier": "transfer-to-chime",
+      "Type": "TransferContactToPhoneNumber",
+      "Parameters": {
+        "PhoneNumber": {
+          "Type": "ValueOf",
+          "ValueOf": "$.Attributes.ChimeVcDID",
+          "StaticValue": "+12015551234"
+        },
+        "CallerId": {
+          "Type": "ValueOf",
+          "ValueOf": "$.CustomerEndpoint.Address"
+        }
+      },
+      "Transitions": {
+        "NextAction": "disconnect-fallback",
+        "Errors": [
+          {
+            "NextAction": "disconnect-fallback",
+            "ErrorType": "NoMatchingError"
+          },
+          {
+            "NextAction": "disconnect-fallback",
+            "ErrorType": "CallFailed"
+          },
+          {
+            "NextAction": "disconnect-fallback",
+            "ErrorType": "InvalidPhoneNumber"
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "disconnect-fallback",
+      "Type": "DisconnectParticipant",
+      "Parameters": {},
+      "Transitions": {}
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+# Dockerfile.sbc — SIP Session Border Controller
+#
+# IMPORTANT: This container MUST be run with host networking (--network host or
+# ECS task networkMode: host) so that:
+#   1. The SBC can bind to UDP port 5060 on the host's public IP.
+#   2. RTP packets arrive directly on the host's NIC (no Docker NAT on UDP).
+#
+# Build:
+#   docker build -f Dockerfile.sbc -t nova-sbc .
+#
+# Run (local test):
+#   docker run --network host \
+#     -e SBC_PUBLIC_IP=<your-ip> \
+#     -e NOVA_AWS_REGION=us-east-1 \
+#     -e NOVA_AWS_ACCESS_KEY_ID=... \
+#     -e NOVA_AWS_SECRET_ACCESS_KEY=... \
+#     nova-sbc
+
+# ── Runtime-only stage (same base as main Dockerfile) ─────────────────────────
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+# 1. Install production dependencies
+COPY backend/package.json      ./backend/package.json
+COPY backend/package-lock.json ./backend/package-lock.json
+RUN cd backend && npm install --omit=dev
+
+# 2. Copy compiled SBC entry point and shared modules from local build
+#    Run `npm run build --prefix backend` before building this image.
+COPY backend/dist          ./backend/dist
+
+# 3. Copy runtime assets needed by CallSession
+COPY tools                 ./tools
+COPY backend/prompts       ./backend/prompts
+
+# 4. Workflow JSON files are loaded by CallSession at runtime.
+#    They live in backend/src/ in the repo but are copied to dist/ here.
+COPY backend/src/workflow-*.json ./backend/dist/
+
+# ── Expose ports (documentation only — host networking is required) ────────────
+# SIP signalling
+EXPOSE 5060/udp
+# RTP media (default pool)
+EXPOSE 10000-10200/udp
+
+CMD ["node", "backend/dist/sbc/sbc-server.js"]
