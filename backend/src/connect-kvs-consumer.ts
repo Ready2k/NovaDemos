@@ -132,6 +132,11 @@ export class ConnectKvsConsumer {
                 console.log(`[ConnectKvsConsumer] Stream dropped organically, auto-reconnecting to catch resumed audio...`);
                 // Clear startFragment so next connection uses NOW
                 startFragment = '';
+                // CRITICAL: We must reset accumulators because a new 'NOW' connection 
+                // sends a brand new MKV stream (with new EBML headers). Concatenating 
+                // new MKV files to old ones breaks the byte-scanner!
+                rawAccumulator.length = 0;
+                sentAudioBytes = 0;
                 await new Promise(r => setTimeout(r, 500));
             }
         }
