@@ -13,6 +13,27 @@ import type {
 } from '@/lib/types';
 
 
+export interface SbcMessage {
+    role: 'user' | 'assistant' | 'tool_use' | 'tool_result';
+    text: string;
+    toolName?: string;
+    args?: any;
+    timestamp: number;
+}
+
+export interface SbcCall {
+    callId:     string;
+    from:       string;
+    voice:      string;
+    persona:    string;
+    workflow:   string;
+    startTime:  number;
+    endTime?:   number;
+    durationMs?: number;
+    messages:   SbcMessage[];
+    status:     'active' | 'ended';
+}
+
 interface AppState {
     // Connection
     connectionStatus: ConnectionStatus;
@@ -65,8 +86,8 @@ interface AppState {
     isHydrated: boolean;
 
     // Navigation (Phase 3)
-    activeView: 'chat' | 'settings' | 'workflow' | 'history';
-    navigateTo: (view: 'chat' | 'settings' | 'workflow' | 'history') => void;
+    activeView: 'chat' | 'settings' | 'workflow' | 'history' | 'phone';
+    navigateTo: (view: 'chat' | 'settings' | 'workflow' | 'history' | 'phone') => void;
     activeSettingsTab: string;
     setActiveSettingsTab: (tab: string) => void;
     resetSession: () => void;
@@ -76,6 +97,10 @@ interface AppState {
     // Toast (Phase 3)
     toast: { message: string, type: 'success' | 'error' | 'info' | null };
     showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void;
+
+    // SBC Phone calls
+    sbcCalls: SbcCall[];
+    addSbcEvent: (event: any) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -277,15 +302,202 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setKeyMoments([]);
     }, []);
 
+    // SBC phone calls state (keep last 20 calls)
+    const [sbcCalls, setSbcCalls] = useState<SbcCall[]>([]);
+
+    // Auto-connect to /monitor WebSocket on mount — independent of Nova Sonic session
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${protocol}//${window.location.host}/monitor`;
+        let ws: WebSocket | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const connect = () => {
+            ws = new WebSocket(url);
+            ws.onopen = () => console.log('[Monitor] Connected to /monitor');
+            ws.onmessage = (e) => {
+                try {
+                    const event = JSON.parse(e.data);
+                    if (event.type === 'sbc_snapshot') {
+                        // Replay each active call as a sbc_call_start so the panel builds state
+                        (event.calls as any[]).forEach(c => {
+                            setSbcCalls(prev => {
+                                if (prev.some(x => x.callId === c.callId)) return prev;
+                                const newCall: SbcCall = {
+                                    callId:   c.callId,
+                                    from:     c.from || 'Unknown',
+                                    voice:    c.voice || 'amy',
+                                    persona:  c.persona || 'BankingDisputes',
+                                    workflow: c.workflow || 'disputes',
+                                    startTime: c.startTime || Date.now(),
+                                    messages:  [],
+                                    status:    'active',
+                                };
+                                return [newCall, ...prev].slice(0, 20);
+                            });
+                        });
+                    } else {
+                        setSbcCalls(prev => {
+                            // Reuse addSbcEvent logic inline so we don't need the callback ref
+                            switch (event.type) {
+                                case 'sbc_call_start': {
+                                    if (prev.some(c => c.callId === event.callId)) return prev;
+                                    const newCall: SbcCall = {
+                                        callId:    event.callId,
+                                        from:      event.from || 'Unknown',
+                                        voice:     event.voice || 'amy',
+                                        persona:   event.persona || 'BankingDisputes',
+                                        workflow:  event.workflow || 'disputes',
+                                        startTime: Date.now(),
+                                        messages:  [],
+                                        status:    'active',
+                                    };
+                                    return [newCall, ...prev].slice(0, 20);
+                                }
+                                case 'sbc_transcript':
+                                    return prev.map(call => call.callId !== event.callId ? call : {
+                                        ...call,
+                                        messages: [...call.messages, {
+                                            role: event.role === 'assistant' ? 'assistant' : 'user',
+                                            text: event.text || '',
+                                            timestamp: Date.now(),
+                                        } as SbcMessage],
+                                    });
+                                case 'sbc_tool_use':
+                                    return prev.map(call => call.callId !== event.callId ? call : {
+                                        ...call,
+                                        messages: [...call.messages, {
+                                            role: 'tool_use',
+                                            text: event.toolName || '',
+                                            toolName: event.toolName,
+                                            args: event.args,
+                                            timestamp: Date.now(),
+                                        } as SbcMessage],
+                                    });
+                                case 'sbc_tool_result':
+                                    return prev.map(call => call.callId !== event.callId ? call : {
+                                        ...call,
+                                        messages: [...call.messages, {
+                                            role: 'tool_result',
+                                            text: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+                                            toolName: event.toolName,
+                                            timestamp: Date.now(),
+                                        } as SbcMessage],
+                                    });
+                                case 'sbc_call_end':
+                                    return prev.map(call => call.callId !== event.callId ? call : {
+                                        ...call,
+                                        status: 'ended',
+                                        endTime: Date.now(),
+                                        durationMs: event.durationMs,
+                                    });
+                                default:
+                                    return prev;
+                            }
+                        });
+                    }
+                } catch { /* ignore parse errors */ }
+            };
+            ws.onclose = () => {
+                console.log('[Monitor] Disconnected — retrying in 5s');
+                retryTimer = setTimeout(connect, 5000);
+            };
+            ws.onerror = () => ws?.close();
+        };
+
+        connect();
+
+        return () => {
+            if (retryTimer) clearTimeout(retryTimer);
+            ws?.close();
+        };
+    }, []);
+
+    const addSbcEvent = useCallback((event: any) => {
+        setSbcCalls(prev => {
+            switch (event.type) {
+                case 'sbc_call_start': {
+                    const newCall: SbcCall = {
+                        callId:   event.callId,
+                        from:     event.from || 'Unknown',
+                        voice:    event.voice || 'amy',
+                        persona:  event.persona || 'BankingDisputes',
+                        workflow: event.workflow || 'disputes',
+                        startTime: Date.now(),
+                        messages:  [],
+                        status:    'active',
+                    };
+                    return [newCall, ...prev].slice(0, 20);
+                }
+                case 'sbc_transcript': {
+                    return prev.map(call => {
+                        if (call.callId !== event.callId) return call;
+                        return {
+                            ...call,
+                            messages: [...call.messages, {
+                                role:      event.role === 'assistant' ? 'assistant' : 'user',
+                                text:      event.text || '',
+                                timestamp: Date.now(),
+                            } as SbcMessage],
+                        };
+                    });
+                }
+                case 'sbc_tool_use': {
+                    return prev.map(call => {
+                        if (call.callId !== event.callId) return call;
+                        return {
+                            ...call,
+                            messages: [...call.messages, {
+                                role:      'tool_use',
+                                text:      event.toolName || '',
+                                toolName:  event.toolName,
+                                args:      event.args,
+                                timestamp: Date.now(),
+                            } as SbcMessage],
+                        };
+                    });
+                }
+                case 'sbc_tool_result': {
+                    return prev.map(call => {
+                        if (call.callId !== event.callId) return call;
+                        return {
+                            ...call,
+                            messages: [...call.messages, {
+                                role:      'tool_result',
+                                text:      typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+                                toolName:  event.toolName,
+                                timestamp: Date.now(),
+                            } as SbcMessage],
+                        };
+                    });
+                }
+                case 'sbc_call_end': {
+                    return prev.map(call => {
+                        if (call.callId !== event.callId) return call;
+                        return {
+                            ...call,
+                            status:     'ended',
+                            endTime:    Date.now(),
+                            durationMs: event.durationMs,
+                        };
+                    });
+                }
+                default:
+                    return prev;
+            }
+        });
+    }, []);
+
     // UI state
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [debugMode, setDebugMode] = useState(false);
 
     // Navigation State (Phase 3)
-    const [activeView, setActiveView] = useState<'chat' | 'settings' | 'workflow' | 'history'>('chat');
+    const [activeView, setActiveView] = useState<'chat' | 'settings' | 'workflow' | 'history' | 'phone'>('chat');
     const [activeSettingsTab, setActiveSettingsTab] = useState('general');
 
-    const navigateTo = useCallback((view: 'chat' | 'settings' | 'workflow' | 'history') => {
+    const navigateTo = useCallback((view: 'chat' | 'settings' | 'workflow' | 'history' | 'phone') => {
         setActiveView(view);
     }, []);
 
@@ -359,6 +571,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Toast
         toast,
         showToast,
+
+        // SBC Phone calls
+        sbcCalls,
+        addSbcEvent,
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

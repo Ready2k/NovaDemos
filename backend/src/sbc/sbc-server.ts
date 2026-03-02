@@ -20,10 +20,11 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { SipUa }      from './sip-ua';
-import { CallSession } from './call-session';
-import { RtpSession }  from './rtp-session';
-import { CallMeta }    from './sip-ua';
+import { SipUa }           from './sip-ua';
+import { CallSession }     from './call-session';
+import { RtpSession }      from './rtp-session';
+import { CallMeta }        from './sip-ua';
+import { SbcEventBridge }  from './sbc-event-bridge';
 
 // ─── Validate required env vars ───────────────────────────────────────────────
 
@@ -41,6 +42,11 @@ console.log(`[SbcServer] SBC_RTP_PORT_BASE = ${process.env.SBC_RTP_PORT_BASE || 
 console.log(`[SbcServer] SBC_RTP_PORT_COUNT= ${process.env.SBC_RTP_PORT_COUNT || '200'}`);
 console.log(`[SbcServer] NOVA_SONIC_MODEL  = ${process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0'}`);
 
+// ─── Event bridge (non-fatal connection to main backend) ─────────────────────
+
+const bridge = new SbcEventBridge();
+console.log(`[SbcServer] SBC_BACKEND_URL = ${process.env.SBC_BACKEND_URL || 'http://localhost:8080 (default)'}`);
+
 // ─── Active calls registry ────────────────────────────────────────────────────
 
 const activeCalls = new Map<string, CallSession>();
@@ -51,7 +57,7 @@ const sip = new SipUa();
 
 sip.on('call', (rtpSession: RtpSession, meta: CallMeta) => {
     console.log(`[SbcServer] New call: ${meta.callId} from ${meta.from}`);
-    const session = new CallSession(rtpSession, meta);
+    const session = new CallSession(rtpSession, meta, bridge);
     activeCalls.set(meta.callId, session);
 });
 

@@ -1219,6 +1219,13 @@ function stopInactivityTimer(session: ClientSession) {
 // --- Serve Frontend ---
 const activeSessions = new Map<WebSocket, ClientSession>();
 
+// ── Monitor WebSocket sessions (phone panel observers — no Nova Sonic session) ─
+const monitorSessions = new Set<WebSocket>();
+
+// In-memory snapshot of currently active SBC calls so a monitor client that
+// connects mid-call immediately receives the full current state.
+const sbcActiveCalls = new Map<string, any>(); // callId → sbc_call_start payload
+
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
     // Strip query parameters for routing
@@ -2259,6 +2266,72 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // ── SBC Config ──────────────────────────────────────────────────────────────
+    const SBC_CONFIG_FILE = path.join(__dirname, '../data/sbc-config.json');
+    const SBC_CONFIG_DEFAULTS = { voice: 'amy', persona: 'BankingDisputes', workflow: 'disputes', enabledTools: [] };
+
+    if (pathname === '/api/sbc-config') {
+        if (req.method === 'GET') {
+            const cfg = fs.existsSync(SBC_CONFIG_FILE)
+                ? JSON.parse(fs.readFileSync(SBC_CONFIG_FILE, 'utf-8'))
+                : SBC_CONFIG_DEFAULTS;
+            res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(cfg));
+            return;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk.toString(); });
+            req.on('end', () => {
+                try {
+                    const cfg = JSON.parse(body);
+                    fs.writeFileSync(SBC_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+                    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                } catch (e: any) {
+                    res.writeHead(400, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+            });
+            return;
+        }
+    }
+
+    // ── SBC Event Broadcast ──────────────────────────────────────────────────
+    if (pathname === '/internal/sbc-event' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const event = JSON.parse(body);
+
+                // Maintain in-memory snapshot for mid-call monitor connects
+                if (event.type === 'sbc_call_start') {
+                    sbcActiveCalls.set(event.callId, event);
+                } else if (event.type === 'sbc_call_end') {
+                    sbcActiveCalls.delete(event.callId);
+                }
+
+                // Broadcast to all sonic sessions AND all monitor sessions
+                let sent = 0;
+                const msg = JSON.stringify(event);
+                for (const [ws] of activeSessions.entries()) {
+                    if (ws.readyState === WebSocket.OPEN) { ws.send(msg); sent++; }
+                }
+                for (const ws of monitorSessions) {
+                    if (ws.readyState === WebSocket.OPEN) { ws.send(msg); sent++; }
+                }
+                console.log(`[SBC] Broadcast event "${event.type}" to ${sent} client(s) (${monitorSessions.size} monitor)`);
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true, sent }));
+            } catch (e: any) {
+                res.writeHead(400, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
     // Serve static files
     let filePath = pathname === '/' ? '/index.html' : pathname || '/index.html';
     // Remove query parameters
@@ -2317,9 +2390,42 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Create WebSocket server
-const wss = new WebSocketServer({
-    server,
-    path: SONIC_PATH
+// Both WSS instances use noServer:true so we can manually route upgrade requests.
+// If they both used { server, path } the first WSS would reject /monitor upgrades
+// with a 400 before the second WSS could claim them.
+const wss = new WebSocketServer({ noServer: true });
+
+// ── Monitor WebSocket (phone panel — no Nova Sonic session started) ────────────
+const wssMonitor = new WebSocketServer({ noServer: true });
+
+// Route HTTP upgrade requests to the correct WSS by path
+server.on('upgrade', (req, socket, head) => {
+    const pathname = (req.url || '/').split('?')[0];
+    if (pathname === SONIC_PATH) {
+        wss.handleUpgrade(req, socket as any, head, (ws) => wss.emit('connection', ws, req));
+    } else if (pathname === '/monitor') {
+        wssMonitor.handleUpgrade(req, socket as any, head, (ws) => wssMonitor.emit('connection', ws, req));
+    } else {
+        socket.destroy();
+    }
+});
+wssMonitor.on('connection', (ws: WebSocket) => {
+    monitorSessions.add(ws);
+    console.log(`[Monitor] Client connected. Active monitors: ${monitorSessions.size}`);
+
+    // Send snapshot of any currently active SBC calls so mid-call connects work
+    if (sbcActiveCalls.size > 0) {
+        ws.send(JSON.stringify({
+            type:  'sbc_snapshot',
+            calls: Array.from(sbcActiveCalls.values()),
+        }));
+    }
+
+    ws.on('close', () => {
+        monitorSessions.delete(ws);
+        console.log(`[Monitor] Client disconnected. Active monitors: ${monitorSessions.size}`);
+    });
+    ws.on('error', () => monitorSessions.delete(ws));
 });
 
 console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);

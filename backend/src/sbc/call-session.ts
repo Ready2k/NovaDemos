@@ -3,12 +3,13 @@
  *
  * Lifecycle:
  *   1. Created on SipUa 'call' event.
- *   2. Loads BankingDisputes persona + disputes workflow → assembles system prompt.
- *   3. Loads all tools from /tools/ and formats them for Nova Sonic.
- *   4. Starts a SonicClient session (voice: amy, UK English).
- *   5. Bridges RTP audio ↔ Nova Sonic bidirectional stream.
- *   6. Dispatches tool calls via AgentCoreGatewayClient.
- *   7. Destroyed on SipUa 'hangup' event → stopSession().
+ *   2. Fetches config from main backend (voice, persona, workflow).
+ *   3. Loads persona prompt + workflow → assembles system prompt.
+ *   4. Loads all tools from /tools/ and formats them for Nova Sonic.
+ *   5. Starts a SonicClient session.
+ *   6. Bridges RTP audio ↔ Nova Sonic bidirectional stream.
+ *   7. Dispatches tool calls via AgentCoreGatewayClient.
+ *   8. Destroyed on SipUa 'hangup' event → stopSession().
  */
 
 import * as fs   from 'fs';
@@ -18,6 +19,7 @@ import { SonicClient, SonicEvent } from '../sonic-client';
 import { AgentCoreGatewayClient }  from '../agentcore-gateway-client';
 import { RtpSession }              from './rtp-session';
 import { CallMeta }                from './sip-ua';
+import { SbcEventBridge }         from './sbc-event-bridge';
 import {
     ulawToLinear16,
     resample8to16kHz,
@@ -33,6 +35,22 @@ const BASE_DIR     = path.resolve(__dirname, '..', '..', '..'); // project root 
 const PROMPTS_DIR  = path.join(BASE_DIR, 'backend', 'prompts');
 const TOOLS_DIR    = path.join(BASE_DIR, 'tools');
 const SRC_DIR      = path.join(__dirname, '..');   // backend/dist/ at runtime
+
+// ─── SBC Config ───────────────────────────────────────────────────────────────
+
+interface SbcConfig {
+    voice:        string;
+    persona:      string;
+    workflow:     string;
+    enabledTools: string[];
+}
+
+const CONFIG_DEFAULTS: SbcConfig = {
+    voice:        'amy',
+    persona:      'BankingDisputes',
+    workflow:     'disputes',
+    enabledTools: [],
+};
 
 // ─── Workflow → text (mirrors server.ts convertWorkflowToText) ─────────────────
 
@@ -133,29 +151,29 @@ function loadTools(): ToolSpec[] {
 
 // ─── System prompt assembly ───────────────────────────────────────────────────
 
-function buildSystemPrompt(): string {
-    // 1. Load BankingDisputes persona
+function buildSystemPrompt(config: SbcConfig): string {
+    // 1. Load persona
     let persona = '';
+    const personaFile = `persona-${config.persona}.txt`;
     try {
-        persona = fs.readFileSync(path.join(PROMPTS_DIR, 'persona-BankingDisputes.txt'), 'utf-8').trim();
+        persona = fs.readFileSync(path.join(PROMPTS_DIR, personaFile), 'utf-8').trim();
     } catch (e) {
-        console.error('[CallSession] Failed to load BankingDisputes persona:', e);
+        console.error(`[CallSession] Failed to load persona ${personaFile}:`, e);
         persona = 'You are a professional UK banking assistant specialising in disputes.';
     }
 
-    // 2. Load disputes workflow
+    // 2. Load workflow
     let workflowText = '';
     try {
-        // Try runtime dist path first (Dockerfile copies workflow JSON to dist/)
-        let wfPath = path.join(SRC_DIR, 'workflow-disputes.json');
+        const wfFilename = `workflow-${config.workflow}.json`;
+        let wfPath = path.join(SRC_DIR, wfFilename);
         if (!fs.existsSync(wfPath)) {
-            // Fall back to source tree
-            wfPath = path.join(__dirname, '..', 'workflow-disputes.json');
+            wfPath = path.join(__dirname, '..', wfFilename);
         }
         const wfJson = JSON.parse(fs.readFileSync(wfPath, 'utf-8'));
         workflowText = convertWorkflowToText(wfJson);
     } catch (e) {
-        console.warn('[CallSession] Could not load workflow-disputes.json:', e);
+        console.warn(`[CallSession] Could not load workflow-${config.workflow}.json:`, e);
     }
 
     // 3. Load guardrails (optional)
@@ -175,11 +193,14 @@ function buildSystemPrompt(): string {
 
 export class CallSession {
     private callId:         string;
+    private from:           string;
     private sonic:          SonicClient;
     private gateway:        AgentCoreGatewayClient;
     private rtp:            RtpSession;
+    private bridge:         SbcEventBridge;
     private tools:          ToolSpec[];
     private ended:          boolean = false;
+    private startTime:      number  = Date.now();
 
     // Tracks toolUseIds currently awaiting a gateway response.
     // Cleared on barge-in so stale results from interrupted turns are discarded
@@ -196,9 +217,11 @@ export class CallSession {
     private _rtpFifo:       Buffer  = Buffer.alloc(0);
     private _playoutTimer:  ReturnType<typeof setInterval> | null = null;
 
-    constructor(rtpSession: RtpSession, meta: CallMeta) {
+    constructor(rtpSession: RtpSession, meta: CallMeta, bridge: SbcEventBridge) {
         this.callId  = meta.callId;
+        this.from    = meta.from;
         this.rtp     = rtpSession;
+        this.bridge  = bridge;
         this.sonic   = new SonicClient();
         this.gateway = new AgentCoreGatewayClient();
         this.tools   = loadTools();
@@ -212,15 +235,33 @@ export class CallSession {
         });
     }
 
+    private async _fetchConfig(): Promise<SbcConfig> {
+        const backendUrl = process.env.SBC_BACKEND_URL || 'http://localhost:8080';
+        try {
+            const res = await fetch(`${backendUrl}/api/sbc-config`, {
+                signal: AbortSignal.timeout(3000),
+            });
+            if (res.ok) {
+                const cfg = await res.json() as SbcConfig;
+                console.log(`[CallSession:${this.callId}] Config fetched: voice=${cfg.voice}, persona=${cfg.persona}, workflow=${cfg.workflow}`);
+                return cfg;
+            }
+        } catch (e) {
+            console.warn(`[CallSession:${this.callId}] Could not fetch SBC config, using defaults:`, e);
+        }
+        return { ...CONFIG_DEFAULTS };
+    }
+
     private async _start(): Promise<void> {
-        const systemPrompt = buildSystemPrompt();
+        const config       = await this._fetchConfig();
+        const systemPrompt = buildSystemPrompt(config);
 
         // Nova Sonic expects tools wrapped as { toolSpec: ... }
         const mappedTools = this.tools.map(t => ({ toolSpec: t.toolSpec }));
 
         this.sonic.setConfig({
             systemPrompt,
-            voiceId: 'amy',
+            voiceId: config.voice,
             tools:   mappedTools,
         });
 
@@ -230,6 +271,16 @@ export class CallSession {
         );
 
         console.log(`[CallSession:${this.callId}] Nova Sonic session started — wiring RTP audio bridge`);
+
+        // Emit call start event to frontend
+        this.bridge.emit({
+            type:     'sbc_call_start',
+            callId:   this.callId,
+            from:     this.from,
+            voice:    config.voice,
+            persona:  config.persona,
+            workflow: config.workflow,
+        }).catch(() => {});
 
         // Wire RTP → Nova Sonic only now that the session is open
         this.rtp.on('audio', (g711: Buffer) => this._onRtpAudio(g711));
@@ -311,6 +362,20 @@ export class CallSession {
                 const toolId = event.data?.toolUseId || event.data?.id;
                 if (toolId) this._activeToolIds.add(toolId);
 
+                const toolName = event.data?.toolName || event.data?.name;
+                let args: any = {};
+                try {
+                    const raw = event.data?.content || event.data?.input || '{}';
+                    args = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                } catch { /* ignore parse errors here; handled fully in _handleToolUse */ }
+
+                this.bridge.emit({
+                    type:     'sbc_tool_use',
+                    callId:   this.callId,
+                    toolName,
+                    args,
+                }).catch(() => {});
+
                 this._handleToolUse(event.data).catch(err => {
                     console.error(`[CallSession:${this.callId}] Unhandled tool error:`, err);
                 });
@@ -339,6 +404,14 @@ export class CallSession {
                     }
                     const role = event.data?.role || 'unknown';
                     console.log(`[CallSession:${this.callId}] [${role}] ${text}`);
+
+                    // Emit transcript event to frontend
+                    this.bridge.emit({
+                        type:   'sbc_transcript',
+                        callId: this.callId,
+                        role:   role === 'assistant' ? 'assistant' : 'user',
+                        text,
+                    }).catch(() => {});
                 }
                 break;
             }
@@ -383,6 +456,14 @@ export class CallSession {
             isError = true;
         }
 
+        // Emit tool result to frontend
+        this.bridge.emit({
+            type:     'sbc_tool_result',
+            callId:   this.callId,
+            toolName,
+            result,
+        }).catch(() => {});
+
         // If a barge-in happened while the gateway was in-flight, this toolUseId
         // was removed from _activeToolIds.  Sending a result for a cancelled tool
         // call causes Nova Sonic to close the stream, so we discard it instead.
@@ -408,12 +489,20 @@ export class CallSession {
     end(): void {
         if (this.ended) return;
         this.ended = true;
-        console.log(`[CallSession:${this.callId}] Ending call`);
+        const durationMs = Date.now() - this.startTime;
+        console.log(`[CallSession:${this.callId}] Ending call (${durationMs}ms)`);
 
         if (this._playoutTimer) {
             clearInterval(this._playoutTimer);
             this._playoutTimer = null;
         }
+
+        // Emit call end event to frontend
+        this.bridge.emit({
+            type:       'sbc_call_end',
+            callId:     this.callId,
+            durationMs,
+        }).catch(() => {});
 
         this.sonic.stopSession().catch(err => {
             console.error(`[CallSession:${this.callId}] stopSession error:`, err);

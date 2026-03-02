@@ -16,6 +16,7 @@ COPY backend/dist          ./backend/dist
 COPY frontend-v2/out       ./frontend-v2/out
 COPY tools                 ./tools
 COPY backend/prompts       ./backend/prompts
+COPY backend/data          ./backend/data
 
 
 # Workflow JSON files live in backend/src/ and are loaded at runtime via fs.readFileSync.
