@@ -313,6 +313,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let ws: WebSocket | null = null;
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+        // Voice → language code mapping for InsightPanel "Language" stat
+        const VOICE_LANG: Record<string, string> = {
+            amy: 'en-GB', brian: 'en-GB', emma: 'en-GB', arthur: 'en-GB',
+            matthew: 'en-US', joanna: 'en-US', salli: 'en-US', ivy: 'en-US',
+            celine: 'fr-FR', lea: 'fr-FR', hans: 'de-DE', marlene: 'de-DE',
+        };
+
         const connect = () => {
             ws = new WebSocket(url);
             ws.onopen = () => console.log('[Monitor] Connected to /monitor');
@@ -337,65 +344,133 @@ export function AppProvider({ children }: { children: ReactNode }) {
                                 return [newCall, ...prev].slice(0, 20);
                             });
                         });
-                    } else {
-                        setSbcCalls(prev => {
-                            // Reuse addSbcEvent logic inline so we don't need the callback ref
-                            switch (event.type) {
-                                case 'sbc_call_start': {
-                                    if (prev.some(c => c.callId === event.callId)) return prev;
-                                    const newCall: SbcCall = {
-                                        callId:    event.callId,
-                                        from:      event.from || 'Unknown',
-                                        voice:     event.voice || 'amy',
-                                        persona:   event.persona || 'BankingDisputes',
-                                        workflow:  event.workflow || 'disputes',
-                                        startTime: Date.now(),
-                                        messages:  [],
-                                        status:    'active',
-                                    };
-                                    return [newCall, ...prev].slice(0, 20);
-                                }
-                                case 'sbc_transcript':
-                                    return prev.map(call => call.callId !== event.callId ? call : {
-                                        ...call,
-                                        messages: [...call.messages, {
-                                            role: event.role === 'assistant' ? 'assistant' : 'user',
-                                            text: event.text || '',
-                                            timestamp: Date.now(),
-                                        } as SbcMessage],
-                                    });
-                                case 'sbc_tool_use':
-                                    return prev.map(call => call.callId !== event.callId ? call : {
-                                        ...call,
-                                        messages: [...call.messages, {
-                                            role: 'tool_use',
-                                            text: event.toolName || '',
-                                            toolName: event.toolName,
-                                            args: event.args,
-                                            timestamp: Date.now(),
-                                        } as SbcMessage],
-                                    });
-                                case 'sbc_tool_result':
-                                    return prev.map(call => call.callId !== event.callId ? call : {
-                                        ...call,
-                                        messages: [...call.messages, {
-                                            role: 'tool_result',
-                                            text: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
-                                            toolName: event.toolName,
-                                            timestamp: Date.now(),
-                                        } as SbcMessage],
-                                    });
-                                case 'sbc_call_end':
-                                    return prev.map(call => call.callId !== event.callId ? call : {
-                                        ...call,
-                                        status: 'ended',
-                                        endTime: Date.now(),
-                                        durationMs: event.durationMs,
-                                    });
-                                default:
-                                    return prev;
+                        return;
+                    }
+
+                    // ── Update SbcCalls panel state ──────────────────────────
+                    setSbcCalls(prev => {
+                        switch (event.type) {
+                            case 'sbc_call_start': {
+                                if (prev.some(c => c.callId === event.callId)) return prev;
+                                const newCall: SbcCall = {
+                                    callId:    event.callId,
+                                    from:      event.from || 'Unknown',
+                                    voice:     event.voice || 'amy',
+                                    persona:   event.persona || 'BankingDisputes',
+                                    workflow:  event.workflow || 'disputes',
+                                    startTime: Date.now(),
+                                    messages:  [],
+                                    status:    'active',
+                                };
+                                return [newCall, ...prev].slice(0, 20);
                             }
-                        });
+                            case 'sbc_transcript':
+                                return prev.map(call => call.callId !== event.callId ? call : {
+                                    ...call,
+                                    messages: [...call.messages, {
+                                        role: event.role === 'assistant' ? 'assistant' : 'user',
+                                        text: event.text || '',
+                                        timestamp: Date.now(),
+                                    } as SbcMessage],
+                                });
+                            case 'sbc_tool_use':
+                                return prev.map(call => call.callId !== event.callId ? call : {
+                                    ...call,
+                                    messages: [...call.messages, {
+                                        role: 'tool_use',
+                                        text: event.toolName || '',
+                                        toolName: event.toolName,
+                                        args: event.args,
+                                        timestamp: Date.now(),
+                                    } as SbcMessage],
+                                });
+                            case 'sbc_tool_result':
+                                return prev.map(call => call.callId !== event.callId ? call : {
+                                    ...call,
+                                    messages: [...call.messages, {
+                                        role: 'tool_result',
+                                        text: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+                                        toolName: event.toolName,
+                                        timestamp: Date.now(),
+                                    } as SbcMessage],
+                                });
+                            case 'sbc_call_end':
+                                return prev.map(call => call.callId !== event.callId ? call : {
+                                    ...call,
+                                    status: 'ended',
+                                    endTime: Date.now(),
+                                    durationMs: event.durationMs,
+                                });
+                            default:
+                                return prev;
+                        }
+                    });
+
+                    // ── Also update InsightPanel shared state ────────────────
+                    switch (event.type) {
+                        case 'sbc_call_start': {
+                            const lang = VOICE_LANG[event.voice] || 'en-US';
+                            setCurrentSessionState({
+                                sessionId:       event.callId,
+                                startTime:       new Date().toISOString(),
+                                inputTokens:     0,
+                                outputTokens:    0,
+                                duration:        0,
+                                cost:            0,
+                                transcript:      [],
+                                source:          'sbc',
+                                detectedLanguage: lang,
+                            } as Session);
+                            setMessages([]);
+                            setWorkflowState(null);
+                            break;
+                        }
+                        case 'sbc_transcript': {
+                            const role = event.role === 'assistant' ? 'assistant' : 'user';
+                            setMessages(prev => [...prev, {
+                                role:      role as 'user' | 'assistant',
+                                content:   event.text || '',
+                                timestamp: new Date().toISOString(),
+                            }]);
+                            break;
+                        }
+                        case 'sbc_usage': {
+                            setCurrentSessionState(prev => prev ? {
+                                ...prev,
+                                inputTokens:  event.inputTokens  || 0,
+                                outputTokens: event.outputTokens || 0,
+                            } : prev);
+                            break;
+                        }
+                        case 'sbc_latency': {
+                            setCurrentSessionState(prev => {
+                                if (!prev) return prev;
+                                const turns = (prev.latencyTurns || 0) + 1;
+                                return {
+                                    ...prev,
+                                    lastTtft:     event.ttft_ms,
+                                    avgTtft:      ((prev.avgTtft    || 0) * (turns - 1) + (event.ttft_ms    || 0)) / turns,
+                                    lastLatency:  event.latency_ms,
+                                    avgLatency:   ((prev.avgLatency || 0) * (turns - 1) + (event.latency_ms || 0)) / turns,
+                                    latencyTurns: turns,
+                                };
+                            });
+                            break;
+                        }
+                        case 'sbc_workflow_step': {
+                            setWorkflowState({
+                                currentStep: event.stepId || '',
+                                stepId:      event.stepId,
+                                status:      'active',
+                            });
+                            break;
+                        }
+                        case 'sbc_call_end': {
+                            setCurrentSessionState(null);
+                            setMessages([]);
+                            setWorkflowState(null);
+                            break;
+                        }
                     }
                 } catch { /* ignore parse errors */ }
             };

@@ -412,7 +412,44 @@ export class CallSession {
                         role:   role === 'assistant' ? 'assistant' : 'user',
                         text,
                     }).catch(() => {});
+
+                    // Parse workflow step tag from assistant responses
+                    if (role === 'assistant') {
+                        const stepMatch = text.match(/\[STEP:\s*([^\]]+)\]/);
+                        if (stepMatch) {
+                            this.bridge.emit({
+                                type:    'sbc_workflow_step',
+                                callId:  this.callId,
+                                stepId:  stepMatch[1].trim(),
+                            }).catch(() => {});
+                        }
+                    }
                 }
+                break;
+            }
+
+            case 'usageEvent': {
+                const total = event.data?.details?.total;
+                if (total) {
+                    const inputTokens  = (total.input?.speechTokens  || 0) + (total.input?.textTokens  || 0);
+                    const outputTokens = (total.output?.speechTokens || 0) + (total.output?.textTokens || 0);
+                    this.bridge.emit({
+                        type:         'sbc_usage',
+                        callId:       this.callId,
+                        inputTokens,
+                        outputTokens,
+                    }).catch(() => {});
+                }
+                break;
+            }
+
+            case 'latency_update': {
+                this.bridge.emit({
+                    type:       'sbc_latency',
+                    callId:     this.callId,
+                    ttft_ms:    event.data?.ttft_ms,
+                    latency_ms: event.data?.latency_ms,
+                }).catch(() => {});
                 break;
             }
 

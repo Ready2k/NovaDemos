@@ -14,8 +14,8 @@ export function useSessionStats() {
             return;
         }
 
-        // Stop timer if disconnected
-        if (connectionStatus === 'disconnected') {
+        // Stop timer if disconnected (SBC sessions have their own lifecycle — keep running)
+        if (connectionStatus === 'disconnected' && currentSession?.source !== 'sbc') {
             return;
         }
 
