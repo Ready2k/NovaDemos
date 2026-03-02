@@ -4,13 +4,16 @@
   "Metadata": {
     "entryPointPosition": { "x": 60, "y": 115 },
     "ActionMetadata": {
-      "set-logging":         { "position": { "x": 60,  "y": 115 } },
-      "play-hold":           { "position": { "x": 260, "y": 115 } },
-      "transfer-to-chime":   { "position": { "x": 460, "y": 115 } },
-      "disconnect-fallback": { "position": { "x": 460, "y": 285 } }
+      "set-logging":       { "position": { "x": 60,  "y": 115 } },
+      "play-hold":         { "position": { "x": 260, "y": 115 } },
+      "transfer-to-chime": { "position": { "x": 460, "y": 115 } },
+      "play-returning":    { "position": { "x": 660, "y": 115 } },
+      "set-queue":         { "position": { "x": 860, "y": 115 } },
+      "transfer-to-queue": { "position": { "x": 1060, "y": 115 } },
+      "disconnect-fallback": { "position": { "x": 1060, "y": 315 } }
     },
     "name": "SIP-SBC-Transfer",
-    "description": "Transfer PSTN caller to the Nova 2 Sonic SBC via Amazon Chime SDK Voice Connector"
+    "description": "Transfer PSTN caller to the Nova 2 Sonic SBC via Amazon Chime SDK Voice Connector. On return/failure, route to human agent queue."
   },
   "Actions": [
     {
@@ -52,20 +55,50 @@
         }
       },
       "Transitions": {
+        "NextAction": "play-returning",
+        "Errors": [
+          { "NextAction": "play-returning", "ErrorType": "NoMatchingError" },
+          { "NextAction": "play-returning", "ErrorType": "CallFailed" },
+          { "NextAction": "play-returning", "ErrorType": "InvalidPhoneNumber" }
+        ]
+      }
+    },
+    {
+      "Identifier": "play-returning",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Thank you for speaking with our banking assistant. Let me connect you with an agent who can help with anything further.",
+        "TextToSpeechType": "text",
+        "VoiceId": "Amy"
+      },
+      "Transitions": {
+        "NextAction": "set-queue",
+        "Errors": [{ "NextAction": "set-queue", "ErrorType": "NoMatchingError" }]
+      }
+    },
+    {
+      "Identifier": "set-queue",
+      "Type": "UpdateContactTargetQueue",
+      "Parameters": {
+        "Queue": {
+          "Type": "Value",
+          "QueueId": "REPLACE_WITH_YOUR_BASIC_QUEUE_ARN"
+        }
+      },
+      "Transitions": {
+        "NextAction": "transfer-to-queue",
+        "Errors": [{ "NextAction": "disconnect-fallback", "ErrorType": "NoMatchingError" }]
+      }
+    },
+    {
+      "Identifier": "transfer-to-queue",
+      "Type": "TransferContactToQueue",
+      "Parameters": {},
+      "Transitions": {
         "NextAction": "disconnect-fallback",
         "Errors": [
-          {
-            "NextAction": "disconnect-fallback",
-            "ErrorType": "NoMatchingError"
-          },
-          {
-            "NextAction": "disconnect-fallback",
-            "ErrorType": "CallFailed"
-          },
-          {
-            "NextAction": "disconnect-fallback",
-            "ErrorType": "InvalidPhoneNumber"
-          }
+          { "NextAction": "disconnect-fallback", "ErrorType": "NoMatchingError" },
+          { "NextAction": "disconnect-fallback", "ErrorType": "QueueAtCapacity" }
         ]
       }
     },
