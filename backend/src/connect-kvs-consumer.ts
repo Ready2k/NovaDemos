@@ -65,77 +65,83 @@ export class ConnectKvsConsumer {
         //
         // PRODUCER_TIMESTAMP is avoided: the AWS SDK v3 serialises the Date
         // incorrectly for some KVS stream configurations, causing a 400 error.
-        const selector: any = startFragment
-            ? { StartSelectorType: 'FRAGMENT_NUMBER', AfterFragmentNumber: startFragment }
-            : { StartSelectorType: 'EARLIEST' };
+        let firstConnection = true;
 
-        const resp = await kvsMedia.send(new GetMediaCommand({
-            StreamARN: streamArn,
-            StartSelector: selector,
-        }));
-
-        console.log(`[ConnectKvsConsumer] Streaming started — streamArn=${streamArn}`);
-
-        // Accumulate raw MKV bytes and track how many audio bytes we've already
-        // delivered, so we can emit only the newly extracted audio on each chunk.
         const rawAccumulator: Buffer[] = [];
         let sentAudioBytes = 0;
         let totalChunks = 0;
         let payloadChunks = 0;
 
-        try {
-            for await (const chunk of resp.Payload as AsyncIterable<any>) {
-                if (this.stopped) break;
-                totalChunks++;
+        while (!this.stopped) {
+            try {
+                const selector: any = startFragment
+                    ? { StartSelectorType: 'FRAGMENT_NUMBER', AfterFragmentNumber: startFragment }
+                    : (firstConnection ? { StartSelectorType: 'EARLIEST' } : { StartSelectorType: 'NOW' });
 
-                let data: Uint8Array | undefined;
-                if (chunk.PayloadChunk?.Payload) {
-                    payloadChunks++;
-                    data = chunk.PayloadChunk.Payload;
-                } else if (chunk.EndOfShard) {
-                    console.log('[ConnectKvsConsumer] EndOfShard received');
-                    break;
-                } else if (chunk instanceof Uint8Array || Buffer.isBuffer(chunk) || (chunk && typeof chunk === 'object' && 'length' in chunk)) {
-                    // Broad check for raw bytes (Uint8Array, Buffer, or array-like from SDK stream)
-                    payloadChunks++;
-                    data = chunk as Uint8Array;
-                }
+                firstConnection = false;
 
-                if (data) {
-                    rawAccumulator.push(Buffer.from(data));
+                const resp = await kvsMedia.send(new GetMediaCommand({
+                    StreamARN: streamArn,
+                    StartSelector: selector,
+                }));
 
-                    // Extract all audio from the accumulated MKV data.
-                    const combined = Buffer.concat(rawAccumulator);
-                    const audio = extractAudioFromMkv(combined);
+                console.log(`[ConnectKvsConsumer] Stream connected — StreamARN=${streamArn} Selector=${selector.StartSelectorType}`);
 
-                    if (audio.length > sentAudioBytes) {
-                        const newAudio = audio.slice(sentAudioBytes);
-                        const pcm8 = ulawToLinear16(newAudio);
-                        const pcm16 = resample8to16kHz(pcm8);
-                        if (pcm16.length > 0) {
-                            onAudio(pcm16);
-                        }
-                        sentAudioBytes = audio.length;
+                for await (const chunk of resp.Payload as AsyncIterable<any>) {
+                    if (this.stopped) break;
+                    totalChunks++;
+
+                    let data: Uint8Array | undefined;
+                    if (chunk.PayloadChunk?.Payload) {
+                        payloadChunks++;
+                        data = chunk.PayloadChunk.Payload;
+                    } else if (chunk.EndOfShard) {
+                        console.log('[ConnectKvsConsumer] EndOfShard received');
+                        break; // Will loop back and reconnect if not stopped
+                    } else if (chunk instanceof Uint8Array || Buffer.isBuffer(chunk) || (chunk && typeof chunk === 'object' && 'length' in chunk)) {
+                        payloadChunks++;
+                        data = chunk as Uint8Array;
                     }
-                } else {
-                    console.log('[ConnectKvsConsumer] Unknown chunk type:', chunk?.constructor?.name || typeof chunk, JSON.stringify(Object.keys(chunk || {})));
+
+                    if (data) {
+                        rawAccumulator.push(Buffer.from(data));
+
+                        // Extract all audio from the accumulated MKV data.
+                        const combined = Buffer.concat(rawAccumulator);
+                        const audio = extractAudioFromMkv(combined);
+
+                        if (audio.length > sentAudioBytes) {
+                            const newAudio = audio.slice(sentAudioBytes);
+                            const pcm8 = ulawToLinear16(newAudio);
+                            const pcm16 = resample8to16kHz(pcm8);
+                            if (pcm16.length > 0) {
+                                onAudio(pcm16);
+                            }
+                            sentAudioBytes = audio.length;
+                        }
+                    }
                 }
+            } catch (e: any) {
+                if (this.stopped) break;
+                console.log(`[ConnectKvsConsumer] Stream error (will reconnect):`, e.message);
+                // Wait briefly before reconnecting
+                await new Promise(r => setTimeout(r, 1000));
             }
-        } catch (e: any) {
-            // KVS streams close naturally when the caller stops speaking.
-            console.log('[ConnectKvsConsumer] Stream ended:', e.message);
+
+            if (!this.stopped) {
+                console.log(`[ConnectKvsConsumer] Stream dropped organically, auto-reconnecting to catch resumed audio...`);
+                // Clear startFragment so next connection uses NOW
+                startFragment = '';
+                await new Promise(r => setTimeout(r, 500));
+            }
         }
 
         const accumulatedBytes = rawAccumulator.reduce((n, b) => n + b.length, 0);
         console.log(
-            `[ConnectKvsConsumer] Loop done — totalChunks=${totalChunks} payloadChunks=${payloadChunks} ` +
+            `[ConnectKvsConsumer] Session complete — totalChunks=${totalChunks} payloadChunks=${payloadChunks} ` +
             `accumulatedBytes=${accumulatedBytes} extractedAudioBytes=${sentAudioBytes}`
         );
 
-        console.log(
-            `[ConnectKvsConsumer] Done — delivered ${sentAudioBytes} raw audio bytes ` +
-            `(${Math.round(sentAudioBytes / 8000 / 2 * 1000)} ms @ 8 kHz)`
-        );
         onEnd();
     }
 }

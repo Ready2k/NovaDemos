@@ -18,6 +18,9 @@ import { downsample24to8kHz, encodeWav } from './audio-converter';
 
 const SESSION_TABLE = process.env.SESSION_TABLE || '';
 const RESPONSE_BUCKET = process.env.RESPONSE_BUCKET || '';
+// Bucket that Amazon Connect has permission to read audio from (must be Connect-associated).
+// Falls back to RESPONSE_BUCKET if not set.
+const CONNECT_AUDIO_BUCKET = process.env.CONNECT_AUDIO_BUCKET || RESPONSE_BUCKET;
 
 // Send caller audio to Nova Sonic in 4096-sample (8192-byte) chunks.
 const AUDIO_CHUNK_BYTES = 8192;
@@ -39,6 +42,9 @@ class ConnectPhoneSession {
     private audioFrames: Buffer[] = [];
     private responseText: string = '';
     private history: Array<{ role: string; text: string }> = [];
+    private currentTurnRole: string = 'user';
+    private lastAudioKey: string = '';
+    private isTurnEnding: boolean = false;
 
     private readonly ddb = new DynamoDBClient({});
     private readonly s3 = new S3Client({});
@@ -53,16 +59,17 @@ class ConnectPhoneSession {
 
         this.sonicClient.setConfig({
             systemPrompt: this.buildSystemPrompt(),
-            voiceId: 'Matthew',
+            voiceId: 'matthew',
         });
+
+        // Initial state
+        this.currentTurnRole = 'user';
+        this.lastAudioKey = '';
 
         await this.sonicClient.startSession(
             (event: SonicEvent) => this.handleSonicEvent(event),
             this.opts.sessionId,
         );
-
-        // Set DynamoDB status to "processing" so GetBotResult knows a turn is active.
-        await this.updateDdbStatus('processing');
 
         // Trigger the greeting — Nova Sonic speaks first without waiting for caller audio.
         // This fires interactionTurnEnd, which runs processTurnEnd and marks status=ready.
@@ -136,22 +143,33 @@ class ConnectPhoneSession {
                 break;
 
             case 'contentStart':
-                console.log(`[ConnectPhoneSession:${this.opts.contactId}] ContentStart: role=${event.data?.role}, type=${event.data?.type}`);
-                if (event.data?.role === 'assistant' || event.data?.role === 'ASSISTANT') {
-                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] Marking session as processing in DDB`);
-                    this.updateDdbStatus('processing').catch(e =>
-                        console.error(`[ConnectPhoneSession:${this.opts.contactId}] DDB update failed:`, e)
-                    );
+                const newRole = (event.data?.role || 'assistant').toLowerCase();
+                const isAssistant = newRole === 'assistant';
+
+                console.log(`[ConnectPhoneSession:${this.opts.contactId}] ContentStart: role=${newRole}, type=${event.data?.type}`);
+
+                // If switching from user to assistant, clear previous turn state
+                if (isAssistant && this.currentTurnRole !== 'assistant') {
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] Switching role to Assistant. Clearing accumulators.`);
+                    this.audioFrames = [];
+                    this.responseText = '';
+                    this.lastAudioKey = ''; // Clear old audio link as we are starting a new response
                 }
+                this.currentTurnRole = newRole;
                 break;
 
             case 'contentEnd':
                 console.log(`[ConnectPhoneSession:${this.opts.contactId}] ContentEnd: stopReason=${event.data?.stopReason}`);
                 if (event.data?.stopReason === 'END_TURN') {
+                    // Start turn-end process but don't clear buffers here, they are cleared on new turn start
                     this.processTurnEnd().catch(e =>
                         console.error(`[ConnectPhoneSession:${this.opts.contactId}] Error in processTurnEnd:`, e)
                     );
                 }
+                break;
+
+            case 'error':
+                console.error(`[ConnectPhoneSession:${this.opts.contactId}] Sonic Event: error`, JSON.stringify(event.data, null, 2));
                 break;
 
             default:
@@ -165,89 +183,116 @@ class ConnectPhoneSession {
     }
 
     private async processTurnEnd(): Promise<void> {
-        // Snapshot and reset per-turn accumulators atomically.
-        const frames = this.audioFrames.splice(0);
-        const text = this.responseText;
-        this.responseText = '';
-
-        if (frames.length === 0 && text.length === 0) {
-            console.log(`[ConnectPhoneSession:${this.opts.contactId}] Turn end skipped — no content gathered in this turn`);
+        if (this.isTurnEnding) {
+            console.log(`[ConnectPhoneSession:${this.opts.contactId}] Turn end already in progress, skipping`);
             return;
         }
+        this.isTurnEnding = true;
+        try {
+            // Use local copies so they don't change during async upload
+            const frames = Array.from(this.audioFrames);
+            const text = this.responseText;
 
-        const lpcm24 = frames.length ? Buffer.concat(frames) : Buffer.alloc(0);
-        console.log(
-            `[ConnectPhoneSession:${this.opts.contactId}] Turn end — processing ${lpcm24.length} audio bytes, text="${text}"`
-        );
-
-        // ── Determine intent from response text ──────────────────────────────
-        const upper = text.toUpperCase();
-        let intent: 'continue' | 'transfer' | 'end' = 'continue';
-        if (upper.includes('GOODBYE') || upper.includes('BYE')) intent = 'end';
-        if (upper.includes('TRANSFER') || upper.includes('AGENT')) intent = 'transfer';
-
-        // ── Store response audio as WAV in S3 ────────────────────────────────
-        let audioKey = '';
-        if (lpcm24.length > 0 && RESPONSE_BUCKET) {
-            try {
-                const pcm8k = downsample24to8kHz(lpcm24);
-                const wavData = encodeWav(pcm8k);
-                audioKey = `turns/${this.opts.sessionId}/${Date.now()}.wav`;
-
-                await this.s3.send(new PutObjectCommand({
-                    Bucket: RESPONSE_BUCKET,
-                    Key: audioKey,
-                    Body: wavData,
-                    ContentType: 'audio/wav',
-                }));
-                console.log(`[ConnectPhoneSession:${this.opts.contactId}] WAV uploaded → s3://${RESPONSE_BUCKET}/${audioKey}`);
-            } catch (e) {
-                console.error(`[ConnectPhoneSession:${this.opts.contactId}] S3 upload failed:`, e);
+            if (frames.length === 0 && text.length === 0) {
+                console.log(`[ConnectPhoneSession:${this.opts.contactId}] Turn end skipped — no content gathered in this turn`);
+                return;
             }
-        }
 
-        // ── Update rolling conversation history ──────────────────────────────
-        if (text) {
-            this.history.push({ role: 'assistant', text });
-            if (this.history.length > 10) this.history = this.history.slice(-10);
-        }
+            const lpcm24 = frames.length ? Buffer.concat(frames) : Buffer.alloc(0);
 
-        // ── Update DynamoDB: status=ready so GetBotResult can return the audio ─
-        if (SESSION_TABLE) {
-            try {
-                await this.ddb.send(new UpdateItemCommand({
-                    TableName: SESSION_TABLE,
-                    Key: { sessionId: { S: this.opts.sessionId } },
-                    UpdateExpression:
-                        'SET #s = :s, audioKey = :a, intent = :i, history = :h, #ttl = :t',
-                    ExpressionAttributeNames: {
-                        '#s': 'status',
-                        '#ttl': 'ttl',
-                    },
-                    ExpressionAttributeValues: {
-                        ':s': { S: 'ready' },
-                        ':a': { S: audioKey },
-                        ':i': { S: intent },
-                        ':h': { S: JSON.stringify(this.history) },
-                        ':t': { N: String(Math.floor(Date.now() / 1000) + 7200) },
-                    },
-                }));
-                console.log(`[ConnectPhoneSession:${this.opts.contactId}] DDB updated: status=ready intent=${intent}`);
-            } catch (e) {
-                console.error(`[ConnectPhoneSession:${this.opts.contactId}] DDB update failed:`, e);
+            // DEBOUNCE: If we have 0 audio bytes but we already signaled a result for this assistant turn, skip.
+            // Nova Sonic often sends an END_TURN for Audio then another for Text.
+            if (lpcm24.length === 0 && this.lastAudioKey && this.currentTurnRole === 'assistant') {
+                console.log(`[ConnectPhoneSession:${this.opts.contactId}] Skipping redundant turn end signal (already have audioKey for this turn)`);
+                return;
             }
+
+            console.log(
+                `[ConnectPhoneSession:${this.opts.contactId}] Turn end process — cumulative frames=${frames.length}, total_audio=${lpcm24.length} bytes, text_len=${text.length}`
+            );
+
+            // ── Determine intent from response text ──────────────────────────────
+            const upper = text.toUpperCase();
+            let intent: 'continue' | 'transfer' | 'end' = 'continue';
+            if (upper.includes('GOODBYE') || upper.includes('BYE')) intent = 'end';
+            if (upper.includes('TRANSFER') || upper.includes('AGENT')) intent = 'transfer';
+
+            // ── Store response audio as WAV in Connect-accessible S3 bucket ─────
+            // IMPORTANT: Must use CONNECT_AUDIO_BUCKET (amazon-connect-*) so that
+            // Amazon Connect's SSML <audio src> can load the file.
+            if (lpcm24.length > 0 && CONNECT_AUDIO_BUCKET) {
+                try {
+                    const pcm8k = downsample24to8kHz(lpcm24);
+                    const wavData = encodeWav(pcm8k);
+                    const audioKey = `connect/archdemos/voice-s2s-turns/${this.opts.sessionId}/${Date.now()}.wav`;
+
+                    await this.s3.send(new PutObjectCommand({
+                        Bucket: CONNECT_AUDIO_BUCKET,
+                        Key: audioKey,
+                        Body: wavData,
+                        ContentType: 'audio/wav',
+                    }));
+                    this.lastAudioKey = audioKey;
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] WAV uploaded → s3://${CONNECT_AUDIO_BUCKET}/${audioKey}`);
+                } catch (e) {
+                    console.error(`[ConnectPhoneSession:${this.opts.contactId}] S3 upload failed:`, e);
+                }
+            }
+
+            // ── Update rolling conversation history ──────────────────────────────
+            const currentHistory = Array.from(this.history);
+            if (text) {
+                const lastEntry = currentHistory[currentHistory.length - 1] as { role: string; text: string } | undefined;
+                if (lastEntry && lastEntry.role === 'assistant') {
+                    lastEntry.text = text;
+                } else {
+                    currentHistory.push({ role: 'assistant', text });
+                }
+                if (currentHistory.length > 10) currentHistory.splice(0, currentHistory.length - 10);
+                this.history = currentHistory;
+            }
+
+            // ── Update DynamoDB: status=ready so GetBotResult can return the audio ─
+            if (SESSION_TABLE) {
+                try {
+                    await this.ddb.send(new UpdateItemCommand({
+                        TableName: SESSION_TABLE,
+                        Key: { sessionId: { S: this.opts.sessionId } },
+                        UpdateExpression:
+                            'SET #s = :s, audioKey = :a, intent = :i, history = :h, #ttl = :t',
+                        ExpressionAttributeNames: {
+                            '#s': 'status',
+                            '#ttl': 'ttl',
+                        },
+                        ExpressionAttributeValues: {
+                            ':s': { S: 'ready' },
+                            ':a': { S: this.lastAudioKey || '' },
+                            ':i': { S: intent },
+                            ':h': { S: JSON.stringify(this.history) },
+                            ':t': { N: String(Math.floor(Date.now() / 1000) + 7200) },
+                        },
+                    }));
+                    console.log(`[ConnectPhoneSession:${this.opts.contactId}] DDB updated: status=ready audioKey=${this.lastAudioKey || '(none)'} intent=${intent}`);
+                } catch (e) {
+                    console.error(`[ConnectPhoneSession:${this.opts.contactId}] DDB update failed:`, e);
+                }
+            }
+        } finally {
+            this.isTurnEnding = false;
         }
     }
 
-    private async updateDdbStatus(status: string): Promise<void> {
+    private async updateDdbStatus(status: string, clearAudio: boolean = false): Promise<void> {
         if (!SESSION_TABLE) return;
         try {
             await this.ddb.send(new UpdateItemCommand({
                 TableName: SESSION_TABLE,
                 Key: { sessionId: { S: this.opts.sessionId } },
-                UpdateExpression: 'SET #s = :s',
+                UpdateExpression: clearAudio ? 'SET #s = :s, audioKey = :a' : 'SET #s = :s',
                 ExpressionAttributeNames: { '#s': 'status' },
-                ExpressionAttributeValues: { ':s': { S: status } },
+                ExpressionAttributeValues: clearAudio
+                    ? { ':s': { S: status }, ':a': { S: '' } }
+                    : { ':s': { S: status } },
             }));
         } catch (e) {
             console.warn(`[ConnectPhoneSession:${this.opts.contactId}] DDB status update failed:`, e);

@@ -308,7 +308,7 @@ export class SonicClient {
         this.currentPromptName = promptName;
         this.currentContentName = undefined; // Lazily initialized
 
-        const voiceId = this.sessionConfig.voiceId || "Matthew";
+        const voiceId = this.sessionConfig.voiceId || "matthew";
         console.log(`[SonicClient] Using Voice ID: ${voiceId}`);
 
         // 1. Session Start
@@ -321,7 +321,7 @@ export class SonicClient {
                         temperature: 0.7
                     },
                     turnDetectionConfiguration: {
-                        endpointingSensitivity: "HIGH"  // Controls when Nova detects end of user speech
+                        endpointingSensitivity: "MEDIUM"  // Controls when Nova detects end of user speech
                     }
                 }
             }
@@ -342,7 +342,7 @@ export class SonicClient {
                         sampleRateHertz: 24000,  // Nova 2 Sonic outputs at 24kHz for better quality
                         sampleSizeBits: 16,
                         channelCount: 1,
-                        voiceId: this.sessionConfig.voiceId || "Matthew",
+                        voiceId: this.sessionConfig.voiceId || "matthew",
                         encoding: "base64",
                         audioType: "SPEECH"
                     },
@@ -1190,15 +1190,20 @@ export class SonicClient {
 
 
                     if (eventData.audioOutput) {
-                        const content = eventData.audioOutput.content;
-                        if (content) {
-                            console.log(`[SonicClient] Received audio chunk: ${content.length} base64 chars`);
+                        // Check ALL possible fields for audio data in Nova Sonic response
+                        const content = eventData.audioOutput.content ||
+                            eventData.audioOutput.bytes ||
+                            eventData.audioOutput.data ||
+                            eventData.audioOutput.audio;
+
+                        if (content && typeof content === 'string') {
+                            console.log(`[SonicClient] Received audio chunk: ${content.length} chars`);
                             this.eventCallback?.({
                                 type: 'audio',
                                 data: { audio: Buffer.from(content, 'base64') }
                             });
                         } else {
-                            console.warn('[SonicClient] Received audioOutput event but content is null or empty!');
+                            console.warn('[SonicClient] audioOutput keys:', Object.keys(eventData.audioOutput), 'Full:', JSON.stringify(eventData.audioOutput).substring(0, 100));
                         }
                     }
 

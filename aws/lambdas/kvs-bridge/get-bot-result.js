@@ -13,12 +13,18 @@
  */
 
 const { DynamoDBClient, GetItemCommand, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+const { S3Client, CopyObjectCommand } = require('@aws-sdk/client-s3');
+const { ConnectClient, CreatePromptCommand } = require('@aws-sdk/client-connect');
 
 const ddb = new DynamoDBClient({});
+const s3 = new S3Client({ requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED' });
+const connect = new ConnectClient({ region: process.env.AWS_REGION || 'us-west-2' });
 const SESSION_TABLE = process.env.SESSION_TABLE;
 const RESPONSE_BUCKET = process.env.RESPONSE_BUCKET || '';
-const MAX_RETRIES = 10;        // 10 × 500 ms = 5 s (total path < 8s)
-const RETRY_DELAY = 500;       // ms
+const CONNECT_AUDIO_BUCKET = process.env.CONNECT_AUDIO_BUCKET || RESPONSE_BUCKET;
+const CONNECT_INSTANCE_ID = process.env.CONNECT_INSTANCE_ID || '';
+const MAX_RETRIES = 11;
+const RETRY_DELAY = 500;
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -42,12 +48,12 @@ exports.handler = async (event) => {
             item = Item;
         } catch (e) {
             console.error('GetItem failed:', e.message);
-            return { audioS3Uri: null, intent: 'continue' };
+            return { audioS3Uri: '', ssml: '', intent: 'continue' };
         }
 
         if (!item) {
             console.warn(`Session ${sessionId} not found`);
-            return { audioS3Uri: null, intent: 'continue' };
+            return { audioS3Uri: '', ssml: '', intent: 'continue' };
         }
 
         const status = item.status?.S || 'waiting';
@@ -79,16 +85,41 @@ exports.handler = async (event) => {
 
             const audioKey = item.audioKey?.S || '';
             const intent = item.intent?.S || 'continue';
-            // Build full S3 URI so Connect's Play Prompt block can use it directly.
-            const audioS3Uri = audioKey && RESPONSE_BUCKET
-                ? `s3://${RESPONSE_BUCKET}/${audioKey}`
-                : '';
-            console.log(`GetBotResult: returning audioS3Uri=${audioS3Uri} intent=${intent}`);
-            return { audioS3Uri, intent };
+
+            let audioS3Uri = '';
+            let ssml = '';
+
+            if (audioKey && CONNECT_AUDIO_BUCKET && CONNECT_INSTANCE_ID) {
+                try {
+                    // 1. ECS already wrote the WAV directly to CONNECT_AUDIO_BUCKET
+                    const s3Uri = `s3://${CONNECT_AUDIO_BUCKET}/${audioKey}`;
+
+                    // 2. Register as a Connect Prompt (the official API for dynamic audio)
+                    const promptName = `vs2s-${Date.now()}`;
+                    const { PromptARN } = await connect.send(new CreatePromptCommand({
+                        InstanceId: CONNECT_INSTANCE_ID,
+                        Name: promptName,
+                        S3Uri: s3Uri,
+                    }));
+
+                    audioS3Uri = s3Uri;
+                    ssml = PromptARN;  // Contact flow reads $.External.ssml as promptArn
+                    console.log(`Created prompt: ${PromptARN} from ${s3Uri}`);
+                } catch (err) {
+                    console.error(`Prompt creation failed for ${audioKey}:`, err.message);
+                    audioS3Uri = `s3://${CONNECT_AUDIO_BUCKET}/${audioKey}`;
+                    ssml = audioS3Uri;
+                }
+            }
+
+            console.log(`GetBotResult CLAIMED: ssml=${ssml.substring(0, 100)}... intent=${intent}`);
+            return { audioS3Uri, ssml, intent };
         }
 
         // ── 3. Not ready yet — wait and retry ────────────────────────────────
-        console.log(`Attempt ${attempt + 1}/${MAX_RETRIES + 1}: status=${status}, waiting ${RETRY_DELAY} ms`);
+        if (attempt % 5 === 0) {
+            console.log(`Attempt ${attempt + 1}/${MAX_RETRIES + 1}: status=${status} session=${sessionId}`);
+        }
         if (attempt < MAX_RETRIES) {
             await sleep(RETRY_DELAY);
         }
@@ -96,5 +127,5 @@ exports.handler = async (event) => {
 
     // ── 4. Timeout ────────────────────────────────────────────────────────────
     console.warn(`GetBotResult timed out for session ${sessionId}`);
-    return { audioS3Uri: null, intent: 'continue' };
+    return { audioS3Uri: '', ssml: '', intent: 'continue' };
 };

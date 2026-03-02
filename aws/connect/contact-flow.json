@@ -271,11 +271,9 @@
         },
         {
             "Parameters": {
-                "Media": {
-                    "Uri": "$.External.audioS3Uri",
-                    "SourceType": "S3",
-                    "MediaType": "Audio"
-                }
+                "Text": "$.External.ssml",
+                "TextType": "ssml",
+                "PromptId": ""
             },
             "Identifier": "b0000001-0000-0000-0000-000000000006",
             "Type": "MessageParticipant",

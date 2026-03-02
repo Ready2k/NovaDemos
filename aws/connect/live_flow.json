@@ -1,0 +1,295 @@
+{
+    "Version": "2019-10-30",
+    "StartAction": "b0000001-0000-0000-0000-000000000001",
+    "Metadata": {
+        "entryPointPosition": {
+            "x": -97.6,
+            "y": -7.2
+        },
+        "ActionMetadata": {
+            "b0000001-0000-0000-0000-000000000008": {
+                "position": {
+                    "x": 1060,
+                    "y": 400
+                }
+            },
+            "b0000001-0000-0000-0000-000000000010": {
+                "position": {
+                    "x": 1320,
+                    "y": 20
+                }
+            },
+            "b0000001-0000-0000-0000-000000000001": {
+                "position": {
+                    "x": 20,
+                    "y": 20
+                }
+            },
+            "b0000001-0000-0000-0000-000000000002": {
+                "position": {
+                    "x": 279.2,
+                    "y": 19.2
+                },
+                "toCustomer": true,
+                "fromCustomer": true
+            },
+            "b0000001-0000-0000-0000-000000000007": {
+                "position": {
+                    "x": 800,
+                    "y": 280
+                },
+                "conditions": [],
+                "conditionMetadata": [
+                    {
+                        "id": "2d43c7d3-eda8-463d-b9c6-5eaa2422f669",
+                        "operator": {
+                            "name": "Equals",
+                            "value": "Equals",
+                            "shortDisplay": "="
+                        },
+                        "value": "transfer"
+                    },
+                    {
+                        "id": "ca7014ca-52f9-4dca-80c2-902fe18f4ad2",
+                        "operator": {
+                            "name": "Equals",
+                            "value": "Equals",
+                            "shortDisplay": "="
+                        },
+                        "value": "end"
+                    }
+                ]
+            },
+            "b0000001-0000-0000-0000-000000000006": {
+                "position": {
+                    "x": 530.4,
+                    "y": 271.2
+                },
+                "parameters": {
+                    "PromptId": {
+                        "useDynamic": true
+                    }
+                },
+                "useDynamic": true
+            },
+            "b0000001-0000-0000-0000-000000000009": {
+                "position": {
+                    "x": 1060,
+                    "y": 20
+                }
+            },
+            "b0000001-0000-0000-0000-000000000003": {
+                "position": {
+                    "x": 538.4,
+                    "y": 18.4
+                },
+                "parameters": {
+                    "LambdaFunctionARN": {
+                        "displayName": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-StartBotSession"
+                    }
+                },
+                "dynamicMetadata": {}
+            },
+            "b0000001-0000-0000-0000-000000000005": {
+                "position": {
+                    "x": 280,
+                    "y": 280
+                },
+                "parameters": {
+                    "LambdaFunctionARN": {
+                        "displayName": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-GetBotResult"
+                    }
+                },
+                "dynamicMetadata": {}
+            }
+        },
+        "Annotations": [],
+        "name": "KVS_Test",
+        "description": "",
+        "type": "contactFlow",
+        "status": "PUBLISHED",
+        "hash": {}
+    },
+    "Actions": [
+        {
+            "Parameters": {},
+            "Identifier": "b0000001-0000-0000-0000-000000000008",
+            "Type": "TransferContactToQueue",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000009",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "ErrorType": "QueueAtCapacity"
+                    },
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {},
+            "Identifier": "b0000001-0000-0000-0000-000000000010",
+            "Type": "DisconnectParticipant",
+            "Transitions": {}
+        },
+        {
+            "Parameters": {
+                "FlowLoggingBehavior": "Enabled"
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000001",
+            "Type": "UpdateFlowLoggingBehavior",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000002"
+            }
+        },
+        {
+            "Parameters": {
+                "MediaStreamingState": "Enabled",
+                "MediaStreamType": "Audio",
+                "Participants": [
+                    {
+                        "ParticipantType": "Customer",
+                        "MediaDirections": [
+                            "To",
+                            "From"
+                        ]
+                    }
+                ]
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000002",
+            "Type": "UpdateContactMediaStreamingBehavior",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000003",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "ComparisonValue": "$.External.intent"
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000007",
+            "Type": "Compare",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000005",
+                "Conditions": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000008",
+                        "Condition": {
+                            "Operator": "Equals",
+                            "Operands": [
+                                "transfer"
+                            ]
+                        }
+                    },
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "Condition": {
+                            "Operator": "Equals",
+                            "Operands": [
+                                "end"
+                            ]
+                        }
+                    }
+                ],
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000005",
+                        "ErrorType": "NoMatchingCondition"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "PromptId": "$.External.ssml"
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000006",
+            "Type": "MessageParticipant",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000007",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000007",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "MediaStreamingState": "Disabled",
+                "Participants": [
+                    {
+                        "ParticipantType": "Customer",
+                        "MediaDirections": [
+                            "To",
+                            "From"
+                        ]
+                    }
+                ],
+                "MediaStreamType": "Audio"
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000009",
+            "Type": "UpdateContactMediaStreamingBehavior",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000010",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000010",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-StartBotSession",
+                "InvocationTimeLimitSeconds": "8",
+                "InvocationType": "SYNCHRONOUS",
+                "ResponseValidation": {
+                    "ResponseType": "JSON"
+                }
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000003",
+            "Type": "InvokeLambdaFunction",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000005",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        },
+        {
+            "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:us-west-2:388660028061:function:voice-s2s-GetBotResult",
+                "InvocationTimeLimitSeconds": "8",
+                "InvocationType": "SYNCHRONOUS",
+                "ResponseValidation": {
+                    "ResponseType": "JSON"
+                }
+            },
+            "Identifier": "b0000001-0000-0000-0000-000000000005",
+            "Type": "InvokeLambdaFunction",
+            "Transitions": {
+                "NextAction": "b0000001-0000-0000-0000-000000000006",
+                "Errors": [
+                    {
+                        "NextAction": "b0000001-0000-0000-0000-000000000009",
+                        "ErrorType": "NoMatchingError"
+                    }
+                ]
+            }
+        }
+    ]
+}
