@@ -161,12 +161,10 @@ Resources:
           ToPort: !Ref SbcSipPort
           CidrIp: 99.77.253.0/24
           Description: SIP from Chime VC
-        # RTP media
+        # RTP media (default pool 10000-10199 — adjust if you change SbcRtpPortBase/Count)
         - IpProtocol: udp
-          FromPort: !Ref SbcRtpPortBase
-          ToPort: !Sub
-            - '${End}'
-            - End: !Select [0, !Split ['.', !Sub '${SbcRtpPortBase + SbcRtpPortCount - 1}']]
+          FromPort: 10000
+          ToPort: 10199
           CidrIp: 0.0.0.0/0
           Description: RTP media (allow all sources for symmetric RTP)
         # HTTPS for Bedrock API
