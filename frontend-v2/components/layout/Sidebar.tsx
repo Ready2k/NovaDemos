@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/context/AppContext';
 import { useState } from 'react';
+import { Phone } from 'lucide-react';
 
 interface SidebarProps {
     className?: string;
@@ -13,8 +14,11 @@ export default function Sidebar({ className }: SidebarProps) {
         navigateTo,
         resetSession,
         setIsAboutModalOpen,
-        setActiveSettingsTab
+        setActiveSettingsTab,
+        sbcCalls,
     } = useApp();
+
+    const hasActiveCall = sbcCalls.some(c => c.status === 'active');
 
     const [confirmReset, setConfirmReset] = useState(false);
 
@@ -38,6 +42,12 @@ export default function Sidebar({ className }: SidebarProps) {
             id: 'history',
             icon: <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
             label: 'History'
+        },
+        {
+            id: 'phone',
+            icon: <Phone className="w-5 h-5" />,
+            label: 'Phone Calls',
+            badge: hasActiveCall,
         },
     ];
 
@@ -87,7 +97,7 @@ export default function Sidebar({ className }: SidebarProps) {
                         key={item.id}
                         onClick={() => navigateTo(item.id as any)}
                         className={cn(
-                            "w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 border",
+                            "w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 border relative",
                             activeView === item.id
                                 ? isDarkMode
                                     ? "bg-white/10 text-ink-text-primary border-white/20 shadow-lg"
@@ -99,6 +109,9 @@ export default function Sidebar({ className }: SidebarProps) {
                         title={item.label}
                     >
                         {item.icon}
+                        {(item as any).badge && (
+                            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500" />
+                        )}
                     </button>
                 ))}
             </div>

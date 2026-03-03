@@ -41,6 +41,7 @@ export interface Session {
     latencyTurns?: number;
     lastEnergy?: number;
     lastSpeakingRate?: number;
+    source?: 'websocket' | 'sbc';
 }
 
 export interface SessionStats {

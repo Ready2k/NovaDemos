@@ -1,16 +1,24 @@
 {
   "name": "get_account_transactions",
-  "description": "Returns a list of recent transactions.",
+  "description": "Returns a filtered list of transactions for a date range.",
   "input_schema": {
     "type": "object",
     "properties": {
       "accountId": {
         "type": "string",
-        "description": "The unique identifier for the customer's bank account (e.g., 10-digit number)."
+        "description": "The unique identifier for the customer's bank account (e.g., 8-digit number)."
       },
       "sortCode": {
         "type": "string",
         "description": "The 6-digit sort code required alongside the account ID for verification."
+      },
+      "startDate": {
+        "type": "string",
+        "description": "Start of date range in YYYY-MM-DD format (inclusive). Default: 60 days before today."
+      },
+      "endDate": {
+        "type": "string",
+        "description": "End of date range in YYYY-MM-DD format (inclusive). Default: today."
       }
     },
     "required": [
@@ -18,7 +26,7 @@
       "sortCode"
     ]
   },
-  "instruction": "- Use 'agentcore_transactions' when the user asks for transaction history, recent transactions, or account activity.\n- Always require both accountId and sortCode for security verification.\n- This tool connects to the banking system via AgentCore Gateway.",
+  "instruction": "- Use this tool when the user asks for transaction history, recent transactions, spending, or account activity.\n- Always require both accountId and sortCode for security verification.\n- ALWAYS pass startDate and endDate:\n  - If the user specifies a relative period ('last week', 'last month', 'last September'), call get_server_time FIRST, then calculate startDate/endDate from that.\n  - 'last week' = the 7 calendar days before today.\n  - 'last month' = 1st to last day of the previous calendar month.\n  - 'this month' = 1st of the current month to today.\n  - A named month (e.g. 'last September') = 1st to 30th of that month in the most recent occurrence.\n  - If no period is mentioned, default to: startDate = 60 days ago, endDate = today.\n- Do NOT ask the user for specific dates — calculate them yourself after calling get_server_time.",
   "gatewayTarget": "get-TransactionalHistory___get_TransactionHistory",
   "category": "Banking"
 }

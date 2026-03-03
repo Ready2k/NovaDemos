@@ -13,6 +13,7 @@ import { SimulationService } from './simulation-service';
 
 import { formatVoicesForFrontend } from './voice-service';
 import { PromptService } from './services/prompt-service';
+import { MemoryService } from './services/memory-service';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
@@ -114,6 +115,22 @@ langfuse.on("error", (error) => {
 
 // Initialize Prompt Service
 const promptService = new PromptService(langfuse);
+
+// Initialize AgentCore Memory Service (optional — requires MEMORY_ID env var)
+const MEMORY_ID = process.env.MEMORY_ID || '';
+const MEMORY_GLOBALLY_ENABLED = !!(MEMORY_ID && process.env.MEMORY_ENABLED !== 'false');
+let memoryService: MemoryService | null = null;
+if (MEMORY_GLOBALLY_ENABLED) {
+    try {
+        memoryService = new MemoryService({
+            memoryId: MEMORY_ID,
+            region: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
+        });
+        console.log('[Server] AgentCore Memory Service initialized');
+    } catch (err) {
+        console.warn('[Server] Failed to initialize MemoryService (non-fatal):', err);
+    }
+}
 
 
 
@@ -1091,6 +1108,10 @@ interface ClientSession {
     inactivityMaxChecks?: number; // Max number of checks before closing
     inactivityEnabled?: boolean; // Toggle inactivity detection
 
+    // AgentCore Memory
+    memoryEnabled?: boolean;   // Per-session flag (undefined = global default)
+    memoryActorId?: string;    // Stable caller ID (sessionId for web, phone number for SBC)
+
     // Acoustic Feature Extraction
     userTurnRmsSamples?: number[];  // RMS value per audio chunk for current user turn
     userTurnStartTime?: number;     // Date.now() when first audio chunk arrives for this turn
@@ -1218,6 +1239,13 @@ function stopInactivityTimer(session: ClientSession) {
 
 // --- Serve Frontend ---
 const activeSessions = new Map<WebSocket, ClientSession>();
+
+// ── Monitor WebSocket sessions (phone panel observers — no Nova Sonic session) ─
+const monitorSessions = new Set<WebSocket>();
+
+// In-memory snapshot of currently active SBC calls so a monitor client that
+// connects mid-call immediately receives the full current state.
+const sbcActiveCalls = new Map<string, any>(); // callId → sbc_call_start payload
 
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
@@ -2259,6 +2287,119 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // ── SBC Config ──────────────────────────────────────────────────────────────
+    const SBC_CONFIG_FILE = path.join(__dirname, '../data/sbc-config.json');
+    const SBC_CONFIG_DEFAULTS = { voice: 'amy', persona: 'BankingDisputes', workflow: 'disputes', enabledTools: [] };
+
+    if (pathname === '/api/sbc-config') {
+        if (req.method === 'GET') {
+            const cfg = fs.existsSync(SBC_CONFIG_FILE)
+                ? JSON.parse(fs.readFileSync(SBC_CONFIG_FILE, 'utf-8'))
+                : SBC_CONFIG_DEFAULTS;
+            res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(cfg));
+            return;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk.toString(); });
+            req.on('end', () => {
+                try {
+                    const cfg = JSON.parse(body);
+                    fs.writeFileSync(SBC_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+                    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                } catch (e: any) {
+                    res.writeHead(400, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: e.message }));
+                }
+            });
+            return;
+        }
+    }
+
+    // ── SBC Event Broadcast ──────────────────────────────────────────────────
+    if (pathname === '/internal/sbc-event' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const event = JSON.parse(body);
+
+                // Maintain in-memory snapshot for mid-call monitor connects
+                if (event.type === 'sbc_call_start') {
+                    sbcActiveCalls.set(event.callId, event);
+                } else if (event.type === 'sbc_call_end') {
+                    sbcActiveCalls.delete(event.callId);
+                }
+
+                // Broadcast to all sonic sessions AND all monitor sessions
+                let sent = 0;
+                const msg = JSON.stringify(event);
+                for (const [ws] of activeSessions.entries()) {
+                    if (ws.readyState === WebSocket.OPEN) { ws.send(msg); sent++; }
+                }
+                for (const ws of monitorSessions) {
+                    if (ws.readyState === WebSocket.OPEN) { ws.send(msg); sent++; }
+                }
+                console.log(`[SBC] Broadcast event "${event.type}" to ${sent} client(s) (${monitorSessions.size} monitor)`);
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true, sent }));
+            } catch (e: any) {
+                res.writeHead(400, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // ── SBC Memory: enrich system prompt with caller history ─────────────────
+    if (pathname === '/api/sbc-memory-context' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                const { actorId, systemPrompt } = JSON.parse(body);
+                let enriched = systemPrompt || '';
+                if (memoryService && actorId && enriched) {
+                    const memCtx = await memoryService.getRelevantMemories(
+                        actorId,
+                        enriched.substring(0, 200)
+                    );
+                    if (memCtx) enriched += memCtx;
+                }
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ systemPrompt: enriched }));
+            } catch (e: any) {
+                // Non-fatal: return original prompt unchanged
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ systemPrompt: '' }));
+            }
+        });
+        return;
+    }
+
+    // ── SBC Memory: store a transcript turn ──────────────────────────────────
+    if (pathname === '/api/sbc-memory-event' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const { actorId, sessionId, role, text } = JSON.parse(body);
+                if (memoryService && actorId && sessionId && role && text) {
+                    // Fire-and-forget — never block the response
+                    memoryService.createEvent(actorId, sessionId, role, text);
+                }
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+            } catch (e: any) {
+                res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true })); // always 200 — non-fatal
+            }
+        });
+        return;
+    }
+
     // Serve static files
     let filePath = pathname === '/' ? '/index.html' : pathname || '/index.html';
     // Remove query parameters
@@ -2317,9 +2458,42 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Create WebSocket server
-const wss = new WebSocketServer({
-    server,
-    path: SONIC_PATH
+// Both WSS instances use noServer:true so we can manually route upgrade requests.
+// If they both used { server, path } the first WSS would reject /monitor upgrades
+// with a 400 before the second WSS could claim them.
+const wss = new WebSocketServer({ noServer: true });
+
+// ── Monitor WebSocket (phone panel — no Nova Sonic session started) ────────────
+const wssMonitor = new WebSocketServer({ noServer: true });
+
+// Route HTTP upgrade requests to the correct WSS by path
+server.on('upgrade', (req, socket, head) => {
+    const pathname = (req.url || '/').split('?')[0];
+    if (pathname === SONIC_PATH) {
+        wss.handleUpgrade(req, socket as any, head, (ws) => wss.emit('connection', ws, req));
+    } else if (pathname === '/monitor') {
+        wssMonitor.handleUpgrade(req, socket as any, head, (ws) => wssMonitor.emit('connection', ws, req));
+    } else {
+        socket.destroy();
+    }
+});
+wssMonitor.on('connection', (ws: WebSocket) => {
+    monitorSessions.add(ws);
+    console.log(`[Monitor] Client connected. Active monitors: ${monitorSessions.size}`);
+
+    // Send snapshot of any currently active SBC calls so mid-call connects work
+    if (sbcActiveCalls.size > 0) {
+        ws.send(JSON.stringify({
+            type:  'sbc_snapshot',
+            calls: Array.from(sbcActiveCalls.values()),
+        }));
+    }
+
+    ws.on('close', () => {
+        monitorSessions.delete(ws);
+        console.log(`[Monitor] Client disconnected. Active monitors: ${monitorSessions.size}`);
+    });
+    ws.on('error', () => monitorSessions.delete(ws));
 });
 
 console.log(`[Server] WebSocket server starting on port ${PORT}${SONIC_PATH}`);
@@ -2889,6 +3063,29 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (parsed.config.inactivityMaxChecks !== undefined) {
                             session.inactivityMaxChecks = parsed.config.inactivityMaxChecks;
                             console.log(`[Server] Inactivity max checks set to: ${session.inactivityMaxChecks}`);
+                        }
+
+                        // 6. AgentCore Memory — per-session flag + context injection
+                        if (parsed.config.memoryEnabled !== undefined) {
+                            session.memoryEnabled = !!parsed.config.memoryEnabled;
+                        } else if (session.memoryEnabled === undefined) {
+                            session.memoryEnabled = MEMORY_GLOBALLY_ENABLED;
+                        }
+                        // Override actorId if provided (SBC callers pass phone number here)
+                        if (parsed.config.memoryActorId) {
+                            session.memoryActorId = parsed.config.memoryActorId;
+                        } else if (!session.memoryActorId) {
+                            session.memoryActorId = session.sessionId;
+                        }
+                        if (session.memoryEnabled && memoryService && parsed.config.systemPrompt) {
+                            const memCtx = await memoryService.getRelevantMemories(
+                                session.memoryActorId || session.sessionId,
+                                (parsed.config.systemPrompt || '').substring(0, 200)
+                            );
+                            if (memCtx) {
+                                parsed.config.systemPrompt += memCtx;
+                                console.log(`[Server] Injected ${memCtx.length} chars of memory context for actor=${session.memoryActorId}`);
+                            }
                         }
 
                         console.log(`[Server] Session configured. Voice: ${session.voiceId}, Location: ${session.userLocation}, Timezone: ${session.userTimezone}`);
@@ -3813,6 +4010,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 session.lastUserTranscript = event.data.transcript;
                 session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
+                // Memory: store user turn (fire-and-forget, non-fatal)
+                if (session.memoryEnabled && memoryService && event.data.transcript) {
+                    memoryService.createEvent(
+                        session.memoryActorId || session.sessionId,
+                        session.sessionId,
+                        'USER',
+                        event.data.transcript
+                    );
+                }
             } else if (role === 'assistant' || role === 'model') {
                 const stage = event.data.stage;
                 const isSpeculative = stage === 'SPECULATIVE';
@@ -3874,6 +4080,18 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     }
 
                     session.transcript.push(entry);
+                    // Memory: store final assistant turn only (skip speculative drafts)
+                    if (event.data.isFinal && session.memoryEnabled && memoryService) {
+                        const rawText = event.data.transcript || '';
+                        if (rawText) {
+                            memoryService.createEvent(
+                                session.memoryActorId || session.sessionId,
+                                session.sessionId,
+                                'ASSISTANT',
+                                rawText
+                            );
+                        }
+                    }
                 }
             }
 
@@ -5006,9 +5224,30 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             break;
 
         case 'error': {
-            console.error('[Server] Nova Sonic stream error — attempting auto-restart:', event.data);
+            console.error('[Server] Nova Sonic stream error:', event.data);
 
-            // Tell the client we're reconnecting so it can show feedback immediately
+            // Guard: only attempt one restart per session to avoid quota-exhaustion cascade.
+            // Each orphaned stream counts against the 10-session concurrent limit for Nova 2 Sonic.
+            if ((session as any)._sonicRestartAttempts >= 1) {
+                console.warn('[Server] Already attempted restart once — cancelling any pending restart and sending fatal error');
+                // Cancel the first restart's pending timeout so it doesn't fire after the fatal error.
+                if ((session as any)._restartTimeout) {
+                    clearTimeout((session as any)._restartTimeout);
+                    (session as any)._restartTimeout = null;
+                }
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'The voice service is unavailable. Please refresh the page to reconnect.',
+                        details: event.data,
+                        fatal: true,
+                    }));
+                }
+                break;
+            }
+            (session as any)._sonicRestartAttempts = ((session as any)._sonicRestartAttempts || 0) + 1;
+
+            // Tell the client we're reconnecting immediately
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'reconnecting',
@@ -5016,13 +5255,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }));
             }
 
-            // Attempt one automatic session restart after a short backoff
-            setTimeout(async () => {
-                if (ws.readyState !== WebSocket.OPEN) return; // Client already gone
+            // Wait 5 s before restart — gives Nova Sonic time to release the old stream
+            // against the 10-session concurrent quota before a new one is opened.
+            (session as any)._restartTimeout = setTimeout(async () => {
+                (session as any)._restartTimeout = null;
+                if (ws.readyState !== WebSocket.OPEN) return;
 
                 try {
                     console.log('[Server] Restarting Nova Sonic session after stream error…');
-                    // sonic-client already force-reset its state, so startSession is safe
                     await session.sonicClient.startSession(
                         (e: SonicEvent) => handleSonicEvent(ws, e, session),
                         session.sessionId
@@ -5045,7 +5285,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }));
                     }
                 }
-            }, 1500); // 1.5 s backoff before retry
+            }, 5000); // 5 s backoff — enough for Nova Sonic to release the quota slot
 
             break;
         }

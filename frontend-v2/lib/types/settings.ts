@@ -64,6 +64,9 @@ export interface AppSettings {
     testMode?: 'manual' | 'auto';
     activeTestConfig?: TestConfiguration;
 
+    // AgentCore Memory
+    memoryEnabled?: boolean; // undefined = server default, false = explicitly disabled
+
     // Debug
     debugMode: boolean;
 }

@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  SIP Session Border Controller (SBC) stack for Nova 2 Sonic PSTN integration.
+
+  Architecture:
+    PSTN → Amazon Connect → Chime SDK Voice Connector → SBC (ECS/EC2, host networking)
+           → Amazon Bedrock Nova 2 Sonic (BankingDisputes persona, amy voice)
+
+  Deploy AFTER the main application stack.  The SBC ECS task requires host
+  networking, which is only available with the EC2 launch type.
+
+Parameters:
+  # ── Networking ──────────────────────────────────────────────────────────────
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy the SBC into.
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet for the SBC EC2 instance (must have an Internet Gateway).
+
+  SbcPublicIp:
+    Type: String
+    Description: >
+      Static/Elastic IP address of the SBC host.  This is advertised in SDP and
+      SIP Contact headers, and must be reachable by the Chime Voice Connector.
+
+  # ── ECS ─────────────────────────────────────────────────────────────────────
+  EcsClusterArn:
+    Type: String
+    Description: ARN of an existing ECS cluster (EC2 launch type).
+
+  SbcImageUri:
+    Type: String
+    Description: ECR URI for the SBC Docker image (built from Dockerfile.sbc).
+
+  # ── SBC config ───────────────────────────────────────────────────────────────
+  SbcSipPort:
+    Type: Number
+    Default: 5060
+    Description: UDP port for SIP signalling.
+
+  SbcRtpPortBase:
+    Type: Number
+    Default: 10000
+    Description: First UDP port in the RTP pool.
+
+  SbcRtpPortCount:
+    Type: Number
+    Default: 200
+    Description: Number of RTP ports (supports SbcRtpPortCount/2 concurrent calls).
+
+  # ── AWS credentials for Bedrock (stored as SSM SecureString) ─────────────────
+  NovaAccessKeyId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /nova-sbc/aws-access-key-id
+    Description: SSM path for NOVA_AWS_ACCESS_KEY_ID.
+
+  NovaSecretAccessKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /nova-sbc/aws-secret-access-key
+    Description: SSM path for NOVA_AWS_SECRET_ACCESS_KEY.
+
+  NovaRegion:
+    Type: String
+    Default: us-east-1
+    Description: AWS region for Amazon Bedrock.
+
+  NovaSonicModelId:
+    Type: String
+    Default: amazon.nova-2-sonic-v1:0
+    Description: Nova Sonic model ID.
+
+  # ── Amazon Chime SDK ─────────────────────────────────────────────────────────
+  ChimeVcName:
+    Type: String
+    Default: nova-sbc-vc
+    Description: Name for the Chime SDK Voice Connector.
+
+  ChimePhoneNumber:
+    Type: String
+    Description: >
+      E.164 phone number provisioned in Amazon Chime (e.g. +12015551234).
+      Associate it with the Voice Connector to receive inbound PSTN calls.
+
+Resources:
+
+  # ── IAM Role for ECS task ────────────────────────────────────────────────────
+  SbcTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-SbcTaskRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SbcBedrockPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Nova Sonic bidirectional streaming
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModelWithBidirectionalStream
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${NovaRegion}::foundation-model/*'
+              # AgentCore Gateway (tool dispatch)
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgent
+                  - bedrock-agentcore:Invoke
+                Resource: '*'
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/nova-sbc:*'
+
+  SbcTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-SbcTaskExecRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ── CloudWatch Log Group ─────────────────────────────────────────────────────
+  SbcLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/nova-sbc
+      RetentionInDays: 7
+
+  # ── Security Group ───────────────────────────────────────────────────────────
+  SbcSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Nova SBC ECS task
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # SIP signalling from Amazon Chime SDK Voice Connector
+        # https://docs.aws.amazon.com/chime-sdk/latest/dg/network-config.html
+        - IpProtocol: udp
+          FromPort: !Ref SbcSipPort
+          ToPort: !Ref SbcSipPort
+          CidrIp: 99.77.253.0/24   # Chime VC signalling CIDR (us-east-1)
+          Description: SIP from Chime VC (us-east-1)
+        - IpProtocol: udp
+          FromPort: !Ref SbcSipPort
+          ToPort: !Ref SbcSipPort
+          CidrIp: 99.77.253.0/24
+          Description: SIP from Chime VC
+        # RTP media (default pool 10000-10199 — adjust if you change SbcRtpPortBase/Count)
+        - IpProtocol: udp
+          FromPort: 10000
+          ToPort: 10199
+          CidrIp: 0.0.0.0/0
+          Description: RTP media (allow all sources for symmetric RTP)
+        # HTTPS for Bedrock API
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Outbound HTTPS to Bedrock (controlled by egress rule)
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-SbcSg'
+
+  # ── ECS Task Definition ──────────────────────────────────────────────────────
+  SbcTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-sbc'
+      # host networking is REQUIRED for RTP — bridged/awsvpc cannot bind the
+      # large ephemeral UDP port range without complicated port mappings.
+      NetworkMode: host
+      RequiresCompatibilities:
+        - EC2
+      TaskRoleArn: !GetAtt SbcTaskRole.Arn
+      ExecutionRoleArn: !GetAtt SbcTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: sbc
+          Image: !Ref SbcImageUri
+          Essential: true
+          # With host networking there is no portMappings configuration.
+          Environment:
+            - Name: SBC_PUBLIC_IP
+              Value: !Ref SbcPublicIp
+            - Name: SBC_SIP_PORT
+              Value: !Sub '${SbcSipPort}'
+            - Name: SBC_RTP_PORT_BASE
+              Value: !Sub '${SbcRtpPortBase}'
+            - Name: SBC_RTP_PORT_COUNT
+              Value: !Sub '${SbcRtpPortCount}'
+            - Name: NOVA_AWS_REGION
+              Value: !Ref NovaRegion
+            - Name: NOVA_SONIC_MODEL_ID
+              Value: !Ref NovaSonicModelId
+            - Name: NOVA_AWS_ACCESS_KEY_ID
+              Value: !Ref NovaAccessKeyId
+            - Name: NOVA_AWS_SECRET_ACCESS_KEY
+              Value: !Ref NovaSecretAccessKey
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group:  !Ref SbcLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: sbc
+          MemoryReservation: 512
+
+  # ── ECS Service (EC2 launch type, host networking) ───────────────────────────
+  SbcEcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-sbc'
+      Cluster: !Ref EcsClusterArn
+      TaskDefinition: !Ref SbcTaskDefinition
+      LaunchType: EC2
+      DesiredCount: 1
+      # Each SBC task must land on a different EC2 instance (port 5060 conflict
+      # if multiple tasks share the same host with host networking).
+      PlacementConstraints:
+        - Type: distinctInstance
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0   # allow zero-downtime replacement via desired=0 then 1
+        MaximumPercent: 100
+
+  # ── Amazon Chime SDK Voice Connector ─────────────────────────────────────────
+  ChimeVoiceConnector:
+    Type: AWS::ChimeSDKVoice::VoiceConnector
+    Properties:
+      Name: !Ref ChimeVcName
+      RequireEncryption: false  # Chime VC supports SRTP but G.711 over unencrypted RTP simplifies the SBC
+      AwsRegion: !Ref AWS::Region
+
+  ChimeVoiceConnectorOrigination:
+    Type: AWS::ChimeSDKVoice::VoiceConnectorGroup
+    Properties:
+      Name: !Sub '${ChimeVcName}-group'
+      VoiceConnectorItems:
+        - VoiceConnectorId: !GetAtt ChimeVoiceConnector.VoiceConnectorId
+          Priority: 1
+
+  # Origination route: Chime → SBC
+  # NOTE: AWS::ChimeSDKVoice::VoiceConnector does not expose Origination as a
+  # sub-resource in CloudFormation.  Configure via the AWS CLI after deploy:
+  #
+  #   aws chime-sdk-voice put-voice-connector-origination \
+  #     --voice-connector-id <VoiceConnectorId> \
+  #     --origination '{
+  #       "Routes":[{"Host":"<SBC_PUBLIC_IP>","Port":5060,"Protocol":"UDP","Priority":1,"Weight":1}],
+  #       "Disabled":false
+  #     }'
+  #
+  # Termination (Chime → Connect):
+  #   aws chime-sdk-voice put-voice-connector-termination \
+  #     --voice-connector-id <VoiceConnectorId> \
+  #     --termination '{"CidrAllowedList":["<CONNECT_SIP_CIDR>/24"],"CallingRegions":["US"],"Disabled":false}'
+
+Outputs:
+
+  SbcSecurityGroupId:
+    Description: Security Group ID for the SBC ECS task
+    Value: !GetAtt SbcSecurityGroup.GroupId
+
+  SbcTaskDefinitionArn:
+    Description: ARN of the SBC ECS task definition
+    Value: !Ref SbcTaskDefinition
+
+  SbcEcsServiceArn:
+    Description: ARN of the SBC ECS service
+    Value: !Ref SbcEcsService
+
+  ChimeVoiceConnectorId:
+    Description: Chime SDK Voice Connector ID
+    Value: !GetAtt ChimeVoiceConnector.VoiceConnectorId
+
+  ChimeVoiceConnectorOutboundHostName:
+    Description: >
+      Outbound host name for the Voice Connector.
+      Use this as the SIP trunk address in your Amazon Connect contact flow.
+    Value: !Sub '${ChimeVoiceConnector.VoiceConnectorId}.voiceconnector.chime.aws'
+
+  PostDeployInstructions:
+    Description: Manual steps required after CloudFormation deploy
+    Value: !Sub |
+      1. Configure Chime VC origination (SBC as destination):
+         aws chime-sdk-voice put-voice-connector-origination \
+           --voice-connector-id ${ChimeVoiceConnector.VoiceConnectorId} \
+           --origination '{"Routes":[{"Host":"${SbcPublicIp}","Port":${SbcSipPort},"Protocol":"UDP","Priority":1,"Weight":1}],"Disabled":false}'
+
+      2. Configure Chime VC termination (allow Amazon Connect SIP signalling):
+         aws chime-sdk-voice put-voice-connector-termination \
+           --voice-connector-id ${ChimeVoiceConnector.VoiceConnectorId} \
+           --termination '{"CidrAllowedList":["0.0.0.0/0"],"CallingRegions":["US","GB"],"Disabled":false}'
+
+      3. Claim a Chime phone number and associate it with the Voice Connector:
+         aws chime-sdk-voice associate-phone-numbers-with-voice-connector \
+           --voice-connector-id ${ChimeVoiceConnector.VoiceConnectorId} \
+           --e164-phone-numbers '["${ChimePhoneNumber}"]' \
+           --force-associate
+
+      4. In Amazon Connect: import aws/connect/contact-flow-sip.json and update
+         "Transfer to phone number" block to use the Chime VC DID above.

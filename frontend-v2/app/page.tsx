@@ -22,6 +22,7 @@ import { useWorkflowSimulator } from '@/lib/hooks/useWorkflowSimulator';
 
 import SettingsLayout from '@/components/settings/SettingsLayout';
 import TestReportModal from '@/components/workflow/TestReportModal';
+import SbcCallPanel from '@/components/sbc/SbcCallPanel';
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
@@ -44,6 +45,8 @@ export default function Home() {
     updateSettings,
     navigateTo,
     showToast,
+    sbcCalls,
+    addSbcEvent,
   } = useApp();
 
   // Local state for survey
@@ -111,6 +114,7 @@ export default function Home() {
                 inactivityEnabled: settings.inactivityEnabled ?? true,
                 inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
                 inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
+                memoryEnabled: settings.memoryEnabled,
               },
             });
           }
@@ -330,10 +334,18 @@ export default function Home() {
         audioProcessor.clearQueue();
         break;
 
+      case 'sbc_call_start':
+      case 'sbc_transcript':
+      case 'sbc_tool_use':
+      case 'sbc_tool_result':
+      case 'sbc_call_end':
+        addSbcEvent(message);
+        break;
+
       default:
         console.log('[WebSocket] Unknown message type:', message.type);
     }
-  }, [messages, addMessage, updateLastMessage, clearMessages, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast]);
+  }, [messages, addMessage, updateLastMessage, clearMessages, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast, addSbcEvent]);
 
   // Initialize WebSocket
   const getWebSocketUrl = () => {
@@ -422,6 +434,7 @@ export default function Home() {
           inactivityEnabled: settings.inactivityEnabled ?? true,
           inactivityTimeout: Math.min(settings.inactivityTimeout ?? 20, 50),
           inactivityMaxChecks: settings.inactivityMaxChecks ?? 3,
+          memoryEnabled: settings.memoryEnabled,
         }
       });
     }
@@ -433,12 +446,12 @@ export default function Home() {
     settings.systemPrompt,
     settings.speechPrompt,
     settings.enableGuardrails,
-    settings.enableGuardrails,
     settings.enabledTools,
     settings.linkedWorkflows,
     settings.inactivityEnabled,
     settings.inactivityTimeout,
-    settings.inactivityMaxChecks
+    settings.inactivityMaxChecks,
+    settings.memoryEnabled,
   ]);
 
   // Handle send text message
@@ -667,6 +680,8 @@ export default function Home() {
             <HistoryView />
           ) : activeView === 'workflow' ? (
             <WorkflowView />
+          ) : activeView === 'phone' ? (
+            <SbcCallPanel />
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-500">
               View: {activeView} (Coming Soon)
