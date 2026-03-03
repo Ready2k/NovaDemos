@@ -798,15 +798,26 @@ export class SonicClient {
                 // Check if we need to stop
                 if (!this.isProcessing) break;
 
-                // If a keepalive audio block is open and both queues are empty, send a
-                // periodic silence frame to prevent Nova Sonic from closing the stream
-                // (which would cause session reset and loss of conversation history).
+                // Turn-separator: close the audio block cleanly after interactionTurnEnd
+                // so Nova Sonic doesn't accumulate an unbounded stream of silence frames
+                // within a single content block (which triggers CRITICAL ERROR in chat mode).
                 const now = Date.now();
-                if (this.currentContentName &&
-                    this.inputQueue.length === 0 &&
+                const queuesEmpty = this.inputQueue.length === 0 &&
                     this.textQueue.length === 0 &&
-                    this.toolResultQueue.length === 0 &&
-                    (now - ((this as any)._lastKeepaliveSent || 0)) > 500
+                    this.toolResultQueue.length === 0;
+
+                if ((this as any)._shouldCloseAudioBlock && this.currentContentName && queuesEmpty) {
+                    (this as any)._shouldCloseAudioBlock = false;
+                    (this as any)._audioBlockClosedAt = now;
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify({
+                        event: { contentEnd: { promptName: promptName, contentName: this.currentContentName } }
+                    })) } };
+                    this.currentContentName = undefined;
+                    console.log('[SonicClient] Audio block closed after interactionTurnEnd (turn separator)');
+
+                // Keepalive while audio block is open and all queues empty
+                } else if (this.currentContentName && queuesEmpty &&
+                    (now - ((this as any)._lastKeepaliveSent || 0)) > 200
                 ) {
                     (this as any)._lastKeepaliveSent = now;
                     yield { chunk: { bytes: Buffer.from(JSON.stringify({
@@ -818,6 +829,46 @@ export class SonicClient {
                             }
                         }
                     })) } };
+
+                // Reopen audio block 2 s after turn-separator close to keep the session alive
+                } else if (!this.currentContentName && queuesEmpty &&
+                    (this as any)._audioBlockClosedAt > 0 &&
+                    (now - (this as any)._audioBlockClosedAt) > 2000
+                ) {
+                    (this as any)._audioBlockClosedAt = 0;
+                    (this as any)._lastKeepaliveSent = now;
+                    const newName = `audio-keepalive-${Date.now()}`;
+                    this.currentContentName = newName;
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify({
+                        event: {
+                            contentStart: {
+                                promptName: promptName,
+                                contentName: newName,
+                                type: 'AUDIO',
+                                interactive: true,
+                                role: 'USER',
+                                audioInputConfiguration: {
+                                    mediaType: 'audio/lpcm',
+                                    sampleRateHertz: 16000,
+                                    sampleSizeBits: 16,
+                                    channelCount: 1,
+                                    audioType: 'SPEECH',
+                                    encoding: 'base64'
+                                }
+                            }
+                        }
+                    })) } };
+                    yield { chunk: { bytes: Buffer.from(JSON.stringify({
+                        event: {
+                            audioInput: {
+                                promptName: promptName,
+                                contentName: newName,
+                                content: this.SILENCE_FRAME.toString('base64')
+                            }
+                        }
+                    })) } };
+                    console.log('[SonicClient] Reopened audio keepalive block after turn separator');
+
                 } else {
                     // Wait briefly before checking queue again
                     await new Promise(resolve => setTimeout(resolve, 10));
@@ -1497,6 +1548,12 @@ export class SonicClient {
 
                     if (eventData.interactionTurnEnd) {
                         console.log('[SonicClient] Interaction Turn End');
+                        // Signal input generator to close the open audio block.
+                        // An indefinitely-open silence block causes Nova Sonic to throw
+                        // "unexpected error during processing" in chat mode after multi-tool turns.
+                        // Closing cleanly here acts as a proper turn separator; the block
+                        // is reopened 2 s later to keep the session alive.
+                        (this as any)._shouldCloseAudioBlock = true;
                         this.eventCallback?.({
                             type: 'interactionTurnEnd',
                             data: eventData.interactionTurnEnd

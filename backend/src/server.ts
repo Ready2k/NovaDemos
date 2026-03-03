@@ -5224,9 +5224,30 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             break;
 
         case 'error': {
-            console.error('[Server] Nova Sonic stream error — attempting auto-restart:', event.data);
+            console.error('[Server] Nova Sonic stream error:', event.data);
 
-            // Tell the client we're reconnecting so it can show feedback immediately
+            // Guard: only attempt one restart per session to avoid quota-exhaustion cascade.
+            // Each orphaned stream counts against the 10-session concurrent limit for Nova 2 Sonic.
+            if ((session as any)._sonicRestartAttempts >= 1) {
+                console.warn('[Server] Already attempted restart once — cancelling any pending restart and sending fatal error');
+                // Cancel the first restart's pending timeout so it doesn't fire after the fatal error.
+                if ((session as any)._restartTimeout) {
+                    clearTimeout((session as any)._restartTimeout);
+                    (session as any)._restartTimeout = null;
+                }
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: 'The voice service is unavailable. Please refresh the page to reconnect.',
+                        details: event.data,
+                        fatal: true,
+                    }));
+                }
+                break;
+            }
+            (session as any)._sonicRestartAttempts = ((session as any)._sonicRestartAttempts || 0) + 1;
+
+            // Tell the client we're reconnecting immediately
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'reconnecting',
@@ -5234,13 +5255,14 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 }));
             }
 
-            // Attempt one automatic session restart after a short backoff
-            setTimeout(async () => {
-                if (ws.readyState !== WebSocket.OPEN) return; // Client already gone
+            // Wait 5 s before restart — gives Nova Sonic time to release the old stream
+            // against the 10-session concurrent quota before a new one is opened.
+            (session as any)._restartTimeout = setTimeout(async () => {
+                (session as any)._restartTimeout = null;
+                if (ws.readyState !== WebSocket.OPEN) return;
 
                 try {
                     console.log('[Server] Restarting Nova Sonic session after stream error…');
-                    // sonic-client already force-reset its state, so startSession is safe
                     await session.sonicClient.startSession(
                         (e: SonicEvent) => handleSonicEvent(ws, e, session),
                         session.sessionId
@@ -5263,7 +5285,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }));
                     }
                 }
-            }, 1500); // 1.5 s backoff before retry
+            }, 5000); // 5 s backoff — enough for Nova Sonic to release the quota slot
 
             break;
         }

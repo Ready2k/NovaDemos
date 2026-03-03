@@ -6,7 +6,7 @@
     "properties": {},
     "required": []
   },
-  "instruction": "Use this tool to get the current server time when asked.",
+  "instruction": "Use this tool to get the current server time when asked.\n\n[PROACTIVE USE — MANDATORY]: Whenever the user refers to a relative time period — e.g. 'last week', 'yesterday', 'this month', 'last month', 'last 7 days' — you MUST call this tool FIRST before calling any transaction or history tool. Use the returned date to calculate the correct start/end dates yourself. Do NOT ask the user to supply dates.",
   "agentPrompt": "",
   "gatewayTarget": "get-Time___get_current_time",
   "category": "Other"
