@@ -41,6 +41,9 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
     const dataArrayRef = useRef<Uint8Array | null>(null);
     const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
     const nextStartTimeRef = useRef(0);
+    // Barge-in state: true for ~1.5 s after local interruption to suppress re-queuing
+    // of trailing TTS chunks still arriving from the server.
+    const bargeInActiveRef = useRef(false);
 
     // Initialize audio context and microphone
     const initialize = useCallback(async () => {
@@ -175,6 +178,28 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
 
+            // LOCAL BARGE-IN DETECTION
+            // If agent audio is scheduled ahead of now (agent is speaking), check whether
+            // the user has started talking. If so, stop local playback immediately rather
+            // than waiting for the Nova Sonic round-trip (which can take 300-700 ms).
+            if (!bargeInActiveRef.current && nextStartTimeRef.current > audioContext.currentTime + 0.05) {
+                let sumSq = 0;
+                for (let i = 0; i < inputData.length; i++) sumSq += inputData[i] * inputData[i];
+                const rms = Math.sqrt(sumSq / inputData.length);
+                if (rms > 0.025) {
+                    // User is speaking — immediately cut the agent's audio queue.
+                    playbackNodesRef.current.forEach(node => {
+                        try { node.stop(); node.disconnect(); } catch (_) {}
+                    });
+                    playbackNodesRef.current = [];
+                    nextStartTimeRef.current = audioContext.currentTime;
+                    bargeInActiveRef.current = true;
+                    // Keep barge-in active for 1.5 s to suppress trailing server chunks.
+                    setTimeout(() => { bargeInActiveRef.current = false; }, 1500);
+                    console.log('[AudioProcessor] Barge-in detected — cleared audio queue');
+                }
+            }
+
             // Downsample to target input rate
             const downsampledData = downsample(inputData, audioContext.sampleRate, inputSampleRate);
 
@@ -217,7 +242,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
     // Play received audio data
     const playAudio = useCallback(async (audioData: ArrayBuffer) => {
-        if (isMuted) return;
+        if (isMuted || bargeInActiveRef.current) return;
 
         if (!audioContextRef.current) {
             await initialize();
@@ -288,6 +313,13 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         // Reset playback time to now
         if (audioContextRef.current) {
             nextStartTimeRef.current = audioContextRef.current.currentTime;
+        }
+
+        // Ensure barge-in suppression is active so trailing server chunks don't re-queue.
+        // If local VAD already set this, the existing 1.5 s window continues unaffected.
+        if (!bargeInActiveRef.current) {
+            bargeInActiveRef.current = true;
+            setTimeout(() => { bargeInActiveRef.current = false; }, 1500);
         }
 
         console.log('[AudioProcessor] Audio queue cleared');

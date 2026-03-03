@@ -1,0 +1,169 @@
+{
+  "sessionId": "0c2e19aa-f75a-4623-9c95-798c41e11e5c",
+  "startTime": 1772549544487,
+  "endTime": 1772549587939,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_start",
+      "timestamp": 1772549544487,
+      "metadata": {
+        "stepId": "idv_start"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772549544488,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772549545548,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772549545959,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*clears throat* Erm, hello there. I'm, uh, not quite sure what's been happening with my account. You see, I've noticed some charges from Amazon over the past few months, for about 89 pounds or so. I can't quite remember what that's for, and I'm not even sure if it was me that made those purchases. I'm getting on in years, you know, and my memory isn't what it used to be. *pauses* Ah yes, my account number is 1 2 3 4 5 6 7 8, and I think my sort code might be either 3 3 1 1 2 2, or 1 1 2 2 3 3, or even 1 1 3 3 2 2. I've had this account for so long, I can't quite recall. *chuckles* Could you please take a look and let me know what's going on? I'd appreciate the help, young man.",
+      "timestamp": 1772549552327
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772549553180,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I can help you look into those charges.",
+      "timestamp": 1772549553180,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I can help you look into those charges.To get started, I need to verify your identity.",
+      "timestamp": 1772549553862,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I can help you look into those charges.To get started, I need to verify your identity.You mentioned your account number is 12345678.",
+      "timestamp": 1772549554704,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I can help you look into those charges.To get started, I need to verify your identity.You mentioned your account number is 12345678.Could you confirm your 6-digit sort code?",
+      "timestamp": 1772549555742,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I can help you look into those charges.To get started, I need to verify your identity.You mentioned your account number is 12345678.Could you confirm your 6-digit sort code?",
+      "timestamp": 1772549556475,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those charges.",
+      "timestamp": 1772549558344,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*pauses* Hmm, let me think now... *clears throat* I believe my sort code is 1 1 3 3 2 2. Does that sound right to you?",
+      "timestamp": 1772549559071
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1772549560021,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"113322\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: analyze_input",
+      "timestamp": 1772549560045,
+      "metadata": {
+        "stepId": "analyze_input"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming the sort code. I have your account number as 12345678 and sort code 113322.",
+      "timestamp": 1772549560045,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: Customer details not found.",
+      "timestamp": 1772549561549,
+      "toolName": "perform_idv_check",
+      "result": "Customer details not found."
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_fail",
+      "timestamp": 1772549562465,
+      "metadata": {
+        "stepId": "idv_fail"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming the sort code. I have your account number as 12345678 and sort code 113322.I'm having trouble verifying those details. Could you please double-check your account number and sort code and try again?",
+      "timestamp": 1772549562465,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming the sort code. I have your account number as 12345678 and sort code 113322.I'm having trouble verifying those details. Could you please double-check your account number and sort code and try again?",
+      "timestamp": 1772549564109,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*chuckles* Oh dear, I'm afraid my memory isn't what it used to be. Let me try this again... *pauses* Alright, let me see here. My account number is 1 2 3 4 5 6 7 8, and the sort code... *thinks hard* I believe it's 3 3 1 1 2 2. Does that sound right to you, dear?",
+      "timestamp": 1772549567079
+    }
+  ],
+  "tools": [
+    "perform_idv_check",
+    "get_server_time",
+    "manage_recent_interactions",
+    "create_dispute_case",
+    "update_dispute_case",
+    "lookup_merchant_alias",
+    "agentcore_balance",
+    "get_account_transactions",
+    "uk_branch_lookup",
+    "search_knowledge_base"
+  ],
+  "usage": {
+    "inputTokens": 8775,
+    "outputTokens": 1125,
+    "totalTokens": 9900,
+    "cost": 0.0432,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

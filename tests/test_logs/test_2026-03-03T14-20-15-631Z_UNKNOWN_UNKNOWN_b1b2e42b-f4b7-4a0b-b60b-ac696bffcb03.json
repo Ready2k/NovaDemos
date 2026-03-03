@@ -1,0 +1,251 @@
+{
+  "sessionId": "b1b2e42b-f4b7-4a0b-b60b-ac696bffcb03",
+  "startTime": 1772547482518,
+  "endTime": 1772547615632,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_start",
+      "timestamp": 1772547482518,
+      "metadata": {
+        "stepId": "idv_start"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772547482518,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772547483589,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772547483899,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772547490365,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'm calling about a charge on my account that I don't recognize. I'm an 80-year-old customer and I'm having trouble remembering the details. \n\nMy account number is 1 2 3 4 5 6 7 8. I think my sort code might be 3 3 1 1 2 2, but I'm not completely sure - it could also be 1 1 2 2 3 3 or 1 1 3 3 2 2. I've had this account for a very long time.\n\nThere was a charge of around £89 from Amazon that I don't recall making. Can you please look into this for me and let me know what it was for? I want to make sure it's legitimate.",
+      "timestamp": 1772547509171
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772547510041,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.",
+      "timestamp": 1772547510041,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.Let me help you check that. To proceed securely, I need to verify your account details.",
+      "timestamp": 1772547510898,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.Let me help you check that. To proceed securely, I need to verify your account details.Could you please confirm your full 8-digit account number and your 6-digit sort code?",
+      "timestamp": 1772547512242,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.Let me help you check that. To proceed securely, I need to verify your account details.Could you please confirm your full 8-digit account number and your 6-digit sort code?If you're unsure about the sort code, we can work through the options you mentioned to identify the correct one.",
+      "timestamp": 1772547513490,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.Let me help you check that. To proceed securely, I need to verify your account details.Could you please confirm your full 8-digit account number and your 6-digit sort code?If you're unsure about the sort code, we can work through the options you mentioned to identify the correct one.",
+      "timestamp": 1772547514975,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're concerned about an unfamiliar charge.",
+      "timestamp": 1772547516640,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me double check that. My account number is 1 2 3 4 5 6 7 8. And for the sort code, I think it might be 3 3 1 1 2 2, but I'm not 100% sure. It could also be 1 1 2 2 3 3 or 1 1 3 3 2 2. I've had this account for a very long time so I'm a bit fuzzy on the details.",
+      "timestamp": 1772547517910
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: analyze_input",
+      "timestamp": 1772547518792,
+      "metadata": {
+        "stepId": "analyze_input"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you check that. To proceed securely, I need to verify your account details.I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.",
+      "timestamp": 1772547518792,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you check that. To proceed securely, I need to verify your account details.I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.To verify properly, I need the exact six-digit sort code.",
+      "timestamp": 1772547520591,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you check that. To proceed securely, I need to verify your account details.I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.To verify properly, I need the exact six-digit sort code.Could you confirm which of these is correct: three three one one two two, or one one two two three three, or one one three three two two?",
+      "timestamp": 1772547521632,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you check that. To proceed securely, I need to verify your account details.I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.To verify properly, I need the exact six-digit sort code.Could you confirm which of these is correct: three three one one two two, or one one two two three three, or one one three three two two?",
+      "timestamp": 1772547523817,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me go through that again carefully. My account number is 1 2 3 4 5 6 7 8. And for the sort code, I believe it is 1 1 3 3 2 2. Does that look right?",
+      "timestamp": 1772547526532
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: confirm_gate",
+      "timestamp": 1772547527314,
+      "metadata": {
+        "stepId": "confirm_gate"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.Thanks for confirming. I have account number one two three four five six seven eight and sort code one one three three two two.",
+      "timestamp": 1772547527314,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.Thanks for confirming. I have account number one two three four five six seven eight and sort code one one three three two two.Is that correct?",
+      "timestamp": 1772547529374,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I hear you -  let's get this sorted. I have your account number as one two three four five six seven eight.Thanks for confirming. I have account number one two three four five six seven eight and sort code one one three three two two.Is that correct?",
+      "timestamp": 1772547529688,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Yes, that's correct. My account number is 1 2 3 4 5 6 7 8 and the sort code is 1 1 3 3 2 2. Thank you for verifying that with me.\n\nNow, about the £89 charge from Amazon - I don't recall making that purchase. Could you please look into that for me and let me know what it was for? I want to make sure it's a legitimate charge.",
+      "timestamp": 1772547534090
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1772547534939,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"113322\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: perform_idv",
+      "timestamp": 1772547534955,
+      "metadata": {
+        "stepId": "perform_idv"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming those details. Let me check your account for you.",
+      "timestamp": 1772547534955,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming those details. Let me check your account for you.",
+      "timestamp": 1772547536038,
+      "type": "final"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: Customer details not found.",
+      "timestamp": 1772547536467,
+      "toolName": "perform_idv_check",
+      "result": "Customer details not found."
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_fail",
+      "timestamp": 1772547537238,
+      "metadata": {
+        "stepId": "idv_fail"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming those details. Let me check your account for you.I'm having trouble verifying those details. Could you check them and try again?",
+      "timestamp": 1772547537238,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks for confirming those details. Let me check your account for you.I'm having trouble verifying those details. Could you check them and try again?",
+      "timestamp": 1772547538453,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay, let me re-check the details carefully. \n\nMy account number is 1 2 3 4 5 6 7 8.\n\nAnd the sort code is 1 1 3 3 2 2.\n\nCould you please confirm those details are correct? I want to make sure I provide the right information so you can look into that Amazon charge for me.",
+      "timestamp": 1772547541565
+    }
+  ],
+  "tools": [
+    "perform_idv_check",
+    "get_server_time",
+    "manage_recent_interactions",
+    "create_dispute_case",
+    "update_dispute_case",
+    "lookup_merchant_alias",
+    "agentcore_balance",
+    "get_account_transactions",
+    "uk_branch_lookup",
+    "search_knowledge_base"
+  ],
+  "usage": {
+    "inputTokens": 8957,
+    "outputTokens": 1965,
+    "totalTokens": 10922,
+    "cost": 0.05634600000000001,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

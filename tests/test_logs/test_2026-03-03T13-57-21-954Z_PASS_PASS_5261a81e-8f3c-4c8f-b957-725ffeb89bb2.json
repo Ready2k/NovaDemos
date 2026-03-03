@@ -1,0 +1,272 @@
+{
+  "sessionId": "5261a81e-8f3c-4c8f-b957-725ffeb89bb2",
+  "startTime": 1772546203227,
+  "endTime": 1772546241954,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_start",
+      "timestamp": 1772546203227,
+      "metadata": {
+        "stepId": "idv_start"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772546203228,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772546204294,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772546204704,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Hello, I'm really frustrated. I have an account with you, number 1 2 3 4 5 6 7 8, sort code 1 1 2 2 3 3. Last week there was a payment to Amazon for £49.99 that I didn't authorise. I've tried contacting Amazon but they won't help. I want to raise a dispute on this transaction.",
+      "timestamp": 1772546209957
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772546210828,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.",
+      "timestamp": 1772546210828,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1772546212457,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"112233\"}"
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you raise a dispute on this transaction.",
+      "timestamp": 1772546212466,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: analyze_input",
+      "timestamp": 1772546213195,
+      "metadata": {
+        "stepId": "analyze_input"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you raise a dispute on this transaction.I have your account number 12345678 and sort code 112233.",
+      "timestamp": 1772546213195,
+      "type": "speculative"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: {\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}",
+      "timestamp": 1772546214038,
+      "toolName": "perform_idv_check",
+      "result": "{\"auth_status\":\"VERIFIED\",\"account_status\":\"OPEN\",\"marker_Vunl\":0}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: confirm_gate",
+      "timestamp": 1772546214983,
+      "metadata": {
+        "stepId": "confirm_gate"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Let me help you raise a dispute on this transaction.I have your account number 12345678 and sort code 112233.Let me verify these details first.\n I have account number one two three four five six seven eight and sort code one one two two three three.",
+      "timestamp": 1772546214983,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772546214989,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_success",
+      "timestamp": 1772546215694,
+      "metadata": {
+        "stepId": "idv_success"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.Thanks, I've verified your account. Let's get this sorted.",
+      "timestamp": 1772546215694,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: classify_intent",
+      "timestamp": 1772546216852,
+      "metadata": {
+        "stepId": "classify_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.Thanks, I've verified your account. Let's get this sorted.This sounds like an unauthorised transaction, which we'll handle as fraud.",
+      "timestamp": 1772546216852,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: fraud_handoff",
+      "timestamp": 1772546217888,
+      "metadata": {
+        "stepId": "fraud_handoff"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.Thanks, I've verified your account. Let's get this sorted.This sounds like an unauthorised transaction, which we'll handle as fraud.As this transaction appears to be unauthorised, I'll transfer you to our specialist fraud team now.",
+      "timestamp": 1772546217888,
+      "type": "speculative"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: end_fraud",
+      "timestamp": 1772546219350,
+      "metadata": {
+        "stepId": "end_fraud"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.Thanks, I've verified your account. Let's get this sorted.This sounds like an unauthorised transaction, which we'll handle as fraud.As this transaction appears to be unauthorised, I'll transfer you to our specialist fraud team now.They'll investigate and secure your account.\n I'm transferring you to a specialist team.",
+      "timestamp": 1772546219350,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I understand you're frustrated about an unauthorised payment to Amazon for £49.99.Thanks, I've verified your account. Let's get this sorted.This sounds like an unauthorised transaction, which we'll handle as fraud.As this transaction appears to be unauthorised, I'll transfer you to our specialist fraud team now.They'll investigate and secure your account.\n I'm transferring you to a specialist team.",
+      "timestamp": 1772546220601,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "Okay.",
+      "timestamp": 1772546222348
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_success",
+      "timestamp": 1772546222470,
+      "metadata": {
+        "stepId": "idv_success"
+      }
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: classify_intent",
+      "timestamp": 1772546223139,
+      "metadata": {
+        "stepId": "classify_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, I've verified your account. Let's get this sorted.I see this is an unauthorised payment, which falls under fraud.",
+      "timestamp": 1772546223139,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, I've verified your account. Let's get this sorted.I see this is an unauthorised payment, which falls under fraud.I'll transfer you to our specialist fraud team right away.",
+      "timestamp": 1772546224611,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, I've verified your account. Let's get this sorted.I see this is an unauthorised payment, which falls under fraud.I'll transfer you to our specialist fraud team right away.",
+      "timestamp": 1772546225437,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "I see this is an unauthorised payment, which falls under fraud.",
+      "timestamp": 1772546234818,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "(Test Complete)",
+      "timestamp": 1772546238338
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: fraud_handoff",
+      "timestamp": 1772546239045,
+      "metadata": {
+        "stepId": "fraud_handoff"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I'll transfer you to our specialist fraud team right away.As this transaction appears to be unauthorised, I'll transfer you to our specialist fraud team now.",
+      "timestamp": 1772546239045,
+      "type": "speculative"
+    }
+  ],
+  "tools": [
+    "perform_idv_check",
+    "get_server_time",
+    "manage_recent_interactions",
+    "create_dispute_case",
+    "update_dispute_case",
+    "lookup_merchant_alias",
+    "agentcore_balance",
+    "get_account_transactions",
+    "uk_branch_lookup",
+    "search_knowledge_base"
+  ],
+  "usage": {
+    "inputTokens": 8521,
+    "outputTokens": 1798,
+    "totalTokens": 10319,
+    "cost": 0.052533,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "PASS",
+  "userResult": "PASS",
+  "tags": [
+    "auto-test"
+  ]
+}

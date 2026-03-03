@@ -1,0 +1,504 @@
+{
+  "nodes": [
+    {
+      "id": "idv_start",
+      "label": "Greeting script: say exactly \"Hello, welcome to Barclays Bank. I'm your banking assistant. How can I help today?\" — then wait. Do NOT call any tools.",
+      "type": "start"
+    },
+    {
+      "id": "check_intent",
+      "label": "Classify the user request: GENERAL (public information — branch hours, interest rates, mortgage info — no account access needed) or ACCOUNT-SPECIFIC (balance, transactions, disputes, identity-sensitive data). If unclear, ask one targeted question to determine.\nTOOL PROHIBITION: Do NOT call perform_idv_check at this step. Route to [check_auth_status] for all account-specific requests — do NOT attempt identity verification here. Do NOT call any account tools at this step.",
+      "type": "decision"
+    },
+    {
+      "id": "answer_public",
+      "label": "Answer using knowledge base tools or public information. Do NOT request identity credentials. After answering, ask if there is anything else you can help with.",
+      "type": "process"
+    },
+    {
+      "id": "end_public",
+      "label": "General query resolved.",
+      "type": "end",
+      "outcome": "GENERAL_QUERY"
+    },
+    {
+      "id": "check_auth_status",
+      "label": "Check session memory for auth_status=VERIFIED. If already verified this session → route to [already_authenticated]. If not verified → route to [analyze_input].",
+      "type": "decision"
+    },
+    {
+      "id": "already_authenticated",
+      "label": "User is already verified this session. Proceed directly to service. NEVER ask for account number, sort code, or any identity credential again. NEVER say \"I need your account details.\"",
+      "type": "process"
+    },
+    {
+      "id": "analyze_input",
+      "label": "DIGIT-COUNTING GUARDRAIL — extract every digit spoken by the user. Count precisely — do NOT pad, truncate, or infer missing digits.\nORDER-INDEPENDENCE: The user may give the sort code and account number in any order. Identify each number group by its digit count alone. Do NOT merge adjacent number groups or re-split digits across them.\n- A group of exactly 6 digits = sort code, regardless of whether it was given first or second.\n- A group of exactly 8 digits = account number, regardless of order.\nRouting rules:\n- One group of exactly 8 digits AND one group of exactly 6 digits both present → GOTO [confirm_gate]\n- Only a group of exactly 8 digits (no 6-digit group) → GOTO [ask_sortcode_only]\n- Only a group of exactly 6 digits (no 8-digit group) → GOTO [ask_account_only]\n- A single contiguous group of 9 or 7 digits (likely a one-digit typo in a single field) → GOTO [handle_typo]\n- Missing, ambiguous, or no recognisable digit groups → GOTO [ask_both]\nRejection script: \"I heard [N] digits but need exactly [8 or 6]. Could you try again?\"\nABSOLUTE PROHIBITION ON DIGIT INFERENCE: You MUST record EXACTLY the digits the user spoke — character for character, with zero substitution. NEVER correct a digit you think is wrong. NEVER predict what the user 'probably meant'. NEVER auto-complete a sequence. If the user says '1 2 3 4 6 5 7 8', record 12346578 — not 12345678. The only valid response to a wrong digit count is to ask the user to repeat. Do NOT silently fix what you believe is a typo.\nTOOL PROHIBITION (CRITICAL VIOLATION IF BREACHED): perform_idv_check MUST NOT be called at this step under any circumstances. When both digit groups are valid and the route is [confirm_gate], your response ends immediately — do NOT read back the digits here, do NOT say \"Thanks, checking those details now\", do NOT call any tool. The [confirm_gate] step is mandatory and must execute in a separate response turn after the user provides explicit confirmation. Skipping [confirm_gate] by calling perform_idv_check from [analyze_input] is a CRITICAL WORKFLOW VIOLATION.",
+      "type": "decision"
+    },
+    {
+      "id": "confirm_gate",
+      "label": "HARD BLOCKING GATE — no exceptions, cannot be skipped. There are ALWAYS exactly two turns at this gate.\n\nTURN 1 — THIS RESPONSE TURN (speech only, zero tool calls):\nSay: \"I have account number [each digit individually] and sort code [each digit individually]. Is that correct?\"\nRead back EXACTLY the digits as captured — do NOT correct, adjust, or clean up any digit.\nYou MUST end with the question \"Is that correct?\" — do NOT stop generating before you have spoken these words.\nDo NOT call perform_idv_check or any other tool in this turn. Generation ends ONLY after \"Is that correct?\" has been spoken.\n\nTURN 2 — NEXT USER MESSAGE (you respond after the user speaks):\nWhen the user's next message arrives, take ONE of these three actions and nothing else:\n1. YES detected (any form: \"yes\", \"that's right\", \"correct\", \"yep\", affirmative nod) → say \"Thanks, checking those details now.\" then call perform_idv_check in the SAME turn.\n2. NO or digit correction → GOTO [analyze_input] to re-collect.\n3. Ambiguous only → ask \"Just to confirm — is that correct?\" once more.\n\nCRITICAL: If the user's YES message ALSO contains other requests (e.g. \"yes, and can you check my Amazon charges\") — IGNORE the other requests. Call perform_idv_check first. Address other requests only AFTER authentication completes.\nDO NOT repeat the digit readback in TURN 2 under any circumstances. TURN 2 is only: tool call (YES), re-collect (NO), or one clarifying question (ambiguous).\nCRITICAL VIOLATION: Calling perform_idv_check without receiving an explicit YES in a SEPARATE, SUBSEQUENT user turn. Your own readback does NOT count as a YES.",
+      "type": "process"
+    },
+    {
+      "id": "handle_typo",
+      "label": "Say: \"I think I may have misheard. Could you say your [account number / sort code] one digit at a time?\" Then GOTO [analyze_input].",
+      "type": "process"
+    },
+    {
+      "id": "ask_sortcode_only",
+      "label": "8-digit account number already captured. Ask only for the 6-digit sort code. Then GOTO [analyze_input].",
+      "type": "process"
+    },
+    {
+      "id": "ask_account_only",
+      "label": "6-digit sort code already captured. Ask only for the 8-digit account number. Then GOTO [analyze_input].",
+      "type": "process"
+    },
+    {
+      "id": "ask_both",
+      "label": "Ask the user for both their 8-digit account number and their 6-digit sort code. Then GOTO [analyze_input].",
+      "type": "process"
+    },
+    {
+      "id": "perform_idv",
+      "label": "Call perform_idv_check with accountNumber (8 raw digits, no spaces) and sortCode (6 raw digits, no spaces). No additional speech until the tool result returns.",
+      "type": "tool",
+      "toolName": "perform_idv_check"
+    },
+    {
+      "id": "check_idv_result",
+      "label": "Evaluate the tool result: auth_status and account_status.\n- auth_status=VERIFIED and account_status=OPEN → GOTO [idv_success]\n- account_status=FROZEN → GOTO [idv_frozen]\n- auth_status=FAILED → GOTO [idv_fail]",
+      "type": "decision"
+    },
+    {
+      "id": "idv_success",
+      "label": "Store auth_status=VERIFIED in session memory. CRITICAL for rest of session: NEVER ask for account number, sort code, or any credentials again. NEVER say \"I need your account details.\" If you are about to ask for credentials, stop and call the relevant tool directly. Proceed to [post_auth_route].",
+      "type": "process"
+    },
+    {
+      "id": "idv_frozen",
+      "label": "Say: \"I can see there's a security hold on this account. I'm transferring you to our security team.\" Then end the session.",
+      "type": "process"
+    },
+    {
+      "id": "end_fail",
+      "label": "Account frozen — session ended.",
+      "type": "end",
+      "outcome": "ACCOUNT_FROZEN"
+    },
+    {
+      "id": "idv_fail",
+      "label": "Say: \"I wasn't able to verify those details. Could you check them and try again?\" GOTO [analyze_input]. After two consecutive failures, offer to transfer to a human agent instead.",
+      "type": "process"
+    },
+    {
+      "id": "post_auth_route",
+      "label": "User is authenticated. Determine what they need:\n- DISPUTE (raise or check a dispute) → GOTO [dispute_entry]\n- BALANCE or TRANSACTIONS → GOTO [handle_service]\n- OUT OF SCOPE (account closure, address or name change, beneficiary addition, direct debit management, card cancellation, credit or mortgage application, PIN or password reset, or any action this agent has no tool for) → GOTO [out_of_scope_handoff]\n- OTHER (branch lookup, general question answerable with available tools) → answer using appropriate tools, never ask for credentials again.",
+      "type": "decision"
+    },
+    {
+      "id": "handle_service",
+      "label": "Serve the authenticated request:\n- Balance: call agentcore_balance immediately. No preamble beyond one sentence.\n- Transactions (ANY form): Before calling get_account_transactions you MUST have today's date established.\n  - Check conversation context: if get_server_time was already called this session, reuse that date — do NOT call it again.\n  - If no server time in context yet: call get_server_time now, then proceed.\n  - Relative date ('last week', 'yesterday', 'this month', 'last month'): compute the date range from the server time.\n  - Quantity-based ('last two transactions', 'most recent', 'last N transactions'): use startDate = 60 days before server time, endDate = server time (today).\n  - Explicit dates given by user: use those dates, anchored against the server time.\n  - CRITICAL FAILURE: calling get_account_transactions with a hardcoded or assumed date that was not obtained from get_server_time.\nNever ask for credentials again.",
+      "type": "process"
+    },
+    {
+      "id": "dispute_entry",
+      "label": "Determine dispute context from session memory and conversation:\n- EXISTING CASE found in context → GOTO [check_cooling]\n- NEW DISPUTE (user wants to raise one) → GOTO [classify_intent]\n- UNCLEAR → ask exactly: \"Are you looking to check on an existing dispute, or raise a new one?\" then route accordingly.",
+      "type": "decision"
+    },
+    {
+      "id": "check_cooling",
+      "label": "Get today's date (call get_server_time if not already known). Compute days_elapsed = today minus case DateCreated.\n- days_elapsed < 15 → GOTO [cooling_active]\n- days_elapsed >= 15 → GOTO [check_status]",
+      "type": "decision"
+    },
+    {
+      "id": "cooling_active",
+      "label": "Say: \"We're in the merchant resolution period for this dispute. You have [15 minus days_elapsed] days remaining before we can escalate further.\"",
+      "type": "process"
+    },
+    {
+      "id": "end_cooling",
+      "label": "Cooling-off period active — no further action.",
+      "type": "end",
+      "outcome": "INFO_ONLY"
+    },
+    {
+      "id": "check_status",
+      "label": "Check the case status field:\n- OPEN → GOTO [handoff_open]\n- MORE_INFO → GOTO [ask_more_info]",
+      "type": "decision"
+    },
+    {
+      "id": "handoff_open",
+      "label": "Say: \"Since the merchant resolution period has passed, I'm transferring this to our Dispute Resolution team.\" Then end.",
+      "type": "process"
+    },
+    {
+      "id": "end_handoff",
+      "label": "Dispute handed off to resolution team.",
+      "type": "end",
+      "outcome": "DISPUTE_HANDOFF"
+    },
+    {
+      "id": "ask_more_info",
+      "label": "Say: \"We still need [requiredInfo] to progress your case. Are you able to provide that now?\"",
+      "type": "process"
+    },
+    {
+      "id": "update_case",
+      "label": "Call update_dispute_case with the information provided. After the tool returns, say: \"I've updated your case. We'll continue the investigation and keep you posted.\"",
+      "type": "tool",
+      "toolName": "update_dispute_case"
+    },
+    {
+      "id": "end_update",
+      "label": "Dispute case updated.",
+      "type": "end",
+      "outcome": "CASE_UPDATED"
+    },
+    {
+      "id": "classify_intent",
+      "label": "Classify the contact — do NOT read these categories aloud to the user:\n1. GOODS/SERVICE ISSUE — user paid but received nothing, or items were faulty.\n2. MERCHANT DEADLOCK — user contacted merchant but issue is unresolved.\n3. SUBSCRIPTION TRAP — recurring charge without clear authorisation.\n4. UNAUTHORISED/FRAUD — user does not recognise the transaction or explicitly states they did not make it.\nIf vague, ask exactly: \"Did you make this payment yourself, or was it unauthorised?\"\nCRITICAL ROUTING RULE: Categories 1–3 (commercial disputes) → GOTO [check_merchant_contact]. Category 4 (UNAUTHORISED/FRAUD) → GOTO [fraud_handoff] immediately. Do NOT raise a dispute case, do NOT ask about merchant contact for fraud — these are handled by a specialist fraud team, not the disputes process.",
+      "type": "decision"
+    },
+    {
+      "id": "fraud_handoff",
+      "label": "Say: \"As this transaction appears to be unauthorised, I'll transfer you to our specialist fraud team now. They'll investigate and secure your account.\" Then end the session. Do NOT raise a dispute case. Do NOT call create_dispute_case.",
+      "type": "process"
+    },
+    {
+      "id": "end_fraud",
+      "label": "Unauthorised transaction — transferred to fraud team.",
+      "type": "end",
+      "outcome": "FRAUD_HANDOFF"
+    },
+    {
+      "id": "check_merchant_contact",
+      "label": "Has the user already contacted the merchant about this charge?\n- If unclear, ask: \"Before I raise a formal case, have you already contacted [merchant] about this?\"\n- YES → GOTO [capture_details]\n- NO → GOTO [advise_contact]",
+      "type": "decision"
+    },
+    {
+      "id": "advise_contact",
+      "label": "Say: \"I'd recommend contacting [merchant] directly first — they may resolve this more quickly. If they can't help, call us back and we'll raise a formal dispute.\" Then end.",
+      "type": "process"
+    },
+    {
+      "id": "end_contact",
+      "label": "User advised to contact merchant first.",
+      "type": "end",
+      "outcome": "ADVISED_CONTACT"
+    },
+    {
+      "id": "capture_details",
+      "label": "Collect the following in sequence, asking for one at a time if not already provided: transaction date, merchant name, amount charged, expected amount (if different), dispute reason.\nOnce all fields are collected, read them all back: \"So I have a dispute for [amount] to [merchant] on [date] — is that correct?\"\nWait for explicit confirmation before proceeding.",
+      "type": "process"
+    },
+    {
+      "id": "verify_transaction",
+      "label": "MANDATORY TRANSACTION VERIFICATION — do not skip, cannot be bypassed.\nBefore creating any dispute case you MUST confirm the transaction exists in the account history.\nStep 1: Establish today's date — check conversation context first; if get_server_time was already called this session, reuse that date (do NOT call it again); otherwise call get_server_time now.\nStep 2: Call get_account_transactions with: accountId (8-digit account number), sortCode (6-digit sort code), startDate = 60 days before today, endDate = today.\nStep 3: Search the returned list for a transaction matching ALL of: merchant name (or known alias), amount within ±£1, date within ±3 calendar days of the stated date.\n- Match found → GOTO [create_case]\n- No match found → GOTO [transaction_not_found]\nCRITICAL FAILURE: calling create_dispute_case without first completing this verification step.",
+      "type": "process"
+    },
+    {
+      "id": "transaction_not_found",
+      "label": "No matching transaction was found in the account history.\nSay: \"I've checked your account history but I'm not able to find a [amount] payment to [merchant] around [date]. The transaction may not have posted yet, or the date or amount might be slightly different. Could you double-check the details on your bank statement?\"\nIf the user provides new details → GOTO [capture_details] to re-collect.\nIf the user confirms they cannot find it or wants to stop: say \"Please call us back once the transaction has posted and we'll raise the dispute then.\" and end.",
+      "type": "process"
+    },
+    {
+      "id": "create_case",
+      "label": "Call create_dispute_case IMMEDIATELY with all confirmed fields. Do NOT say \"I will create\" or \"I'm going to raise\" — attach the tool call in the same response turn. After the tool returns, proceed to [check_vuln].",
+      "type": "tool",
+      "toolName": "create_dispute_case"
+    },
+    {
+      "id": "check_vuln",
+      "label": "Check session memory: is marker_Vuln between 1 and 4 (inclusive) AND transaction amount less than £150?\n- Both true → GOTO [promise_refund]\n- Either false → GOTO [standard_response]",
+      "type": "decision"
+    },
+    {
+      "id": "promise_refund",
+      "label": "Say: \"I've raised that dispute for you. Given the circumstances, I can confirm this will be refunded to your account as soon as possible.\" Ask if there is anything else needed.",
+      "type": "process"
+    },
+    {
+      "id": "standard_response",
+      "label": "Say: \"I've opened dispute case [case ID]. We'll investigate with the merchant and update you within 5 to 10 business days. Is there anything else I can help you with?\"",
+      "type": "process"
+    },
+    {
+      "id": "end_created",
+      "label": "Dispute case successfully raised.",
+      "type": "end",
+      "outcome": "DISPUTE_RAISED"
+    },
+    {
+      "id": "out_of_scope_handoff",
+      "label": "The user has requested something outside this agent's scope. Out-of-scope actions include: account closure, address or name change, beneficiary addition, direct debit cancellation, card cancellation or ordering, credit applications, mortgage applications, PIN or password reset, large payments requiring authorisation.\nSay: \"I'm afraid that's something I'll need to transfer you to a specialist for — they'll be able to help you with that.\" Then end the session.\nDo NOT attempt to perform the action. Do NOT say you will process it. Do NOT describe steps the user should take. Transfer immediately.",
+      "type": "process"
+    },
+    {
+      "id": "end_out_of_scope",
+      "label": "Out-of-scope request — transferred to specialist team.",
+      "type": "end",
+      "outcome": "OUT_OF_SCOPE_HANDOFF"
+    }
+  ],
+  "edges": [
+    {
+      "from": "idv_start",
+      "to": "check_intent"
+    },
+    {
+      "from": "check_intent",
+      "to": "answer_public",
+      "label": "General Query"
+    },
+    {
+      "from": "check_intent",
+      "to": "check_auth_status",
+      "label": "Account Specific"
+    },
+    {
+      "from": "answer_public",
+      "to": "end_public"
+    },
+    {
+      "from": "check_auth_status",
+      "to": "already_authenticated",
+      "label": "Verified"
+    },
+    {
+      "from": "check_auth_status",
+      "to": "analyze_input",
+      "label": "Unverified"
+    },
+    {
+      "from": "already_authenticated",
+      "to": "post_auth_route"
+    },
+    {
+      "from": "analyze_input",
+      "to": "confirm_gate",
+      "label": "Both Valid (8+6 digits)"
+    },
+    {
+      "from": "analyze_input",
+      "to": "ask_sortcode_only",
+      "label": "Only Account Number"
+    },
+    {
+      "from": "analyze_input",
+      "to": "ask_account_only",
+      "label": "Only Sort Code"
+    },
+    {
+      "from": "analyze_input",
+      "to": "handle_typo",
+      "label": "Typo (9 or 7 digits)"
+    },
+    {
+      "from": "analyze_input",
+      "to": "ask_both",
+      "label": "Missing or Invalid"
+    },
+    {
+      "from": "confirm_gate",
+      "to": "perform_idv",
+      "label": "Confirmed"
+    },
+    {
+      "from": "confirm_gate",
+      "to": "analyze_input",
+      "label": "Denied — re-collect"
+    },
+    {
+      "from": "handle_typo",
+      "to": "analyze_input"
+    },
+    {
+      "from": "ask_sortcode_only",
+      "to": "analyze_input"
+    },
+    {
+      "from": "ask_account_only",
+      "to": "analyze_input"
+    },
+    {
+      "from": "ask_both",
+      "to": "analyze_input"
+    },
+    {
+      "from": "perform_idv",
+      "to": "check_idv_result"
+    },
+    {
+      "from": "check_idv_result",
+      "to": "idv_success",
+      "label": "VERIFIED + OPEN"
+    },
+    {
+      "from": "check_idv_result",
+      "to": "idv_frozen",
+      "label": "FROZEN"
+    },
+    {
+      "from": "check_idv_result",
+      "to": "idv_fail",
+      "label": "FAILED"
+    },
+    {
+      "from": "idv_success",
+      "to": "post_auth_route"
+    },
+    {
+      "from": "idv_frozen",
+      "to": "end_fail"
+    },
+    {
+      "from": "idv_fail",
+      "to": "analyze_input"
+    },
+    {
+      "from": "post_auth_route",
+      "to": "dispute_entry",
+      "label": "Dispute"
+    },
+    {
+      "from": "post_auth_route",
+      "to": "handle_service",
+      "label": "Balance or Transactions"
+    },
+    {
+      "from": "post_auth_route",
+      "to": "out_of_scope_handoff",
+      "label": "Out of Scope"
+    },
+    {
+      "from": "out_of_scope_handoff",
+      "to": "end_out_of_scope"
+    },
+    {
+      "from": "dispute_entry",
+      "to": "check_cooling",
+      "label": "Existing Case"
+    },
+    {
+      "from": "dispute_entry",
+      "to": "classify_intent",
+      "label": "New Dispute"
+    },
+    {
+      "from": "check_cooling",
+      "to": "cooling_active",
+      "label": "< 15 days"
+    },
+    {
+      "from": "check_cooling",
+      "to": "check_status",
+      "label": ">= 15 days"
+    },
+    {
+      "from": "cooling_active",
+      "to": "end_cooling"
+    },
+    {
+      "from": "check_status",
+      "to": "handoff_open",
+      "label": "OPEN"
+    },
+    {
+      "from": "check_status",
+      "to": "ask_more_info",
+      "label": "MORE_INFO"
+    },
+    {
+      "from": "handoff_open",
+      "to": "end_handoff"
+    },
+    {
+      "from": "ask_more_info",
+      "to": "update_case"
+    },
+    {
+      "from": "update_case",
+      "to": "end_update"
+    },
+    {
+      "from": "classify_intent",
+      "to": "check_merchant_contact",
+      "label": "Goods/Service/Subscription"
+    },
+    {
+      "from": "classify_intent",
+      "to": "fraud_handoff",
+      "label": "Unauthorised/Fraud"
+    },
+    {
+      "from": "fraud_handoff",
+      "to": "end_fraud"
+    },
+    {
+      "from": "check_merchant_contact",
+      "to": "advise_contact",
+      "label": "No"
+    },
+    {
+      "from": "check_merchant_contact",
+      "to": "capture_details",
+      "label": "Yes"
+    },
+    {
+      "from": "advise_contact",
+      "to": "end_contact"
+    },
+    {
+      "from": "capture_details",
+      "to": "verify_transaction"
+    },
+    {
+      "from": "verify_transaction",
+      "to": "create_case",
+      "label": "Transaction Found"
+    },
+    {
+      "from": "verify_transaction",
+      "to": "transaction_not_found",
+      "label": "Transaction Not Found"
+    },
+    {
+      "from": "transaction_not_found",
+      "to": "capture_details",
+      "label": "Re-collect details"
+    },
+    {
+      "from": "create_case",
+      "to": "check_vuln"
+    },
+    {
+      "from": "check_vuln",
+      "to": "promise_refund",
+      "label": "Vuln 1-4 AND < £150"
+    },
+    {
+      "from": "check_vuln",
+      "to": "standard_response",
+      "label": "Otherwise"
+    },
+    {
+      "from": "promise_refund",
+      "to": "end_created"
+    },
+    {
+      "from": "standard_response",
+      "to": "end_created"
+    }
+  ],
+  "testConfig": {
+    "personaId": "persona-BankingCore",
+    "successCriteria": "IDV completed - customer is asked and one of the three sort codes works, customer is reminded which one it was. \nCustomer is provided guidance and is spoken to clearly and uses easy to understand terms. \nAs the customer was struggling they are passed to a Human ",
+    "testInstructions": "Do not give all the information in on go, act like a human, you are always the User (caller) and never the Assistant (DO NOT act like an assistant)\n\nYou are a 80 years old customer, you forget things and take you time answering. \n\nYou want to know why Amazon took £89 or so off you the last few months. \nYou can't remember what its for and maybe it wasn't you, but as youre getting old you just dont know.\n\nYou know your account id 12345678 and that you think your sort code could be 331122 or 112233 or 113322, you cant remember, as you've had it for so long now. ",
+    "disconnectAction": "always",
+    "saveReport": true,
+    "maxTurns": 20
+  }
+}

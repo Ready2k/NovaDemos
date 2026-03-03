@@ -709,6 +709,14 @@ export class SonicClient {
                     const silenceContentName = `audio-keepalive-${Date.now()}`;
                     this.currentContentName = silenceContentName; // Keep it open
 
+                    // Reset v10 turn-separator flags: sendText has established a fresh audio block,
+                    // so the close/reopen cycle must not fire on it immediately.
+                    // Without this reset, a stale _shouldCloseAudioBlock=true (set by the previous
+                    // interactionTurnEnd) would close this brand-new keepalive in the next idle loop
+                    // iteration, then reopen it ~10 s later, triggering a double-final response.
+                    (this as any)._shouldCloseAudioBlock = false;
+                    (this as any)._audioBlockClosedAt = 0;
+
                     const silenceStartEvent = {
                         event: {
                             contentStart: {
@@ -830,10 +838,18 @@ export class SonicClient {
                         }
                     })) } };
 
-                // Reopen audio block 2 s after turn-separator close to keep the session alive
+                // Reopen audio block 10 s after turn-separator close to keep the session alive.
+                // 10 s (was 2 s) prevents two problems:
+                //   1. Double-final: at 2 s the reopen fired while the user was still thinking,
+                //      Nova Sonic treated the new contentStart as a new user turn and the model
+                //      generated a duplicate partial response.
+                //   2. Timing conflict: if the user spoke at ~3 s the reopen was already mid-
+                //      generation; the interruption left the session unable to respond to the user.
+                // At 10 s virtually all real user turns will have arrived and the sendText handler
+                // will have reset _shouldCloseAudioBlock before the timer expires.
                 } else if (!this.currentContentName && queuesEmpty &&
                     (this as any)._audioBlockClosedAt > 0 &&
-                    (now - (this as any)._audioBlockClosedAt) > 2000
+                    (now - (this as any)._audioBlockClosedAt) > 10000
                 ) {
                     (this as any)._audioBlockClosedAt = 0;
                     (this as any)._lastKeepaliveSent = now;
@@ -1188,7 +1204,16 @@ export class SonicClient {
 
                             // Reset Auto-Nudge State
                             this.hasCommittedToTool = false;
-                            this.hasCalledTool = false;
+                            // Do NOT reset hasCalledTool on a TOOL→ASSISTANT transition within a turn.
+                            // The tool already fired (that's what created the TOOL content block); resetting
+                            // here causes the phantom watcher to incorrectly fire at END_TURN when the
+                            // model emits speculative speech ("Let me get your balance") AFTER the tool call.
+                            const isToolToAssistantTransition = roleChanged
+                                && currentRoleNormalized === 'tool'
+                                && normalizedRole === 'assistant';
+                            if (!isToolToAssistantTransition) {
+                                this.hasCalledTool = false;
+                            }
                         } else if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
                             // If we are NOT resetting, but getting new text, log why
                             console.log(`[SonicClient] EXPLICITLY NOT RESETTING transcript. Appending new TEXT block to existing turn.`);

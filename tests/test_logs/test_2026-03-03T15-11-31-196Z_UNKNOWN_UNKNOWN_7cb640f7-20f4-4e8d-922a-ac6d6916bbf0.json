@@ -1,0 +1,328 @@
+{
+  "sessionId": "7cb640f7-20f4-4e8d-922a-ac6d6916bbf0",
+  "startTime": 1772550478713,
+  "endTime": 1772550691196,
+  "brainMode": "raw_nova",
+  "transcript": [
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_start",
+      "timestamp": 1772550478713,
+      "metadata": {
+        "stepId": "idv_start"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772550478713,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772550479782,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.How can I help today?",
+      "timestamp": 1772550480194,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "Hello, welcome to Barclays Bank. I'm your banking assistant.",
+      "timestamp": 1772550487249,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*clears throat* Erm, yes, hello. I'm... well, I'm not quite sure what's been happening with my account lately. You see, I've noticed that Amazon has been taking some money out of my account over the past few months, and I can't quite remember what it's for. I'm, uh, getting on in years, you know, and I just can't seem to keep track of these things like I used to.\n\nI think my account number is 1 2 3 4 5 6 7 8, and the sort code might be 3 3 1 1 2 2, or maybe 1 1 2 2 3 3, or even 1 1 3 3 2 2. I've had this account for so long, I'm afraid I can't quite recall the details. Could you please take a look and see what's been going on with those Amazon charges? I'd really appreciate it.",
+      "timestamp": 1772550494884
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: check_intent",
+      "timestamp": 1772550495709,
+      "metadata": {
+        "stepId": "check_intent"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those Amazon charges.",
+      "timestamp": 1772550495709,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those Amazon charges.To get started, I need to verify your identity.",
+      "timestamp": 1772550496429,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those Amazon charges.To get started, I need to verify your identity.Could you please confirm your 8-digit account number and 6-digit sort code?",
+      "timestamp": 1772550497281,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those Amazon charges.To get started, I need to verify your identity.Could you please confirm your 8-digit account number and 6-digit sort code?",
+      "timestamp": 1772550498441,
+      "type": "final"
+    },
+    {
+      "role": "assistant",
+      "text": "[DIALECT: en-GB|0.95] I can help you look into those Amazon charges.",
+      "timestamp": 1772550501595,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*pauses* Hmm, let me think... *clears throat again* Alright, let me try this again. My account number is 1 2 3 4 5 6 7 8. And I believe the sort code is... *pauses and thinks* 1 1 3 3 2 2. Does that sound right? I'm terribly sorry, my memory isn't what it used to be.",
+      "timestamp": 1772550501767
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: analyze_input",
+      "timestamp": 1772550502641,
+      "metadata": {
+        "stepId": "analyze_input"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "To get started, I need to verify your identity.I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.",
+      "timestamp": 1772550502641,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "To get started, I need to verify your identity.I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.Let me confirm these details with you. I have account number 12345678 and sort code 113322.",
+      "timestamp": 1772550504669,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "To get started, I need to verify your identity.I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.Let me confirm these details with you. I have account number 12345678 and sort code 113322.Is that correct?",
+      "timestamp": 1772550506964,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "To get started, I need to verify your identity.I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.Let me confirm these details with you. I have account number 12345678 and sort code 113322.Is that correct?",
+      "timestamp": 1772550507373,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods slowly* Yes, yes, that's right. 12345678 and 113322. That's my account information. *pauses* I'm so sorry, I just can't seem to keep track of these things like I used to. My memory isn't what it used to be, you know. *chuckles sheepishly* But I appreciate you double-checking that for me.",
+      "timestamp": 1772550510171
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: confirm_gate",
+      "timestamp": 1772550510905,
+      "metadata": {
+        "stepId": "confirm_gate"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 3 3 2 2.",
+      "timestamp": 1772550510905,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 3 3 2 2.Is that correct?",
+      "timestamp": 1772550512546,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I received your account number as 1 2 3 4 5 6 7 8 and sort code as 1 1 3 3 2 2.I have account number 1 2 3 4 5 6 7 8 and sort code 1 1 3 3 2 2.Is that correct?",
+      "timestamp": 1772550512851,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods* Yes, that's correct. 12345678 and 113322. Thank you for verifying that for me. *pauses* Now, about those Amazon charges... I'm not quite sure what that's all about. As I mentioned, I'm getting on in years and I just can't seem to keep track of these things like I used to. *chuckles* Could you please take a look and see what's been going on? I'd really appreciate your help.",
+      "timestamp": 1772550516145
+    },
+    {
+      "role": "tool_use",
+      "text": "Tool Invoked: perform_idv_check",
+      "timestamp": 1772550516883,
+      "toolName": "perform_idv_check",
+      "toolInput": "{\"accountNumber\":\"12345678\",\"sortCode\":\"113322\"}"
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: perform_idv",
+      "timestamp": 1772550516890,
+      "metadata": {
+        "stepId": "perform_idv"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.",
+      "timestamp": 1772550516890,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.",
+      "timestamp": 1772550517647,
+      "type": "final"
+    },
+    {
+      "role": "tool_result",
+      "text": "Tool Result: Customer details not found.",
+      "timestamp": 1772550518365,
+      "toolName": "perform_idv_check",
+      "result": "Customer details not found."
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: idv_fail",
+      "timestamp": 1772550519112,
+      "metadata": {
+        "stepId": "idv_fail"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.I wasn't able to verify those details. Could you check them and try again?",
+      "timestamp": 1772550519112,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.I wasn't able to verify those details. Could you check them and try again?",
+      "timestamp": 1772550520275,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*frowns slightly* Oh dear, let me try that again. *pauses and thinks* Hmm, let's see... I believe my account number is 1 2 3 4 5 6 7 8. And the sort code... *pauses and squints* I think it's 3 3 1 1 2 2. Is that right? *looks at you apologetically* I'm so sorry, I'm just having a bit of trouble remembering all the details today. Would you mind double-checking that for me?",
+      "timestamp": 1772550524310
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: analyze_input",
+      "timestamp": 1772550525064,
+      "metadata": {
+        "stepId": "analyze_input"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I wasn't able to verify those details. Could you check them and try again?I received your account number as 1 2 3 4 5 6 7 8 and sort code as 3 3 1 1 2 2.",
+      "timestamp": 1772550525064,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I wasn't able to verify those details. Could you check them and try again?I received your account number as 1 2 3 4 5 6 7 8 and sort code as 3 3 1 1 2 2.",
+      "timestamp": 1772550526970,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods slowly* Ah yes, that's it - the sort code is 3 3 1 1 2 2. Thank you for confirming that for me. *pauses* Now, about those Amazon charges... I'm afraid I just can't seem to recall what that's all about. As I mentioned, my memory isn't what it used to be. *chuckles sheepishly* Would you be able to take a look and let me know what's going on with that? I'd really appreciate your help.",
+      "timestamp": 1772550529931
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: confirm_gate",
+      "timestamp": 1772550530690,
+      "metadata": {
+        "stepId": "confirm_gate"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "I received your account number as 1 2 3 4 5 6 7 8 and sort code as 3 3 1 1 2 2.I have account number 1 2 3 4 5 6 7 8 and sort code 3 3 1 1 2 2.",
+      "timestamp": 1772550530690,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "I received your account number as 1 2 3 4 5 6 7 8 and sort code as 3 3 1 1 2 2.I have account number 1 2 3 4 5 6 7 8 and sort code 3 3 1 1 2 2.",
+      "timestamp": 1772550532347,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods* Yes, that's correct. My account number is 1 2 3 4 5 6 7 8 and the sort code is 3 3 1 1 2 2. *pauses and frowns slightly* Now, about those Amazon charges... I'm afraid I just can't seem to remember what that's all about. As I mentioned, I'm getting on in years and my memory isn't what it used to be. *chuckles* Could you please take a look and let me know what's been happening with those charges? I'd really appreciate your help in getting to the bottom of this.",
+      "timestamp": 1772550536288
+    },
+    {
+      "role": "user",
+      "text": "are we stuck ? ",
+      "timestamp": 1772550603527
+    },
+    {
+      "role": "system",
+      "type": "workflow_step",
+      "text": "Active Workflow Step: perform_idv",
+      "timestamp": 1772550604199,
+      "metadata": {
+        "stepId": "perform_idv"
+      }
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.",
+      "timestamp": 1772550604199,
+      "type": "speculative"
+    },
+    {
+      "role": "assistant",
+      "text": "Thanks, checking those details now.",
+      "timestamp": 1772550606286,
+      "type": "final"
+    },
+    {
+      "role": "user",
+      "text": "*nods* Okay, thank you. I'll just wait patiently while you look into those Amazon charges for me. *pauses and fidgets slightly* As I said, my memory isn't what it used to be, so I really appreciate you taking the time to look into this for me. *smiles gratefully*",
+      "timestamp": 1772550610531
+    }
+  ],
+  "tools": [
+    "perform_idv_check",
+    "get_server_time",
+    "manage_recent_interactions",
+    "create_dispute_case",
+    "update_dispute_case",
+    "lookup_merchant_alias",
+    "agentcore_balance",
+    "get_account_transactions",
+    "uk_branch_lookup",
+    "search_knowledge_base"
+  ],
+  "usage": {
+    "inputTokens": 9860,
+    "outputTokens": 2232,
+    "totalTokens": 12092,
+    "cost": 0.06306,
+    "sentiment": 0
+  },
+  "isAutoTest": true,
+  "testResult": "UNKNOWN",
+  "tags": [
+    "auto-test"
+  ]
+}

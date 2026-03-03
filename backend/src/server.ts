@@ -1179,7 +1179,7 @@ function startInactivityTimer(session: ClientSession) {
             console.log('[Server] Max inactivity checks reached, closing session gracefully');
             
             // Send farewell message
-            const farewellMessage = "[SYSTEM: User has not responded after multiple check-ins. Politely end the conversation and say goodbye. Keep it brief and friendly.]";
+            const farewellMessage = "[SYSTEM: User has not responded. Say exactly: 'I'll leave it there — please call us back if you need help. Goodbye.' Then stop speaking.]";
             
             try {
                 // Ensure session is started
@@ -1208,7 +1208,7 @@ function startInactivityTimer(session: ClientSession) {
             }
         } else {
             // Send check-in message
-            const checkInMessage = "[SYSTEM: User has been inactive. Check if they are still there and if they need any help. Keep it brief and friendly.]";
+            const checkInMessage = "[SYSTEM: User is inactive. Say exactly 'Are you still there?' — nothing else. Do NOT say Hello. Do NOT re-introduce yourself. Do NOT restart the conversation. One question only.]";
             
             try {
                 // Ensure session is started
@@ -1730,8 +1730,8 @@ const server = http.createServer(async (req, res) => {
         let filename = `workflow-${id}.json`;
 
         // Compatibility fallbacks for existing hardcoded aliases
-        if (id === 'persona-BankingDisputes' || id === 'banking') {
-            filename = 'workflow-banking.json';
+        if (id === 'persona-BankingDisputes' || id === 'persona-BankingCore' || id === 'banking') {
+            filename = 'workflow-banking-disputes.json';
         }
 
         // Path resolution (dist/ vs src/)
@@ -1789,7 +1789,7 @@ const server = http.createServer(async (req, res) => {
                     // Try to map ID to a prompt file
                     // Heuristic: use ID as filename, add .txt if needed.
                     let promptId = id;
-                    if (promptId === 'banking') promptId = 'persona-BankingDisputes'; // Alias
+                    if (promptId === 'banking') promptId = 'persona-BankingCore'; // Alias
 
                     let promptFilename = promptId;
                     if (!promptFilename.endsWith('.txt')) promptFilename += '.txt';
@@ -1805,8 +1805,8 @@ const server = http.createServer(async (req, res) => {
                 // Determine filename
                 let filename = `workflow-${id}.json`;
                 // Keep backward compatibility for 'banking' alias
-                if (id === 'persona-BankingDisputes' || id === 'banking') {
-                    filename = 'workflow-banking.json';
+                if (id === 'persona-BankingDisputes' || id === 'persona-BankingCore' || id === 'banking') {
+                    filename = 'workflow-banking-disputes.json';
                 }
 
                 // Default save to src directory so it persists across builds
@@ -2289,7 +2289,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── SBC Config ──────────────────────────────────────────────────────────────
     const SBC_CONFIG_FILE = path.join(__dirname, '../data/sbc-config.json');
-    const SBC_CONFIG_DEFAULTS = { voice: 'amy', persona: 'BankingDisputes', workflow: 'disputes', enabledTools: [] };
+    const SBC_CONFIG_DEFAULTS = { voice: 'amy', persona: 'BankingCore', workflow: 'banking-disputes', enabledTools: [] };
 
     if (pathname === '/api/sbc-config') {
         if (req.method === 'GET') {
@@ -2806,7 +2806,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let workflowTools: string[] | undefined;
                         try {
                             const availableWorkflows: any = {}; // Map of Prefix -> FilePath
-                            let personaId = parsed.config.agentId || 'persona-BankingDisputesLite'; // Default fallback
+                            let personaId = parsed.config.agentId || 'persona-BankingCore'; // Default fallback
                             personaId = personaId.replace('.txt', '');
 
                             // MULTI-WORKFLOW CONFIGURATION
@@ -2826,15 +2826,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 });
                             }
                             // Fallback: Hardcoded 'Banking Bot' Logic (Preserve for backward compatibility or default behavior)
-                            else if (personaId === 'persona-banking_bot' || personaId === 'banking' || personaId === 'persona-BankingDisputesLite') {
-                                // Default Banking Bot behavior = Dispute + Mortgage (until user overrides via UI)
-                                // Actually, per new requirement, default should be NO linked workflow? 
-                                // User said: "default view being no linked workflow" - but that refers to UI.
-                                // For the bot itself, if no linkedWorkflows sent, maybe just load 'banking'?
-                                // Let's keep the single Main workflow fallback if no linked workflows are provided.
-
-                                // Revert to single workflow for 'banking' if no explicit link provided
-                                availableWorkflows['MAIN'] = 'workflow-banking.json';
+                            else if (personaId === 'persona-banking_bot' || personaId === 'banking' || personaId === 'persona-BankingCore' || personaId === 'persona-BankingDisputes') {
+                                availableWorkflows['MAIN'] = 'workflow-banking-disputes.json';
                             } else {
                                 // Single workflow fallback for other personas
                                 const filename = `workflow-${personaId}.json`;
@@ -3817,7 +3810,11 @@ function convertWorkflowToText(workflow: any): string {
     }
 
     workflow.nodes.forEach((node: any) => {
-        text += `STEP [${node.id}] (${node.type}):\n   INSTRUCTION: ${node.label || 'No instruction'}\n`;
+        const labelLines = (node.label || 'No instruction').split('\n');
+        const formattedLabel = labelLines.length === 1
+            ? labelLines[0]
+            : '\n' + labelLines.map((l: string) => `      ${l}`).join('\n');
+        text += `STEP [${node.id}] (${node.type}):\n   INSTRUCTION: ${formattedLabel}\n`;
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {
@@ -4615,11 +4612,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     }
                                 }
 
-                                // Overlapping content
+                                // Overlapping content — only suppress if very recent (< 8s).
+                                // Without a time cap, a digit-readback response at confirm_gate TURN 2
+                                // (which is a substring of the TURN 1 message) gets silently suppressed
+                                // indefinitely, causing the agent to appear stuck with no audio output.
                                 if (recentMsg.text.includes(displayText.trim()) &&
-                                    displayText.trim().length > 20) {
+                                    displayText.trim().length > 20 &&
+                                    (now - recentMsg.time) < 8000) {
                                     isDuplicateOrSimilar = true;
-                                    skipReason = 'overlapping content';
+                                    skipReason = 'overlapping content (recent)';
                                     break;
                                 }
 
@@ -5117,17 +5118,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             const toolDuration = toolEndTime - toolStartTime;
                             logWithTimestamp('[Server]', `Tool result sent to Nova Sonic: ${actualToolName} (Duration: ${toolDuration}ms)`);
 
-                            // Flush any duplicate IDs queued while this call was in-flight
+                            // Flush any duplicate IDs queued while this call was in-flight.
+                            // IMPORTANT: delay 3s before sending duplicate results so Nova Sonic can
+                            // finish processing the primary result and close the current turn first.
+                            // Sending both results in rapid succession (<100ms) causes a CRITICAL ERROR.
                             const pendingDupes = session.pendingDuplicateToolIds?.get(actualToolName) || [];
                             if (pendingDupes.length > 0) {
-                                console.log(`[Server] 📋 Flushing ${pendingDupes.length} queued duplicate(s) for ${actualToolName} with real result`);
-                                for (const dupeId of pendingDupes) {
-                                    if (session.sonicClient && session.sonicClient.getSessionId()) {
-                                        await session.sonicClient.sendToolResult(dupeId, cleanResult, false);
-                                        console.log(`[Server] 📋 Re-delivered real result to duplicate ID: ${dupeId}`);
-                                    }
-                                }
+                                console.log(`[Server] 📋 Scheduling flush of ${pendingDupes.length} duplicate(s) for ${actualToolName} in 3s`);
                                 session.pendingDuplicateToolIds?.delete(actualToolName);
+                                setTimeout(async () => {
+                                    for (const dupeId of pendingDupes) {
+                                        if (session.sonicClient && session.sonicClient.getSessionId()) {
+                                            await session.sonicClient.sendToolResult(dupeId, cleanResult, false);
+                                            console.log(`[Server] 📋 Re-delivered real result to duplicate ID: ${dupeId}`);
+                                        }
+                                    }
+                                }, 3000);
                             }
 
                             // Add Tool Result to Transcript History

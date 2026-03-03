@@ -13,8 +13,8 @@ interface SbcConfig {
 
 const DEFAULTS: SbcConfig = {
     voice:        'amy',
-    persona:      'BankingDisputes',
-    workflow:     'disputes',
+    persona:      'BankingCore',
+    workflow:     'banking-disputes',
     enabledTools: [],
 };
 
