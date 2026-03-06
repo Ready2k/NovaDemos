@@ -37,6 +37,7 @@ interface PendingInvite {
     remoteAddr: string;
     remotePort: number;
     rtpSession: RtpSession;
+    createdAt:  number;     // ms timestamp — for stale-invite cleanup
 }
 
 // ─── SIP message parsing helpers ───────────────────────────────────────────────
@@ -205,11 +206,20 @@ function buildResponse(
 // ─── SipUa ────────────────────────────────────────────────────────────────────
 
 export class SipUa extends EventEmitter {
-    private socket:       dgram.Socket;
-    private localIp:      string;
-    private localSipPort: number;
+    private socket:          dgram.Socket;
+    private localIp:         string;
+    private localSipPort:    number;
     /** Map of Call-ID → pending invite (awaiting ACK). */
-    private pending:      Map<string, PendingInvite> = new Map();
+    private pending:         Map<string, PendingInvite> = new Map();
+    /**
+     * Allowed Request-URI usernames (case-insensitive).
+     * Loaded from SBC_ALLOWED_EXTENSIONS env var (comma-separated).
+     * If empty, all extensions are accepted.
+     */
+    private allowedExtensions: Set<string>;
+
+    // How long to keep an unACKed INVITE before cleaning up the RTP port (ms).
+    private static readonly PENDING_TTL_MS = 30_000;
 
     constructor() {
         super();
@@ -217,8 +227,22 @@ export class SipUa extends EventEmitter {
         this.localSipPort = parseInt(process.env.SBC_SIP_PORT || '5060', 10);
         this.socket       = dgram.createSocket('udp4');
 
+        const raw = process.env.SBC_ALLOWED_EXTENSIONS || '';
+        this.allowedExtensions = raw.trim()
+            ? new Set(raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean))
+            : new Set();
+
+        if (this.allowedExtensions.size > 0) {
+            console.log(`[SipUa] Extension filter active: [${[...this.allowedExtensions].join(', ')}]`);
+        } else {
+            console.log('[SipUa] Extension filter disabled (SBC_ALLOWED_EXTENSIONS not set)');
+        }
+
         this.socket.on('message', (msg, rinfo) => this._onMessage(msg, rinfo));
         this.socket.on('error',   (err)         => console.error('[SipUa] Socket error:', err));
+
+        // Periodically remove stale pending invites whose ACK never arrived.
+        setInterval(() => this._cleanupStalePending(), 10_000);
     }
 
     listen(): void {
@@ -243,17 +267,19 @@ export class SipUa extends EventEmitter {
         const requestLine = headerLines[0] || '';
         const { headers, vias } = parseRequest(headerLines.slice(1));
 
-        // Determine method from request-line (e.g. "INVITE sip:... SIP/2.0")
-        const methodMatch = requestLine.match(/^([A-Z]+)\s+/);
+        // Determine method and Request-URI from request-line
+        // e.g. "INVITE sip:Nova2SonicTest@54.212.182.31:5060 SIP/2.0"
+        const methodMatch = requestLine.match(/^([A-Z]+)\s+(\S+)/);
         if (!methodMatch) return; // ignore SIP responses
 
-        const method = methodMatch[1];
-        const callId = extractCallId(headers);
+        const method     = methodMatch[1];
+        const requestUri = methodMatch[2] || '';
+        const callId     = extractCallId(headers);
 
         console.log(`[SipUa] ${method} Call-ID=${callId} vias=${vias.length}`);
 
         switch (method) {
-            case 'INVITE': this._handleInvite(headers, vias, body, rinfo, callId); break;
+            case 'INVITE': this._handleInvite(headers, vias, body, rinfo, callId, requestUri); break;
             case 'ACK':    this._handleAck(callId);                                break;
             case 'BYE':    this._handleBye(headers, vias, rinfo, callId);          break;
             case 'CANCEL': this._handleCancel(headers, vias, rinfo, callId);       break;
@@ -265,12 +291,30 @@ export class SipUa extends EventEmitter {
     // ── INVITE ─────────────────────────────────────────────────────────────────
 
     private _handleInvite(
-        headers:  Map<string, string>,
-        vias:     string[],
-        body:     string,
-        rinfo:    dgram.RemoteInfo,
-        callId:   string
+        headers:    Map<string, string>,
+        vias:       string[],
+        body:       string,
+        rinfo:      dgram.RemoteInfo,
+        callId:     string,
+        requestUri: string,
     ): void {
+        // ── Extension allow-list ────────────────────────────────────────────────
+        if (this.allowedExtensions.size > 0) {
+            // Extract username from sip:user@host or sips:user@host
+            const extMatch = requestUri.match(/^sips?:([^@;?\s]+)@/i);
+            const ext      = extMatch ? extMatch[1].toLowerCase() : '';
+            if (!this.allowedExtensions.has(ext)) {
+                console.log(`[SipUa] INVITE to unknown extension "${ext}" from ${rinfo.address} — rejecting 404`);
+                const from  = extractField(headers, 'from');
+                const to    = extractField(headers, 'to');
+                const cseq  = extractCSeq(headers);
+                const resp  = buildResponse(404, 'Not Found', vias, from, to, callId, cseq,
+                    this.localIp, this.localSipPort, '', rinfo);
+                this._sendRaw(resp, rinfo.address, rinfo.port);
+                return;
+            }
+        }
+
         // If this Call-ID is already pending, retransmit the 200 OK
         const existing = this.pending.get(callId);
         if (existing) {
@@ -320,6 +364,7 @@ export class SipUa extends EventEmitter {
             remoteAddr: rinfo.address,
             remotePort: rinfo.port,
             rtpSession,
+            createdAt:  Date.now(),
         });
 
         // 4. Build SDP answer and send 200 OK
@@ -364,6 +409,13 @@ export class SipUa extends EventEmitter {
             this.localIp, this.localSipPort, '', rinfo);
         this._sendRaw(ok, rinfo.address, rinfo.port);
 
+        // Also clean up if BYE arrives for a call that was never ACKed
+        const pending = this.pending.get(callId);
+        if (pending) {
+            pending.rtpSession.close();
+            this.pending.delete(callId);
+        }
+
         this.emit('hangup', callId);
     }
 
@@ -399,6 +451,19 @@ export class SipUa extends EventEmitter {
         }
 
         this.emit('hangup', callId);
+    }
+
+    // ── Stale pending invite cleanup ──────────────────────────────────────────
+
+    private _cleanupStalePending(): void {
+        const cutoff = Date.now() - SipUa.PENDING_TTL_MS;
+        for (const [callId, inv] of this.pending) {
+            if (inv.createdAt < cutoff) {
+                console.log(`[SipUa] Stale INVITE (no ACK in ${SipUa.PENDING_TTL_MS / 1000}s) — releasing RTP port ${inv.rtpSession.localPort} for Call-ID ${callId}`);
+                inv.rtpSession.close();
+                this.pending.delete(callId);
+            }
+        }
     }
 
     // ── 405 fallback ──────────────────────────────────────────────────────────

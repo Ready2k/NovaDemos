@@ -1,6 +1,24 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Context Management
+Context is your most important resource. Proactively use subagents (Task tool) to keep exploration, research, and verbose operations out of the main conversation.
+
+**DEFAULT TO SPAWNING SUBAGENTS FOR:**
+* **Broad Codebase Exploration:** Reading 3+ files, or reading any single massive file (>500 lines) to answer a question.
+* **Research Tasks:** Web searches, documentation lookups, or investigating how a specific library/system works.
+* **Verbose Analysis:** Code review, error log tracing, or deep-dive analysis that produces heavy intermediate output.
+* **Information Gathering:** Any investigation where only the final summary matters.
+* *Crucial Subagent Instruction:* When spawning a subagent, you MUST explicitly instruct it to return only a concise summary of its findings, actionable insights, or the specific snippets needed. Do not let it return full file contents to the main chat.
+
+**STAY IN MAIN CONTEXT FOR:**
+* **Direct Execution:** File edits or commands the user explicitly requested.
+* **Targeted Reads:** Short, highly targeted reads (1-2 small files).
+* **Active Dialogue:** Conversations requiring back-and-forth clarification.
+* **Guided Tasks:** Tasks where the user needs to see the intermediate steps or approve actions along the way.
+
+**RULE OF THUMB:**
+If a task will require reading >3 files, reading large files, or producing output the user doesn't need to see verbatim, delegate it to a subagent and request a concise summary back.
 
 ## Commands
 

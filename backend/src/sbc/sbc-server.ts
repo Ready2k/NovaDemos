@@ -46,6 +46,7 @@ console.log(`[SbcServer] NOVA_SONIC_MODEL  = ${process.env.NOVA_SONIC_MODEL_ID |
 
 const bridge = new SbcEventBridge();
 console.log(`[SbcServer] SBC_BACKEND_URL = ${process.env.SBC_BACKEND_URL || 'http://localhost:8080 (default)'}`);
+console.log(`[SbcServer] SBC_ALLOWED_EXTENSIONS = ${process.env.SBC_ALLOWED_EXTENSIONS || '(none — all extensions accepted)'}`);
 
 // ─── Active calls registry ────────────────────────────────────────────────────
 
