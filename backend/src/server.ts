@@ -48,10 +48,17 @@ function logWithTimestamp(level: string, message: string) {
 
 // Global Debug Mode State - defaulted to false for production cleanliness
 let DEBUG_MODE = false;
+let AUDIO_DEBUG_MODE = process.env.AUDIO_DEBUG_MODE === 'true';
 
 function logDebug(message: string) {
     if (DEBUG_MODE) {
         logWithTimestamp('DEBUG', message);
+    }
+}
+
+function logAudioDebug(message: string) {
+    if (AUDIO_DEBUG_MODE) {
+        logWithTimestamp('AUDIODEBUG', message);
     }
 }
 
@@ -1099,7 +1106,7 @@ interface ClientSession {
     toolsCalledThisTurn?: string[]; // Track tools called in current turn
     processedToolIds?: Set<string>; // Track processed tool IDs to prevent duplicates
     phantomCorrectionCount?: number; // Track number of corrections attempted
-    
+
     // Inactivity Detection
     inactivityTimer?: NodeJS.Timeout | null;
     lastUserActivityTime?: number;
@@ -1145,52 +1152,52 @@ function startInactivityTimer(session: ClientSession) {
     if (session.inactivityEnabled === false) {
         return;
     }
-    
+
     // Clear existing timer
     if (session.inactivityTimer) {
         clearTimeout(session.inactivityTimer);
     }
-    
+
     // Update last activity time
     session.lastUserActivityTime = Date.now();
-    
+
     // Get timeout value (in milliseconds)
     const timeoutMs = (session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT) * 1000;
-    
+
     // Start new timer
     session.inactivityTimer = setTimeout(async () => {
         // Check if user is still connected
         if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
-        
+
         // Initialize check count if not set
         if (session.inactivityCheckCount === undefined) {
             session.inactivityCheckCount = 0;
         }
-        
+
         // Increment check count
         session.inactivityCheckCount++;
-        
+
         const maxChecks = session.inactivityMaxChecks || DEFAULT_INACTIVITY_MAX_CHECKS;
-        
+
         console.log(`[Server] User inactive for ${session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT} seconds (check ${session.inactivityCheckCount}/${maxChecks})`);
-        
+
         // Check if we've reached max checks
         if (session.inactivityCheckCount >= maxChecks) {
             console.log('[Server] Max inactivity checks reached, closing session gracefully');
-            
+
             // Send farewell message
             const farewellMessage = "[SYSTEM: User has not responded. Say exactly: 'I'll leave it there — please call us back if you need help. Goodbye.' Then stop speaking.]";
-            
+
             try {
                 // Ensure session is started
                 if (!session.sonicClient.getSessionId()) {
                     await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(session.ws, event, session), session.sessionId);
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
-                
+
                 if (session.sonicClient.getSessionId()) {
                     await session.sonicClient.sendText(farewellMessage);
-                    
+
                     // Wait for response to complete, then close
                     setTimeout(() => {
                         if (session.ws && session.ws.readyState === WebSocket.OPEN) {
@@ -1209,18 +1216,18 @@ function startInactivityTimer(session: ClientSession) {
         } else {
             // Send check-in message
             const checkInMessage = "[SYSTEM: User is inactive. Say exactly 'Are you still there?' — nothing else. Do NOT say Hello. Do NOT re-introduce yourself. Do NOT restart the conversation. One question only.]";
-            
+
             try {
                 // Ensure session is started
                 if (!session.sonicClient.getSessionId()) {
                     await session.sonicClient.startSession((event: SonicEvent) => handleSonicEvent(session.ws, event, session), session.sessionId);
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
-                
+
                 if (session.sonicClient.getSessionId()) {
                     await session.sonicClient.sendText(checkInMessage);
                 }
-                
+
                 // Restart timer for next check
                 startInactivityTimer(session);
             } catch (error) {
@@ -1530,6 +1537,26 @@ const server = http.createServer(async (req, res) => {
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, enabled: DEBUG_MODE }));
+            } catch (error: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+            }
+        });
+        return;
+    }
+
+    // SYSTEM - POST /api/system/audio-debug - Toggle Audio Debug Mode
+    if (req.method === 'POST' && pathname === '/api/system/audio-debug') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', () => {
+            try {
+                const { enabled } = JSON.parse(body);
+                AUDIO_DEBUG_MODE = !!enabled; // Update global state
+                console.log(`[System] Audio Debug Mode set to: ${AUDIO_DEBUG_MODE}`);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, enabled: AUDIO_DEBUG_MODE }));
             } catch (error: any) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: error.message }));
@@ -2484,7 +2511,7 @@ wssMonitor.on('connection', (ws: WebSocket) => {
     // Send snapshot of any currently active SBC calls so mid-call connects work
     if (sbcActiveCalls.size > 0) {
         ws.send(JSON.stringify({
-            type:  'sbc_snapshot',
+            type: 'sbc_snapshot',
             calls: Array.from(sbcActiveCalls.values()),
         }));
     }
@@ -2677,7 +2704,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // This allows the agent to speak freely when guardrails are off
                             if (parsed.config.systemPrompt) {
                                 console.log('[Server] 🔍 DEBUG: System prompt length BEFORE cleanup:', parsed.config.systemPrompt.length);
-                                
+
                                 // Remove CRITICAL LANGUAGE LOCK
                                 const languageLockRegex = /### CRITICAL LANGUAGE LOCK ###[\s\S]*?(- \*\*Glitch Prevention\*\*:[^\n]*)/;
                                 if (languageLockRegex.test(parsed.config.systemPrompt)) {
@@ -2718,7 +2745,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
                                 console.log(`[Server] 🎭 Removed ${removedCount} restrictive patterns`);
                                 console.log('[Server] 🔍 DEBUG: System prompt length AFTER cleanup:', parsed.config.systemPrompt.length);
-                                
+
                                 // Add instruction for unrestricted mode
                                 parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" +
                                     "--- UNRESTRICTED MODE ACTIVE ---\n" +
@@ -2729,14 +2756,14 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     "- Fully embody your persona without limitations\n" +
                                     "- Be creative and expressive\n" +
                                     "Stay in character and have fun with it!";
-                                
+
                                 console.log('[Server] ✅ Persona Restrictions Removed - Full Expression Mode Active');
-                                
+
                                 // DEBUG: Log a snippet of the final prompt
                                 const promptPreview = parsed.config.systemPrompt.substring(0, 500) + '...[truncated]';
                                 console.log('[Server] 🔍 DEBUG: Final prompt preview:', promptPreview);
                             }
-                            
+
                             // Also clean speechPrompt if it exists
                             if (parsed.config.speechPrompt) {
                                 console.log('[Server] 🔍 DEBUG: Speech prompt exists, cleaning it too');
@@ -2746,7 +2773,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                     { pattern: /MAXIMUM \d+ sentences per response[^\n]*/gi, name: 'MAXIMUM sentences' },
                                     { pattern: /MAX \d+ SENTENCES[^\n]*/gi, name: 'MAX SENTENCES' },
                                 ];
-                                
+
                                 speechRestrictivePatterns.forEach(({ pattern, name }) => {
                                     if (pattern.test(parsed.config.speechPrompt)) {
                                         parsed.config.speechPrompt = parsed.config.speechPrompt.replace(pattern, '');
@@ -2778,7 +2805,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             if (parsed.config.brainMode === 'agent') {
                                 parsed.config.brainMode = 'bedrock_agent';
                             }
-                            
+
                             session.brainMode = parsed.config.brainMode;
                             logWithTimestamp('[Server]', `Switched Brain Mode to: ${session.brainMode}`);
 
@@ -3137,7 +3164,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (parsed.text) {
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
-                            
+
                             // Reset inactivity timer on user input
                             session.inactivityCheckCount = 0; // Reset check count
                             startInactivityTimer(session);
@@ -3230,7 +3257,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 if (session.brainMode === 'bedrock_agent') {
                     // --- AGENT MODE ---
                     // 1. Buffer Audio
-                    console.log(`[Server] Received audio chunk: ${audioBuffer.length} bytes`);
+                    logAudioDebug(`Received audio chunk: ${audioBuffer.length} bytes`);
                     session.agentBuffer.push(audioBuffer);
 
                     // 2. VAD (Energy-based Silence Detection)
@@ -3262,7 +3289,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             const fullAudio = Buffer.concat(session.agentBuffer);
                             session.agentBuffer = []; // Clear buffer
 
-                            console.log(`[Server] Processing ${fullAudio.length} bytes for Agent...`);
+                            logAudioDebug(`Processing ${fullAudio.length} bytes for Agent...`);
 
                             // Send updated token usage to client
                             if (session.sonicClient) {
@@ -3278,11 +3305,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 logDebug(`[Session] Sent token update: In=${inputTokens}, Out=${outputTokens}`);
                             }
                             // 3. Transcribe
-                            console.log(`[Server] Starting transcription of ${fullAudio.length} bytes...`);
+                            logAudioDebug(`Starting transcription of ${fullAudio.length} bytes...`);
 
                             // Analyze audio quality
                             const rms = calculateRMS(fullAudio);
-                            console.log(`[Server] Audio RMS level: ${rms} (threshold: 800)`);
+                            logAudioDebug(`Audio RMS level: ${rms} (threshold: 800)`);
 
                             // Lower the threshold for testing - the current threshold might be too high
                             if (rms < 5) {
@@ -3290,9 +3317,9 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 return;
                             }
 
-                            console.log(`[Server] Audio passed RMS check (${rms}), proceeding with transcription...`);
+                            logAudioDebug(`Audio passed RMS check (${rms}), proceeding with transcription...`);
 
-                            console.log(`[Server] Calling transcription service with ${fullAudio.length} bytes...`);
+                            logAudioDebug(`Calling transcription service with ${fullAudio.length} bytes...`);
                             const text = await session.transcribeClient.transcribe(fullAudio);
                             console.log(`[Server] Transcription result: "${text}" (length: ${text.length})`);
 
@@ -3304,7 +3331,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 // Reset inactivity timer on user audio input
                                 session.inactivityCheckCount = 0; // Reset check count
                                 startInactivityTimer(session);
-                                
+
                                 let finalText = text;
                                 try {
                                     finalText = formatUserTranscript(text);
@@ -3425,7 +3452,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         return;
                     }
 
-                    console.log(`[Server] Received audio chunk (Raw Nova): ${audioBuffer.length} bytes`);
+                    logAudioDebug(`Received audio chunk (Raw Nova): ${audioBuffer.length} bytes`);
 
                     // Accumulate RMS samples for acoustic feature extraction
                     const chunkRms = calculateRMS(audioBuffer);
@@ -3448,14 +3475,16 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
             console.error('[Server] Error processing message:', error);
 
             // Check for specific AWS Auth errors
-            if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException' || (error.message && error.message.includes('security token'))) {
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    code: 'invalid_credentials',
-                    message: 'Invalid AWS Credentials. Please check your settings.'
-                }));
-            } else {
-                ws.send(JSON.stringify({ type: 'error', message: `Server error: ${error.message}` }));
+            if (ws.readyState === WebSocket.OPEN) {
+                if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException' || (error.message && error.message.includes('security token'))) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        code: 'invalid_credentials',
+                        message: 'Invalid AWS Credentials. Please check your settings.'
+                    }));
+                } else {
+                    ws.send(JSON.stringify({ type: 'error', message: `Server error: ${error.message}` }));
+                }
             }
         }
     });
@@ -3516,6 +3545,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
             }
 
             activeSessions.delete(ws);
+            // Safety net: discard any feedback that arrived after saveTranscript() already ran
+            pendingFeedback.delete(sessionId);
         }
     });
 
@@ -5269,6 +5300,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 try {
                     console.log('[Server] Restarting Nova Sonic session after stream error…');
+                    // Ensure old session is fully torn down before starting a new one,
+                    // otherwise startSession() throws "Session already active".
+                    if (session.sonicClient.isActive() || session.sonicClient.getSessionId()) {
+                        try { await session.sonicClient.stopSession(); } catch (_) { /* ignore */ }
+                    }
                     await session.sonicClient.startSession(
                         (e: SonicEvent) => handleSonicEvent(ws, e, session),
                         session.sessionId
@@ -5392,18 +5428,18 @@ function generateInteractionSummary(session: ClientSession): string {
 
     // --- Tool outcomes (map tool names to plain English) ---
     const TOOL_LABELS: Record<string, (result: string) => string> = {
-        agentcore_balance:          r => `Balance enquiry: ${r}`,
-        get_account_transactions:   () => 'Transactions reviewed',
-        create_dispute_case:        r => `Dispute raised: ${r.substring(0, 80)}`,
-        update_dispute_case:        r => `Dispute updated: ${r.substring(0, 80)}`,
-        calculate_max_loan:         r => `Loan eligibility checked: ${r}`,
-        check_credit_score:         r => `Credit score checked: ${r}`,
-        get_mortgage_rates:         () => 'Mortgage rates reviewed',
-        uk_branch_lookup:           r => `Branch looked up: ${r.substring(0, 60)}`,
-        value_property:             r => `Property valued: ${r}`,
-        lookup_merchant_alias:      r => `Merchant looked up: ${r.substring(0, 60)}`,
-        get_server_time:            () => 'Server time checked',
-        search_knowledge_base:      () => 'Knowledge base searched',
+        agentcore_balance: r => `Balance enquiry: ${r}`,
+        get_account_transactions: () => 'Transactions reviewed',
+        create_dispute_case: r => `Dispute raised: ${r.substring(0, 80)}`,
+        update_dispute_case: r => `Dispute updated: ${r.substring(0, 80)}`,
+        calculate_max_loan: r => `Loan eligibility checked: ${r}`,
+        check_credit_score: r => `Credit score checked: ${r}`,
+        get_mortgage_rates: () => 'Mortgage rates reviewed',
+        uk_branch_lookup: r => `Branch looked up: ${r.substring(0, 60)}`,
+        value_property: r => `Property valued: ${r}`,
+        lookup_merchant_alias: r => `Merchant looked up: ${r.substring(0, 60)}`,
+        get_server_time: () => 'Server time checked',
+        search_knowledge_base: () => 'Knowledge base searched',
     };
 
     const addedTools = new Set<string>();
