@@ -36,7 +36,7 @@ export default function AboutModal() {
                             <p className={cn(
                                 "text-xs font-medium uppercase tracking-widest opacity-60",
                                 isDarkMode ? "text-violet-300" : "text-violet-600"
-                            )}>Version 2.0.0 "Nova Sonic"</p>
+                            )}>Version 2.1.0 "Nova Sonic"</p>
                         </div>
                     </div>
                     <button

@@ -612,7 +612,7 @@ export default function Home() {
               "flex items-center gap-2 text-[10px] uppercase tracking-wider font-medium transition-colors duration-300",
               isDarkMode ? "text-ink-text-muted/60" : "text-gray-500"
             )}>
-              <span>v2.0.0</span>
+              <span>v2.1.0</span>
               <span className="opacity-30">|</span>
               <span suppressHydrationWarning>
                 {isHydrated ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Loading...'}
