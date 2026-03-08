@@ -87,6 +87,13 @@ export const ACTION_PATTERNS: ActionPattern[] = [
         expectedTool: 'uk_branch_lookup',
         reprompt: 'SYSTEM OVERRIDE: You said you would find branches but did not call uk_branch_lookup. Execute it NOW with the location provided.',
         confidence: 'high'
+    },
+    {
+        name: 'refund_eligibility',
+        pattern: /\b(i'll check|let me check|checking)\s+(if\s+)?(you'?re?\s+)?(eligible|qualify)/i,
+        expectedTool: 'create_dispute_case',
+        reprompt: 'SYSTEM OVERRIDE: You said you would check refund eligibility but did not call create_dispute_case. The eligibility check IS the dispute creation. Execute create_dispute_case NOW with the dispute details you have collected.',
+        confidence: 'high'
     }
 ];
 

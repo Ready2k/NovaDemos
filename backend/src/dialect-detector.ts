@@ -1,8 +1,8 @@
 /**
- * Dialect Detection Service - AWS Transcribe Language Identification
- * 
- * Uses AWS Transcribe's hardware-driven acoustic analysis to detect
- * speaker locale/language and map to appropriate voice IDs.
+ * Dialect Detection Service
+ *
+ * Maps detected speaker locale/language codes to appropriate voice IDs.
+ * Locale detection is handled by Nova Sonic's built-in language identification.
  */
 
 export interface LocaleDetectionResult {
@@ -13,7 +13,6 @@ export interface LocaleDetectionResult {
 
 /**
  * Voice mapping table - maps detected locales to voice IDs
- * Based on AWS Transcribe language codes
  */
 const LOCALE_VOICE_MAP: Record<string, string> = {
     'en-US': 'matthew',
@@ -27,16 +26,14 @@ const LOCALE_VOICE_MAP: Record<string, string> = {
 };
 
 /**
- * Parse locale from AWS Transcribe language identification result
- * 
- * @param transcribeResult - Result from AWS Transcribe with language identification
+ * Parse locale from a language identification result
+ *
+ * @param localeResult - Object containing detected language code and confidence
  * @returns Detection result with locale, confidence, and recommended voice ID
  */
-export function parseTranscribeLocale(transcribeResult: any): LocaleDetectionResult {
-    // Extract language code from Transcribe result
-    // Transcribe returns language codes like 'en-US', 'en-GB', etc.
-    const detectedLanguage = transcribeResult.detectedLanguage || transcribeResult.LanguageCode || 'en-US';
-    const confidence = transcribeResult.languageConfidence || transcribeResult.IdentifiedLanguageScore || 0.5;
+export function parseTranscribeLocale(localeResult: any): LocaleDetectionResult {
+    const detectedLanguage = localeResult.detectedLanguage || localeResult.LanguageCode || 'en-US';
+    const confidence = localeResult.languageConfidence || localeResult.IdentifiedLanguageScore || 0.5;
 
     // Map to voice ID
     const voiceId = LOCALE_VOICE_MAP[detectedLanguage] || 'matthew';

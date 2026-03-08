@@ -5,7 +5,6 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { SonicClient, SonicEvent } from './sonic-client';
 import { callBankAgent } from './bedrock-agent-client';
-import { TranscribeClientWrapper } from './transcribe-client';
 import { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } from "@aws-sdk/client-bedrock-agentcore";
 import { AgentCoreGatewayClient } from './agentcore-gateway-client';
 import { ToolManager } from './tool-manager';
@@ -1026,8 +1025,6 @@ interface ClientSession {
     agentId?: string;
     agentAliasId?: string;
     agentBuffer: Buffer[];
-    transcribeClient: TranscribeClientWrapper;
-    silenceTimer: NodeJS.Timeout | null;
     isInterrupted: boolean;
     isIntercepting?: boolean; // New: Flag to suppress audio if we catch a hallucination
     initialGreetingTimer?: NodeJS.Timeout | null; // Track initial greeting to prevent duplicates
@@ -1051,7 +1048,7 @@ interface ClientSession {
     dialectConfidence?: number; // Confidence level of dialect detection
     voiceLockEnabled?: boolean; // Voice lock toggle - prevents automatic voice switching
     voiceMapping?: Record<string, string>; // Custom locale -> voiceId mapping
-    activeLocale?: string; // Currently detected locale from Transcribe
+    activeLocale?: string; // Currently detected locale
     localeConfidence?: number; // Confidence of locale detection
 
     // Context Variables
@@ -2543,7 +2540,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
 
     // Create Sonic client for this session
     const sonicClient = new SonicClient();
-    const transcribeClient = new TranscribeClientWrapper(process.env.NOVA_AWS_REGION || process.env.AWS_REGION);
 
     // Store session
     const session: ClientSession = {
@@ -2552,8 +2548,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
         sessionId,
         brainMode: 'raw_nova', // Default
         agentBuffer: [],
-        transcribeClient,
-        silenceTimer: null,
         initialGreetingTimer: null,
         isInterrupted: false,
         isIntercepting: false,
@@ -3254,198 +3248,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                 // Binary Audio Data
                 const audioBuffer = Buffer.from(data as Buffer);
 
-                if (session.brainMode === 'bedrock_agent') {
-                    // --- AGENT MODE ---
-                    // 1. Buffer Audio
-                    logAudioDebug(`Received audio chunk: ${audioBuffer.length} bytes`);
-                    session.agentBuffer.push(audioBuffer);
-
-                    // 2. VAD (Energy-based Silence Detection)
-                    const rms = calculateRMS(audioBuffer);
-                    const VAD_THRESHOLD = 100; // Lowered significantly to detect quiet speech
-
-                    // Only reset silence timer if we detect speech (high energy)
-                    if (rms > VAD_THRESHOLD) {
-                        if (session.silenceTimer) clearTimeout(session.silenceTimer);
-                        session.silenceTimer = null;
-
-                        // INTERRUPTION DETECTED
-                        if (!session.isInterrupted) {
-                            console.log('[Server] Interruption detected (VAD)! Stopping playback.');
-                            session.isInterrupted = true;
-                            ws.send(JSON.stringify({ type: 'interruption' }));
-                        }
-                    }
-
-                    // If no timer is running (meaning we are in a potential silence period), start one
-                    if (!session.silenceTimer) {
-                        session.silenceTimer = setTimeout(async () => {
-                            // Clear timer reference immediately so VAD knows it fired
-                            session.silenceTimer = null;
-                            console.log('[Server] Silence timer fired');
-
-                            if (session.agentBuffer.length === 0) return;
-
-                            const fullAudio = Buffer.concat(session.agentBuffer);
-                            session.agentBuffer = []; // Clear buffer
-
-                            logAudioDebug(`Processing ${fullAudio.length} bytes for Agent...`);
-
-                            // Send updated token usage to client
-                            if (session.sonicClient) {
-                                const inputTokens = session.sonicClient.getSessionInputTokens();
-                                const outputTokens = session.sonicClient.getSessionOutputTokens();
-
-                                ws.send(JSON.stringify({
-                                    type: 'token_usage',
-                                    inputTokens,
-                                    outputTokens
-                                }));
-
-                                logDebug(`[Session] Sent token update: In=${inputTokens}, Out=${outputTokens}`);
-                            }
-                            // 3. Transcribe
-                            logAudioDebug(`Starting transcription of ${fullAudio.length} bytes...`);
-
-                            // Analyze audio quality
-                            const rms = calculateRMS(fullAudio);
-                            logAudioDebug(`Audio RMS level: ${rms} (threshold: 800)`);
-
-                            // Lower the threshold for testing - the current threshold might be too high
-                            if (rms < 5) {
-                                console.log('[Server] Audio appears to be silent or very quiet - skipping transcription');
-                                return;
-                            }
-
-                            logAudioDebug(`Audio passed RMS check (${rms}), proceeding with transcription...`);
-
-                            logAudioDebug(`Calling transcription service with ${fullAudio.length} bytes...`);
-                            const text = await session.transcribeClient.transcribe(fullAudio);
-                            console.log(`[Server] Transcription result: "${text}" (length: ${text.length})`);
-
-                            if (!text || text.length === 0) {
-                                console.log('[Server] Transcription returned empty - this might be an audio format issue');
-                                console.log(`[Server] Audio buffer info: ${fullAudio.length} bytes, RMS: ${rms}`);
-                            }
-                            if (text) {
-                                // Reset inactivity timer on user audio input
-                                session.inactivityCheckCount = 0; // Reset check count
-                                startInactivityTimer(session);
-
-                                let finalText = text;
-                                try {
-                                    finalText = formatUserTranscript(text);
-                                } catch (e) {
-                                    console.warn('[Server] Error formatting transcript:', e);
-                                }
-
-
-                                // 4. Invoke Agent
-                                try {
-                                    console.log('[Server] Calling Agent...');
-                                    const { completion: agentReply, trace } = await callBankAgent(
-                                        finalText,
-                                        session.sessionId,
-                                        session.agentId,
-                                        session.agentAliasId,
-                                        {
-                                            accessKeyId: session.awsAccessKeyId,
-                                            secretAccessKey: session.awsSecretAccessKey,
-                                            sessionToken: session.awsSessionToken,
-                                            region: session.awsRegion
-                                        }
-                                    );
-                                    console.log(`[Server] Agent replied: "${agentReply}"`);
-
-                                    // Send Debug Info
-                                    console.log(`[Server] Sending Debug Info (Trace count: ${trace?.length || 0})`);
-                                    if (trace && trace.length > 0) {
-                                        console.log('[Server] First Trace Item:', JSON.stringify(trace[0], null, 2));
-                                    }
-                                    ws.send(JSON.stringify({
-                                        type: 'debugInfo',
-                                        data: {
-                                            sessionId: session.sessionId,
-                                            transcript: text,
-                                            agentReply,
-                                            trace
-                                        }
-                                    }));
-
-                                    ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
-                                    session.transcript.push({ role: 'assistant', text: agentReply, timestamp: Date.now() });
-
-                                    // 5. Synthesize with Sonic (TTS)
-                                    // Reset interruption flag before new turn
-                                    session.isInterrupted = false;
-
-                                    // --- SERVER-SIDE DEDUPLICATION ---
-                                    const now = Date.now();
-                                    // Trim and Normalize for comparison
-                                    const cleanReply = agentReply.trim();
-                                    const cleanLast = (session.lastAgentReply || '').trim();
-
-                                    console.log(`[Server] Checking dedupe: (${cleanReply.length} chars) "${cleanReply.substring(0, 20)}..." vs Last: (${cleanLast.length} chars) "${cleanLast.substring(0, 20)}..." (TimeDiff: ${session.lastAgentReplyTime ? now - session.lastAgentReplyTime : 'N/A'}ms)`);
-
-                                    if (cleanReply === cleanLast && session.lastAgentReplyTime && (now - session.lastAgentReplyTime) < 4000) {
-                                        console.warn(`[Server] 🛑 DUPLICATE AGENT REPLY DETECTED (ignored): "${cleanReply.substring(0, 50)}..."`);
-                                        return;
-                                    }
-                                    session.lastAgentReply = cleanReply;
-                                    session.lastAgentReplyTime = now;
-                                    // ---------------------------------
-
-                                    // Ensure session is started and active
-                                    if (!sonicClient.getSessionId()) {
-                                        console.log('[Server] Starting Nova Sonic session for Banking Bot response...');
-                                        await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
-                                        // Wait a moment for session to be fully established
-                                        await new Promise(resolve => setTimeout(resolve, 500));
-                                    }
-
-                                    // Double-check session is active before sending text
-                                    if (sonicClient.getSessionId()) {
-                                        // CRITICAL FIX: Clean text before sending to Nova Sonic to prevent markdown hangs
-                                        const cleanAgentReply = cleanTextForSonic(agentReply);
-                                        console.log('[Server] Sending clean text to Sonic:', cleanAgentReply);
-
-                                        await sonicClient.sendText(cleanAgentReply);
-                                    } else {
-                                        console.error('[Server] Nova Sonic session failed to start for Banking Bot response');
-                                        ws.send(JSON.stringify({
-                                            type: 'transcript',
-                                            role: 'system',
-                                            text: 'TTS Error: Could not start voice session',
-                                            isFinal: true
-                                        }));
-                                    }
-
-                                } catch (agentError: any) {
-                                    console.error('[Server] Agent Error:', agentError);
-
-                                    // Forward error to Debug Panel
-                                    ws.send(JSON.stringify({
-                                        type: 'debugInfo',
-                                        data: {
-                                            error: {
-                                                message: 'Agent Execution Failed',
-                                                details: agentError.message || 'Unknown error occurred while calling Bedrock Agent',
-                                                timestamp: new Date().toISOString()
-                                            }
-                                        }
-                                    }));
-
-                                    // Also notify user via voice if possible? Maybe not, could loop.
-                                    ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
-                                }
-                            } else {
-                                console.log('[Server] Transcription returned empty text - ignoring audio chunk');
-                            }
-                        }, 1500); // 1500ms silence threshold to allow for pauses
-                    }
-
-                } else {
-                    // --- RAW NOVA MODE (Existing) ---
+                {
+                    // --- NOVA SONIC AUDIO (all modes stream directly to Nova Sonic) ---
                     // Defensively check for even byte length (Nova Sonic Requirement)
                     if (audioBuffer.length % 2 !== 0) {
                         console.warn(`[Server] Dropping odd-sized audio chunk: ${audioBuffer.length} bytes (Invalid PCM)`);
@@ -3680,7 +3484,9 @@ function formatUserTranscript(text: string): string {
     const numberMap: { [key: string]: string } = {
         'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
         'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
-        'eleven': '11', 'twelve': '12', 'twenty': '20', 'thirty': '30',
+        'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15',
+        'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19',
+        'twenty': '20', 'thirty': '30',
         'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
         'eighty': '80', 'ninety': '90', 'double': 'double', 'triple': 'triple'
     };
@@ -3813,9 +3619,27 @@ function formatUserTranscript(text: string): string {
         return result;
     });
 
+    // Single-word pass: convert any remaining isolated number words the sequence regex missed.
+    // e.g. standalone "one" → "1", "eleven" → "11"
+    for (const [word, digit] of Object.entries(numberMap)) {
+        if (word === 'double' || word === 'triple') continue;
+        formatted = formatted.replace(new RegExp(`\\b${word}\\b`, 'gi'), digit);
+    }
+
+    // Spoken amount patterns (run after words→digits so we operate on digit strings):
+    // "1 thousand 9 hundred" → "1900", "2 thousand" → "2000", "9 hundred" → "900"
+    formatted = formatted.replace(/\b(\d+)\s+thousand\s+(\d+)\s+hundred\b/gi, (_, t, h) => String(parseInt(t) * 1000 + parseInt(h) * 100));
+    formatted = formatted.replace(/\b(\d+)\s+thousand\b/gi, (_, t) => String(parseInt(t) * 1000));
+    formatted = formatted.replace(/\b(\d+)\s+hundred\b/gi, (_, h) => String(parseInt(h) * 100));
+
+    // "1900 pounds" / "85 pounds" → "£1900" / "£85"
+    formatted = formatted.replace(/\b(\d+)\s+pounds?\b/gi, '£$1');
+
+    // "15 and 28 pence" / "£15 and 28 pence" → "£15.28"
+    formatted = formatted.replace(/£?(\d+)\s+and\s+(\d+)\s+pence?\b/gi, (_, pounds, pence) => `£${pounds}.${pence.padStart(2, '0')}`);
+
     // Final pass: collapse digit sequences separated only by spaces/commas into contiguous form.
-    // Handles mixed Transcribe output like "1 1 2 2 33" → "112233" (when Transcribe emits
-    // some digits numerically and others as words that got converted above).
+    // e.g. "1 1 2 2 33" → "112233" (when some digits are numeric and others were word-converted above).
     formatted = formatted.replace(/\b\d+\b([\s,]+\b\d+\b)+/g, match => match.replace(/[\s,]+/g, ''));
 
     return formatted;
@@ -3991,25 +3815,61 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
 
         case 'transcript':
-            // In Agent Mode, we already sent the transcript from the Agent directly.
-            // Nova Sonic's transcript is just a TTS echo, so we suppress it from the main chat.
-            // HOWEVER, we send it as 'ttsOutput' for the Debug Panel to catch refusals/mismatches.
             if (session.brainMode === 'bedrock_agent') {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'ttsOutput',
-                        text: event.data.transcript,
-                        isFinal: event.data.isFinal
-                    }));
+                const agentRole = event.data.role || 'assistant';
 
+                if (agentRole === 'user' && event.data.isFinal && event.data.transcript) {
+                    // User speech transcribed by Nova Sonic — forward to Bedrock Agent
+                    const userText = formatUserTranscript(event.data.transcript);
+                    session.transcript.push({ role: 'user', text: userText, timestamp: Date.now() });
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: userText, isFinal: true }));
+                    }
+                    session.inactivityCheckCount = 0;
+                    startInactivityTimer(session);
+
+                    try {
+                        console.log('[Server] Calling Bedrock Agent...');
+                        const { completion: agentReply, trace } = await callBankAgent(
+                            userText, session.sessionId, session.agentId, session.agentAliasId,
+                            { accessKeyId: session.awsAccessKeyId, secretAccessKey: session.awsSecretAccessKey, sessionToken: session.awsSessionToken, region: session.awsRegion }
+                        );
+                        console.log(`[Server] Agent replied: "${agentReply}"`);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'debugInfo', data: { sessionId: session.sessionId, transcript: userText, agentReply, trace } }));
+                            ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
+                        }
+                        session.transcript.push({ role: 'assistant', text: agentReply, timestamp: Date.now() });
+
+                        // Deduplicate then speak via Nova Sonic TTS
+                        const now = Date.now();
+                        const cleanReply = agentReply.trim();
+                        if (cleanReply === (session.lastAgentReply || '').trim() && session.lastAgentReplyTime && (now - session.lastAgentReplyTime) < 4000) {
+                            console.warn(`[Server] 🛑 DUPLICATE AGENT REPLY DETECTED (ignored)`);
+                            return;
+                        }
+                        session.lastAgentReply = cleanReply;
+                        session.lastAgentReplyTime = now;
+                        session.isInterrupted = false;
+
+                        if (!session.sonicClient.getSessionId()) {
+                            await session.sonicClient.startSession((e: SonicEvent) => handleSonicEvent(ws, e, session), session.sessionId);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        if (session.sonicClient.getSessionId()) {
+                            await session.sonicClient.sendText(cleanTextForSonic(agentReply));
+                        }
+                    } catch (agentError: any) {
+                        console.error('[Server] Agent Error:', agentError);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'error', message: 'Agent Error' }));
+                        }
+                    }
+                } else if (agentRole !== 'user' && ws.readyState === WebSocket.OPEN) {
+                    // Assistant TTS echo — forward to Debug Panel only
+                    ws.send(JSON.stringify({ type: 'ttsOutput', text: event.data.transcript, isFinal: event.data.isFinal }));
                     if (event.data.isFinal && session.sonicClient) {
-                        const inputTokens = session.sonicClient.getSessionInputTokens();
-                        const outputTokens = session.sonicClient.getSessionOutputTokens();
-                        ws.send(JSON.stringify({
-                            type: 'token_usage',
-                            inputTokens,
-                            outputTokens
-                        }));
+                        ws.send(JSON.stringify({ type: 'token_usage', inputTokens: session.sonicClient.getSessionInputTokens(), outputTokens: session.sonicClient.getSessionOutputTokens() }));
                     }
                 }
                 return;
@@ -4485,7 +4345,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                 // Forward transcript as JSON message (Sanitized)
                 // We strip the JSON code block so the user doesn't see the raw payload
-                let displayText = event.data.transcript || "";
+                let displayText = formatUserTranscript(event.data.transcript || "");
                 // Remove content between first { and last } if it looks like the tool call
                 // Remove content starting from "json" marker to clean up UI
                 // Matches: `json ..., ```json ..., or just json ...
@@ -5013,6 +4873,26 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                         try {
                             const gatewayTarget = toolDef ? toolDef.gatewayTarget : undefined;
+
+                            // TOOL RESULT CACHE: For expensive read-only tools, return cached result if fresh
+                            const CACHEABLE_TOOLS = ['get_account_transactions', 'agentcore_transactions', 'agentcore_balance'];
+                            const TOOL_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+                            if (CACHEABLE_TOOLS.includes(actualToolName)) {
+                                if (!session.toolResultCache) session.toolResultCache = new Map();
+                                const cacheKey = `${actualToolName}:${JSON.stringify(toolParams)}`;
+                                const cached = session.toolResultCache.get(cacheKey);
+                                if (cached && (Date.now() - cached.timestamp) < TOOL_CACHE_TTL_MS) {
+                                    console.log(`[Server] ✅ Cache HIT for ${actualToolName} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s) — skipping gateway call`);
+                                    result = { status: 'success', data: cached.result };
+                                    // Jump straight to tool result delivery
+                                } else {
+                                    if (cached) console.log(`[Server] ⏰ Cache EXPIRED for ${actualToolName} — fetching fresh`);
+                                }
+                            }
+
+                            if (result) {
+                                // Cache hit — skip the gateway call below
+                            } else {
                             let gatewayResult = await agentCoreGatewayClient.callTool(actualToolName, toolParams, gatewayTarget);
 
                             // GUARDRAIL: Track Authentication
@@ -5032,18 +4912,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                         broadcastWorkflowStatus(session);
                                     }
 
-                                    // CRITICAL SECURITY FIX: Sanitize PII Unconditionally
-                                    // The tool result often contains the *actual* customer name. We remove it ALWAYS.
-                                    if (parsedResult.customer_name) {
-                                        console.log('[Server] 🔐 Sanitizing IDV Result: Removing customer_name from auth response.');
-                                        delete parsedResult.customer_name;
-
-                                        // Update the gatewayResult to be the sanitized version
-                                        if (typeof gatewayResult === 'string') {
-                                            gatewayResult = JSON.stringify(parsedResult);
-                                        } else {
-                                            gatewayResult = parsedResult;
+                                    // Sanitize IDV result: remove fields the model would narrate
+                                    // verbatim ("Your account is verified and open") or that contain PII.
+                                    const fieldsToStrip = ['customer_name', 'account_status', 'auth_status', 'marker_Vunl'];
+                                    let resultDirty = false;
+                                    for (const field of fieldsToStrip) {
+                                        if (field in parsedResult) {
+                                            delete parsedResult[field];
+                                            resultDirty = true;
                                         }
+                                    }
+                                    // Replace with a clean, instruction-safe confirmation
+                                    parsedResult.status = session.isAuthenticated ? 'identity_verified' : 'identity_failed';
+                                    resultDirty = true;
+
+                                    if (resultDirty) {
+                                        console.log('[Server] 🔐 Sanitized IDV result. Sending as:', parsedResult.status);
+                                        gatewayResult = JSON.stringify(parsedResult);
                                     }
                                 } catch (e) {
                                     // ignore parse error
@@ -5056,6 +4941,13 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             };
                             console.log(`[Server] AgentCore Gateway result: ${gatewayResult}`);
 
+                            // Store successful result in cache for cacheable tools
+                            if (CACHEABLE_TOOLS.includes(actualToolName) && session.toolResultCache) {
+                                const cacheKey = `${actualToolName}:${JSON.stringify(toolParams)}`;
+                                session.toolResultCache.set(cacheKey, { result: gatewayResult, timestamp: Date.now(), toolName: actualToolName, query: cacheKey });
+                                console.log(`[Server] 💾 Cached result for ${actualToolName} (TTL: ${TOOL_CACHE_TTL_MS / 1000}s)`);
+                            }
+
                             // MIDDLEWARE INTERCEPTOR: Sanitize "Transport for London" Test Data
                             // The Lambda function has a hardcoded test case that triggers the "runaway" dispute scenario.
                             // We intercept and block it here to force a clean slate.
@@ -5067,6 +4959,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 });
                                 console.log('[Server] 🛡️ Replaced with empty history.');
                             }
+
+                            } // end else (cache miss — executed gateway call)
 
                         } catch (error: any) {
                             console.error(`[Server] AgentCore Gateway error:`, error);
