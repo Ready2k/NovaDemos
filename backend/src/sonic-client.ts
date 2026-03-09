@@ -14,6 +14,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Langfuse, LangfuseTraceClient, LangfuseGenerationClient } from 'langfuse';
 
+// Filler phrases to suppress from audio output. Must match word boundaries.
+const FILLER_DETECT_PHRASES = ["hmm", "erm", "ok", "let me see", "just waiting for the system", "one moment", "bear with me"];
+const FILLER_DETECT_MAX_LENGTH = 50; // If accumulated text exceeds this, definitely not a filler
+
 /**
  * Configuration for Nova 2 Sonic
  */
@@ -65,6 +69,11 @@ export class SonicClient {
     // Auto-Nudge State
     private hasCommittedToTool: boolean = false;
     private hasCalledTool: boolean = false;
+
+    // Filler Audio Suppression
+    private pendingAudioBuffer: Buffer[] = [];
+    private audioBufferingActive: boolean = false;
+    private currentBlockIsFiller: boolean = false;
 
     // Langfuse Tracing
     private langfuse: Langfuse;
@@ -329,7 +338,7 @@ export class SonicClient {
                         temperature: 0.7
                     },
                     turnDetectionConfiguration: {
-                        endpointingSensitivity: "HIGH"  // Controls when Nova detects end of user speech
+                        endpointingSensitivity: "LOW"  // LOW = less sensitive to background noise / short interruptions
                     }
                 }
             }
@@ -1241,6 +1250,13 @@ export class SonicClient {
                         console.log(`[SonicClient] Content Start: ${eventData.contentStart.type} (${eventData.contentStart.role}) ID: ${contentId} Stage: ${stage}`);
                         this.currentRole = eventData.contentStart.role;
 
+                        // Reset filler suppression state for each new ASSISTANT TEXT block
+                        if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
+                            this.pendingAudioBuffer = [];
+                            this.audioBufferingActive = true;
+                            this.currentBlockIsFiller = false;
+                        }
+
                         this.eventCallback?.({
                             type: 'contentStart',
                             data: {
@@ -1298,11 +1314,13 @@ export class SonicClient {
 
 
                     if (eventData.audioOutput) {
-                        const content = eventData.audioOutput.content;
-                        this.eventCallback?.({
-                            type: 'audio',
-                            data: { audio: Buffer.from(content, 'base64') }
-                        });
+                        const audioData = Buffer.from(eventData.audioOutput.content, 'base64');
+                        if (this.audioBufferingActive) {
+                            this.pendingAudioBuffer.push(audioData);
+                        } else if (!this.currentBlockIsFiller) {
+                            this.eventCallback?.({ type: 'audio', data: { audio: audioData } });
+                        }
+                        // else: block identified as filler — discard audio
                     }
 
                     if (eventData.textOutput) {
@@ -1345,6 +1363,15 @@ export class SonicClient {
 
                             // Accumulate text for the current turn
                             this.currentTurnTranscript += content;
+
+                            // If accumulated text exceeds filler threshold, it can't be a filler — flush buffer immediately
+                            if (this.audioBufferingActive && this.currentTurnTranscript.length > FILLER_DETECT_MAX_LENGTH) {
+                                this.audioBufferingActive = false;
+                                for (const chunk of this.pendingAudioBuffer) {
+                                    this.eventCallback?.({ type: 'audio', data: { audio: chunk } });
+                                }
+                                this.pendingAudioBuffer = [];
+                            }
 
                             console.log(`[SonicClient] Received text (ID: ${contentId}, Stage: ${stage}): "${content}" -> Turn Total: "${this.currentTurnTranscript.substring(0, 50)}..."`);
 
@@ -1428,8 +1455,29 @@ export class SonicClient {
                             }
                         }
 
-                        // Send final transcript when turn ends
-                        if ((eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
+                        // Filler suppression: if still buffering at end of block, decide now
+                        if (this.audioBufferingActive && this.currentRole === 'ASSISTANT') {
+                            this.audioBufferingActive = false;
+                            const cleanText = this.currentTurnTranscript.replace(/[.,!?;]/g, '').trim().toLowerCase();
+                            const isFiller = FILLER_DETECT_PHRASES.some(phrase => {
+                                // Use word-boundary matching to avoid false positives (e.g. "ok" in "looks")
+                                const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                return cleanText === phrase || new RegExp(`\\b${escaped}\\b`).test(cleanText);
+                            });
+                            if (isFiller) {
+                                this.currentBlockIsFiller = true;
+                                this.pendingAudioBuffer = [];
+                                console.log(`[SonicClient] 🙈 Filler block suppressed (audio + transcript): "${this.currentTurnTranscript.trim()}"`);
+                            } else {
+                                for (const chunk of this.pendingAudioBuffer) {
+                                    this.eventCallback?.({ type: 'audio', data: { audio: chunk } });
+                                }
+                                this.pendingAudioBuffer = [];
+                            }
+                        }
+
+                        // Send final transcript when turn ends (skip if block was identified as a filler)
+                        if (!this.currentBlockIsFiller && (eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
                             // Determine stage from content name if possible
                             const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
 

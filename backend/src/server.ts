@@ -3938,7 +3938,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     const cleanText = text.replace(/[.,!?:;]/g, '').trim().toLowerCase();
                     const isFiller = FILLER_PHRASES.some(phrase => {
                         const cleanFiller = phrase.replace(/[.,!?:;]/g, '').trim().toLowerCase();
-                        return cleanText === cleanFiller || cleanText.includes(cleanFiller);
+                        const escaped = cleanFiller.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        // Use word-boundary matching to avoid false positives (e.g. "ok" matching "looks")
+                        return cleanText === cleanFiller || new RegExp(`\\b${escaped}\\b`).test(cleanText);
                     });
 
                     if (isFiller) {
