@@ -31,6 +31,13 @@ const RESPONSE_BUCKET = process.env.RESPONSE_BUCKET;
 const MODEL_ID        = process.env.NOVA_SONIC_MODEL_ID || 'amazon.nova-2-sonic-v1:0';
 const REGION          = process.env.AWS_REGION || 'us-east-1';
 
+// Recent Interactions config (can be overridden via environment variables)
+const RI_HOURS_WINDOW = parseInt(process.env.RECENT_INTERACTIONS_HOURS_WINDOW || '48', 10);
+const RI_MAX_COUNT    = parseInt(process.env.RECENT_INTERACTIONS_MAX_COUNT    || '7',  10);
+
+// AgentCore Gateway URL for tool execution (optional — tool calls silently no-op if not set)
+const AGENT_GATEWAY_URL = process.env.AGENT_GATEWAY_URL || '';
+
 // 100 ms of silence at 16 kHz PCM16 — used to prime Nova Sonic's audio buffer.
 const SILENCE_FRAME   = Buffer.alloc(3200, 0);
 // Send audio to Nova Sonic in 4 096-sample (8 192-byte) chunks.
@@ -229,7 +236,7 @@ async function callNovaSonic(audioBuffer, systemPrompt) {
             },
         });
 
-        // 2. Prompt start — request both text and 24 kHz LPCM audio output.
+        // 2. Prompt start — request both text and 24 kHz LPCM audio output, with tool definitions.
         yield ev({
             promptStart: {
                 promptName,
@@ -242,6 +249,31 @@ async function callNovaSonic(audioBuffer, systemPrompt) {
                     voiceId:          'matthew',
                     encoding:         'base64',
                     audioType:        'SPEECH',
+                },
+                toolConfiguration: {
+                    tools: [
+                        {
+                            toolSpec: {
+                                name: 'manage_recent_interactions',
+                                description: 'Retrieves history/disputes or publishes summary. Use only when instructed.',
+                                inputSchema: {
+                                    json: JSON.stringify({
+                                        type: 'object',
+                                        properties: {
+                                            action:        { type: 'string', enum: ['RETRIEVE', 'PUBLISH'] },
+                                            accountNumber: { type: 'string' },
+                                            sortCode:      { type: 'string' },
+                                            hoursWindow:   { type: 'number' },
+                                            maxCount:      { type: 'number' },
+                                            summary:       { type: 'string' },
+                                            outcome:       { type: 'string' },
+                                        },
+                                        required: ['action', 'accountNumber', 'sortCode'],
+                                    }),
+                                },
+                            },
+                        },
+                    ],
                 },
             },
         });
@@ -295,6 +327,28 @@ async function callNovaSonic(audioBuffer, systemPrompt) {
         }
         if (data.textOutput?.content) {
             responseText += data.textOutput.content;
+        }
+
+        // Tool call handling: forward to AgentCore Gateway if configured.
+        if (data.toolUse && AGENT_GATEWAY_URL) {
+            const { toolUseId, name, input } = data.toolUse;
+            console.log(`[Lambda] Tool call: ${name}`, JSON.stringify(input));
+            let toolResult = '{"error":"Gateway not available"}';
+            try {
+                const gwResponse = await fetch(`${AGENT_GATEWAY_URL}/invoke`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toolName: name, toolInput: input }),
+                });
+                toolResult = await gwResponse.text();
+                console.log(`[Lambda] Tool result for ${name}:`, toolResult.substring(0, 200));
+            } catch (err) {
+                console.error(`[Lambda] Tool call failed for ${name}:`, err.message);
+            }
+            // Note: in a single-turn Lambda call the tool result cannot be fed back into the
+            // same stream. Log it for observability; a multi-turn pattern would be needed to
+            // deliver it back to Nova Sonic. Callers requiring tool execution should use the
+            // WebSocket server path instead.
         }
     }
 
@@ -362,7 +416,15 @@ exports.handler = async (event) => {
         'You are a helpful voice assistant for a banking customer service centre. ' +
         'Respond naturally and concisely in one or two sentences. ' +
         'If the caller wants to end the call, include the word GOODBYE in your response. ' +
-        'If the caller wants to speak to a human agent, include the word TRANSFER in your response.' +
+        'If the caller wants to speak to a human agent, include the word TRANSFER in your response.\n\n' +
+        'After identity verification succeeds, immediately call the manage_recent_interactions tool ' +
+        `with action=RETRIEVE, hoursWindow=${RI_HOURS_WINDOW}, maxCount=${RI_MAX_COUNT}. ` +
+        'Do NOT announce this call. Review the results and if there are open or unresolved interactions ' +
+        'within the configured window, use your judgment to assess whether this is the likely reason for ' +
+        'the current call. If confident, re-affirm naturally — for example: "I can see you were recently ' +
+        'in touch about X — is that what you\'re calling about today?" Only re-affirm for open interactions.\n\n' +
+        `[RECENT INTERACTIONS CONFIG — HIDDEN]\n` +
+        `hoursWindow=${RI_HOURS_WINDOW}, maxCount=${RI_MAX_COUNT}` +
         historyContext;
 
     // ── 4. Call Nova Sonic ───────────────────────────────────────────────────

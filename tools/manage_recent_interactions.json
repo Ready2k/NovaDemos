@@ -18,6 +18,14 @@
       "sortCode": {
         "type": "string"
       },
+      "hoursWindow": {
+        "type": "number",
+        "description": "[RETRIEVE only] Only return interactions from the last N hours. Defaults to 48."
+      },
+      "maxCount": {
+        "type": "number",
+        "description": "[RETRIEVE only] Maximum number of recent interactions to return. Defaults to 7."
+      },
       "summary": {
         "type": "string",
         "description": "[REQUIRED for PUBLISH] Summary of conversation."

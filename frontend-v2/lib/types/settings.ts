@@ -64,6 +64,10 @@ export interface AppSettings {
     testMode?: 'manual' | 'auto';
     activeTestConfig?: TestConfiguration;
 
+    // Recent Interactions (post-IDV context fetch)
+    recentInteractionsWindowHours?: number; // hours to look back, default 48
+    recentInteractionsCount?: number;       // max interactions to fetch, default 7
+
     // AgentCore Memory
     memoryEnabled?: boolean; // undefined = server default, false = explicitly disabled
 

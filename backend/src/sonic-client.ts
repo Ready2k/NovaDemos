@@ -39,7 +39,7 @@ export interface AudioChunk {
  * Events emitted by Nova Sonic
  */
 export interface SonicEvent {
-    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update' | 'session_start' | 'latency_update';
+    type: 'audio' | 'transcript' | 'metadata' | 'error' | 'interruption' | 'usageEvent' | 'toolUse' | 'contentEnd' | 'interactionTurnEnd' | 'contentStart' | 'workflow_update' | 'session_start' | 'latency_update' | 'reasoning';
     data: any;
 }
 
@@ -91,6 +91,14 @@ export class SonicClient {
     // Lifecycle Synchronization
     private inputStreamFinished: Promise<void> | null = null;
     private resolveInputStreamFinished: (() => void) | null = null;
+
+    // Tool keepalive — sends silence during tool execution to prevent stream idle timeout
+    private toolKeepAliveTimer: NodeJS.Timeout | null = null;
+    private pendingToolResultCount: number = 0;
+
+    // Think-block filtering — reasoning inside <think>...</think> is logged but not spoken
+    private inThinkBlock: boolean = false;
+    private thinkBuffer: string = '';
 
     // 100ms of silence (16kHz * 0.1s * 2 bytes/sample = 3200 bytes)
     private readonly SILENCE_FRAME = Buffer.alloc(3200, 0);
@@ -1028,6 +1036,11 @@ export class SonicClient {
             console.warn(`[SonicClient] ⚠️ Cannot send tool result: Session not active or processing stopped. (ID: ${this.sessionId})`);
             return;
         }
+        // Tool result received — decrement pending count and stop keepalive if all done
+        this.pendingToolResultCount = Math.max(0, this.pendingToolResultCount - 1);
+        if (this.pendingToolResultCount === 0) {
+            this.stopToolKeepAlive();
+        }
         this.toolResultQueue.push({ toolUseId, result, isError });
     }
 
@@ -1149,6 +1162,10 @@ export class SonicClient {
 
                         this.hasCalledTool = true; // Mark tool as called for Auto-Nudge logic
 
+                        // Start keepalive to hold the stream open while awaiting the result
+                        this.pendingToolResultCount++;
+                        this.startToolKeepAlive();
+
                         this.eventCallback?.({
                             type: 'toolUse',
                             data: tu
@@ -1201,6 +1218,8 @@ export class SonicClient {
 
                             this.currentTurnTranscript = '';
                             this.isTurnComplete = false;
+                            this.inThinkBlock = false;
+                            this.thinkBuffer = '';
 
                             // Reset Auto-Nudge State
                             this.hasCommittedToTool = false;
@@ -1280,7 +1299,6 @@ export class SonicClient {
 
                     if (eventData.audioOutput) {
                         const content = eventData.audioOutput.content;
-                        // console.log(`[SonicClient] Received audio chunk: ${content.length} bytes`);
                         this.eventCallback?.({
                             type: 'audio',
                             data: { audio: Buffer.from(content, 'base64') }
@@ -1314,6 +1332,7 @@ export class SonicClient {
 
                         // Remove SENTIMENT tags (handling potential malformed brackets)
                         cleanContent = cleanContent.replace(/[\[\]]?SENTIMENT:\s*-?\d+(\.\d+)?[\]\[]?/gi, '').trim();
+
 
                         if (cleanContent && cleanContent.length > 0) {
                             const content = cleanContent;
@@ -1573,6 +1592,8 @@ export class SonicClient {
 
                     if (eventData.interactionTurnEnd) {
                         console.log('[SonicClient] Interaction Turn End');
+                        this.inThinkBlock = false;
+                        this.thinkBuffer = '';
                         // Signal input generator to close the open audio block.
                         // An indefinitely-open silence block causes Nova Sonic to throw
                         // "unexpected error during processing" in chat mode after multi-tool turns.
@@ -1660,6 +1681,32 @@ export class SonicClient {
     }
 
     /**
+     * Start sending silence frames on an interval while tool results are pending.
+     * Prevents Nova Sonic's bidirectional stream from hitting its idle timeout
+     * during multi-tool turns where Lambda cold-starts add latency.
+     */
+    private startToolKeepAlive(): void {
+        if (this.toolKeepAliveTimer) return;
+        this.toolKeepAliveTimer = setInterval(() => {
+            if (!this.isProcessing || this.pendingToolResultCount === 0) {
+                this.stopToolKeepAlive();
+                return;
+            }
+            this.inputQueue.push(Buffer.alloc(3200, 0)); // 100ms silence
+            console.log(`[SonicClient] Keepalive: sent silence frame (${this.pendingToolResultCount} tool(s) pending)`);
+        }, 8000);
+        console.log('[SonicClient] Tool keepalive timer started');
+    }
+
+    private stopToolKeepAlive(): void {
+        if (this.toolKeepAliveTimer) {
+            clearInterval(this.toolKeepAliveTimer);
+            this.toolKeepAliveTimer = null;
+            console.log('[SonicClient] Tool keepalive timer stopped');
+        }
+    }
+
+    /**
      * Stop the Nova Sonic session
      */
     async stopSession(): Promise<void> {
@@ -1671,6 +1718,8 @@ export class SonicClient {
 
         // Stop processing
         this.isProcessing = false;
+        this.stopToolKeepAlive();
+        this.pendingToolResultCount = 0;
 
         // Langfuse: Finalize Trace Output
         if (this.trace) {

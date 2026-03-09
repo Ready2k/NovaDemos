@@ -3079,7 +3079,18 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             console.log(`[Server] Inactivity max checks set to: ${session.inactivityMaxChecks}`);
                         }
 
-                        // 6. AgentCore Memory — per-session flag + context injection
+                        // 6. Recent Interactions Config — inject configured values into system prompt
+                        const riHours = parsed.config.recentInteractionsWindowHours ?? 48;
+                        const riCount = parsed.config.recentInteractionsCount ?? 7;
+                        if (parsed.config.systemPrompt) {
+                            parsed.config.systemPrompt +=
+                                `\n\n[RECENT INTERACTIONS CONFIG — HIDDEN]\n` +
+                                `When calling manage_recent_interactions with action=RETRIEVE, always pass: hoursWindow=${riHours}, maxCount=${riCount}.\n` +
+                                `Only consider interactions from the last ${riHours} hours. Analyse up to ${riCount} interactions.`;
+                            console.log(`[Server] Injected recent interactions config: hoursWindow=${riHours}, maxCount=${riCount}`);
+                        }
+
+                        // 7. AgentCore Memory — per-session flag + context injection
                         if (parsed.config.memoryEnabled !== undefined) {
                             session.memoryEnabled = !!parsed.config.memoryEnabled;
                         } else if (session.memoryEnabled === undefined) {
@@ -3656,7 +3667,8 @@ function convertWorkflowToText(workflow: any): string {
     text += "Format: [STEP: node_id] Your response text...\n";
     text += "Example: [STEP: check_auth] I removed the example text to save tokens.\n";
     text += "DO NOT FORGET THIS TAG. IT IS MANDATORY FOR EVERY TURN.\n";
-    text += "SILENCE INSTRUCTION: The [STEP: ...] tag is for system control only. DO NOT SPEAK IT ALOUD. Keep it silent.\n\n";
+    text += "SILENCE INSTRUCTION: The [STEP: ...] tag is for system control only. DO NOT SPEAK IT ALOUD. Keep it silent.\n";
+    text += "DECISION STEP RULE: Steps of type 'decision' produce ZERO text output — not a single word. The instruction is your private scratchpad only. Classify, route, then immediately begin generating the first word of the NEXT step's output. Do not write any reasoning, transition phrase, or acknowledgement. The output stream must begin with customer-facing speech from the destination step, nothing before it. If the destination step also produces no speech (e.g. another decision), remain completely silent.\n\n";
 
     // 1. Map Nodes
     const startNode = workflow.nodes.find((n: any) => n.type === 'start');
@@ -3670,6 +3682,11 @@ function convertWorkflowToText(workflow: any): string {
             ? labelLines[0]
             : '\n' + labelLines.map((l: string) => `      ${l}`).join('\n');
         text += `STEP [${node.id}] (${node.type}):\n   INSTRUCTION: ${formattedLabel}\n`;
+
+        // Decision nodes: enforce silence
+        if (node.type === 'decision') {
+            text += `   *** SILENT INTERNAL STEP — NO VERBAL OUTPUT. Do not speak. Classify and route immediately. ***\n`;
+        }
 
         // Tool Config
         if (node.type === 'tool' && node.toolName) {
@@ -5239,6 +5256,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
         case 'contentEnd':
             // Reset audio squelch for next turn
+            break;
+
+        case 'reasoning':
+            if (session.ws.readyState === session.ws.OPEN) {
+                session.ws.send(JSON.stringify({
+                    type: 'reasoning',
+                    reasoning: event.data?.reasoning ?? ''
+                }));
+            }
             break;
 
         case 'interactionTurnEnd':

@@ -9,9 +9,10 @@ import SystemSettings from '@/components/settings/SystemSettings';
 import ToolsSettings from '@/components/settings/ToolsSettings';
 import TestSettings from '@/components/settings/TestSettings';
 import SbcSettings from '@/components/settings/SbcSettings';
+import InteractionsSettings from '@/components/settings/InteractionsSettings';
 
 // Assuming AppSettingsTab is defined elsewhere, e.g., in AppContext or a types file
-type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system' | 'tools' | 'test' | 'phone';
+type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system' | 'tools' | 'test' | 'phone' | 'interactions';
 
 export default function SettingsLayout() {
     const { activeSettingsTab, setActiveSettingsTab, isDarkMode } = useApp();
@@ -24,6 +25,7 @@ export default function SettingsLayout() {
         { id: 'workflow', label: 'Workflow' },
         { id: 'presets', label: 'Presets' },
         { id: 'system', label: 'System' },
+        { id: 'interactions', label: 'Interactions' },
         { id: 'test', label: 'Test Logs' },
         { id: 'phone', label: 'Phone' },
     ];
@@ -99,6 +101,7 @@ export default function SettingsLayout() {
                 {activeSettingsTab === 'workflow' && <WorkflowSettings />}
                 {activeSettingsTab === 'presets' && <PresetsSettings />}
                 {activeSettingsTab === 'system' && <SystemSettings />}
+                {activeSettingsTab === 'interactions' && <InteractionsSettings />}
                 {activeSettingsTab === 'test' && <TestSettings />}
                 {activeSettingsTab === 'phone' && <SbcSettings />}
             </div>

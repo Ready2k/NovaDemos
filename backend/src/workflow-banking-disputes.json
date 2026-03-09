@@ -38,7 +38,7 @@
     },
     {
       "id": "confirm_gate",
-      "label": "HARD BLOCKING GATE — no exceptions, cannot be skipped. There are ALWAYS exactly two turns at this gate.\n\nTURN 1 — THIS RESPONSE TURN (speech only, zero tool calls):\nSay: \"I have account number [each digit individually] and sort code [each digit individually]. Is that correct?\"\nRead back EXACTLY the digits as captured — do NOT correct, adjust, or clean up any digit.\nYou MUST end with the question \"Is that correct?\" — do NOT stop generating before you have spoken these words.\nDo NOT call perform_idv_check or any other tool in this turn. Generation ends ONLY after \"Is that correct?\" has been spoken.\n\nTURN 2 — NEXT USER MESSAGE (you respond after the user speaks):\nWhen the user's next message arrives, take ONE of these three actions and nothing else:\n1. YES detected (any form: \"yes\", \"that's right\", \"correct\", \"yep\", affirmative nod) → say \"Thanks, checking those details now.\" then call perform_idv_check in the SAME turn.\n2. NO or digit correction → GOTO [analyze_input] to re-collect.\n3. Ambiguous only → ask \"Just to confirm — is that correct?\" once more.\n\nCRITICAL: If the user's YES message ALSO contains other requests (e.g. \"yes, and can you check my Amazon charges\") — IGNORE the other requests. Call perform_idv_check first. Address other requests only AFTER authentication completes.\nDO NOT repeat the digit readback in TURN 2 under any circumstances. TURN 2 is only: tool call (YES), re-collect (NO), or one clarifying question (ambiguous).\nCRITICAL VIOLATION: Calling perform_idv_check without receiving an explicit YES in a SEPARATE, SUBSEQUENT user turn. Your own readback does NOT count as a YES.",
+      "label": "HARD BLOCKING GATE — no exceptions, cannot be skipped. There are ALWAYS exactly two turns at this gate.\n\nTURN 1 — THIS RESPONSE TURN (speech only, zero tool calls):\nRead back the captured digits naturally — e.g. \"So I've got account number [each digit] and sort code [each digit] — is that right?\", or \"Let me just read those back: [digits] and [digits]. Does that sound correct?\". Vary the framing naturally but ALWAYS read every digit individually and ALWAYS end with a confirmation question.\nRead back EXACTLY the digits as captured — do NOT correct, adjust, or clean up any digit.\nYou MUST end with the confirmation question — do NOT stop generating before you have spoken it.\nDo NOT call perform_idv_check or any other tool in this turn. Generation ends ONLY after \"Is that correct?\" has been spoken.\n\nTURN 2 — NEXT USER MESSAGE (you respond after the user speaks):\nWhen the user's next message arrives, take ONE of these three actions and nothing else:\n1. YES detected (any form: \"yes\", \"that's right\", \"correct\", \"yep\", affirmative nod) → say a brief natural acknowledgement (e.g. \"One moment.\", \"Just checking those now.\", \"Right, bear with me.\", \"Leave it with me.\") — vary this each time, never repeat the same phrase twice in a session — then call perform_idv_check in the SAME turn.\n2. NO or digit correction → GOTO [analyze_input] to re-collect.\n3. Ambiguous only → ask \"Just to confirm — is that correct?\" once more.\n\nCRITICAL: If the user's YES message ALSO contains other requests (e.g. \"yes, and can you check my Amazon charges\") — IGNORE the other requests. Call perform_idv_check first. Address other requests only AFTER authentication completes.\nDO NOT repeat the digit readback in TURN 2 under any circumstances. TURN 2 is only: tool call (YES), re-collect (NO), or one clarifying question (ambiguous).\nCRITICAL VIOLATION: Calling perform_idv_check without receiving an explicit YES in a SEPARATE, SUBSEQUENT user turn. Your own readback does NOT count as a YES.",
       "type": "process"
     },
     {
@@ -74,7 +74,12 @@
     },
     {
       "id": "idv_success",
-      "label": "Store auth_status=VERIFIED in session memory. CRITICAL for rest of session: NEVER ask for account number, sort code, or any credentials again. NEVER say \"I need your account details.\" If you are about to ask for credentials, stop and call the relevant tool directly. Proceed to [post_auth_route].",
+      "label": "Store auth_status=VERIFIED in session memory. CRITICAL for rest of session: NEVER ask for account number, sort code, or any credentials again. NEVER say \"I need your account details.\" If you are about to ask for credentials, stop and call the relevant tool directly. Proceed to [fetch_recent_interactions].",
+      "type": "process"
+    },
+    {
+      "id": "fetch_recent_interactions",
+      "label": "IMMEDIATELY call manage_recent_interactions with action=RETRIEVE, using the configured hoursWindow and maxCount from [RECENT INTERACTIONS CONFIG]. Do NOT announce this call. While waiting for results, greet the customer warmly post-auth. Once results arrive, assess whether any OPEN interaction is likely the reason for this call. If confident, re-affirm naturally (e.g. \"I can see you were recently in touch about X — is that what you're calling about?\"). Then proceed to [post_auth_route].",
       "type": "process"
     },
     {
@@ -348,6 +353,10 @@
     },
     {
       "from": "idv_success",
+      "to": "fetch_recent_interactions"
+    },
+    {
+      "from": "fetch_recent_interactions",
       "to": "post_auth_route"
     },
     {
