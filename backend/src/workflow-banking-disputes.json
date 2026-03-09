@@ -23,7 +23,7 @@
     },
     {
       "id": "check_auth_status",
-      "label": "Check session memory for auth_status=VERIFIED. If already verified this session → route to [already_authenticated]. If not verified → route to [analyze_input].",
+      "label": "Check session memory for auth_status=VERIFIED. If already verified this session → route to [already_authenticated]. If not verified → route to [collect_acct_1].",
       "type": "decision"
     },
     {
@@ -32,33 +32,48 @@
       "type": "process"
     },
     {
-      "id": "analyze_input",
-      "label": "DIGIT-COUNTING GUARDRAIL — extract every digit spoken by the user. Count precisely — do NOT pad, truncate, or infer missing digits.\nORDER-INDEPENDENCE: The user may give the sort code and account number in any order. Identify each number group by its digit count alone. Do NOT merge adjacent number groups or re-split digits across them.\n- A group of exactly 6 digits = sort code, regardless of whether it was given first or second.\n- A group of exactly 8 digits = account number, regardless of order.\nRouting rules:\n- One group of exactly 8 digits AND one group of exactly 6 digits both present → GOTO [confirm_gate]\n- Only a group of exactly 8 digits (no 6-digit group) → GOTO [ask_sortcode_only]\n- Only a group of exactly 6 digits (no 8-digit group) → GOTO [ask_account_only]\n- A single contiguous group of 9 or 7 digits (likely a one-digit typo in a single field) → GOTO [handle_typo]\n- Missing, ambiguous, or no recognisable digit groups → GOTO [ask_both]\nRejection script: \"I heard [N] digits but need exactly [8 or 6]. Could you try again?\"\nABSOLUTE PROHIBITION ON DIGIT INFERENCE: You MUST record EXACTLY the digits the user spoke — character for character, with zero substitution. NEVER correct a digit you think is wrong. NEVER predict what the user 'probably meant'. NEVER auto-complete a sequence. If the user says '1 2 3 4 6 5 7 8', record 12346578 — not 12345678. The only valid response to a wrong digit count is to ask the user to repeat. Do NOT silently fix what you believe is a typo.\nTOOL PROHIBITION (CRITICAL VIOLATION IF BREACHED): perform_idv_check MUST NOT be called at this step under any circumstances. When both digit groups are valid and the route is [confirm_gate], your response ends immediately — do NOT read back the digits here, do NOT say \"Thanks, checking those details now\", do NOT call any tool. The [confirm_gate] step is mandatory and must execute in a separate response turn after the user provides explicit confirmation. Skipping [confirm_gate] by calling perform_idv_check from [analyze_input] is a CRITICAL WORKFLOW VIOLATION.",
+      "id": "collect_acct_1",
+      "label": "Ask: \"Could you start with the first four digits of your account number?\" Wait for the user to respond.",
+      "type": "process"
+    },
+    {
+      "id": "validate_acct_1",
+      "label": "Count ONLY the digits literally present in the user's transcript text — do not infer, predict, or complete.\n- Exactly 4 digits → store as acct_group1, GOTO [collect_acct_2]\n- Any other count → say \"I need just four digits — could you try those again?\" GOTO [collect_acct_1]",
+      "type": "decision"
+    },
+    {
+      "id": "collect_acct_2",
+      "label": "Ask: \"And the last four digits of your account number?\" Wait for the user to respond.",
+      "type": "process"
+    },
+    {
+      "id": "validate_acct_2",
+      "label": "Count ONLY the digits literally present in the user's transcript text.\n- Exactly 4 digits → combine acct_group1 + these 4 to form the 8-digit account number, GOTO [collect_sort_1]\n- Any other count → say \"I need just four digits for that second group — could you repeat them?\" GOTO [collect_acct_2]",
+      "type": "decision"
+    },
+    {
+      "id": "collect_sort_1",
+      "label": "Ask: \"Now your sort code — could you give me the first three digits?\" Wait for the user to respond.",
+      "type": "process"
+    },
+    {
+      "id": "validate_sort_1",
+      "label": "Count ONLY the digits literally present in the user's transcript text.\n- Exactly 3 digits → store as sort_group1, GOTO [collect_sort_2]\n- Any other count → say \"I need just three digits — could you try those again?\" GOTO [collect_sort_1]",
+      "type": "decision"
+    },
+    {
+      "id": "collect_sort_2",
+      "label": "Ask: \"And the last three digits of your sort code?\" Wait for the user to respond.",
+      "type": "process"
+    },
+    {
+      "id": "validate_sort_2",
+      "label": "Count ONLY the digits literally present in the user's transcript text.\n- Exactly 3 digits → combine sort_group1 + these 3 to form the 6-digit sort code, GOTO [confirm_gate]\n- Any other count → say \"I need just three digits for that last group — could you repeat them?\" GOTO [collect_sort_2]",
       "type": "decision"
     },
     {
       "id": "confirm_gate",
-      "label": "HARD BLOCKING GATE — no exceptions, cannot be skipped. There are ALWAYS exactly two turns at this gate.\n\nTURN 1 — THIS RESPONSE TURN (speech only, zero tool calls):\nRead back the captured digits naturally — e.g. \"So I've got account number [each digit] and sort code [each digit] — is that right?\", or \"Let me just read those back: [digits] and [digits]. Does that sound correct?\". Vary the framing naturally but ALWAYS read every digit individually and ALWAYS end with a confirmation question.\nRead back EXACTLY the digits as captured — do NOT correct, adjust, or clean up any digit.\nYou MUST end with the confirmation question — do NOT stop generating before you have spoken it.\nDo NOT call perform_idv_check or any other tool in this turn. Generation ends ONLY after \"Is that correct?\" has been spoken.\n\nTURN 2 — NEXT USER MESSAGE (you respond after the user speaks):\nWhen the user's next message arrives, take ONE of these three actions and nothing else:\n1. YES detected (any form: \"yes\", \"that's right\", \"correct\", \"yep\", affirmative nod) → say a brief natural acknowledgement (e.g. \"One moment.\", \"Just checking those now.\", \"Right, bear with me.\", \"Leave it with me.\") — vary this each time, never repeat the same phrase twice in a session — then call perform_idv_check in the SAME turn.\n2. NO or digit correction → GOTO [analyze_input] to re-collect.\n3. Ambiguous only → ask \"Just to confirm — is that correct?\" once more.\n\nCRITICAL: If the user's YES message ALSO contains other requests (e.g. \"yes, and can you check my Amazon charges\") — IGNORE the other requests. Call perform_idv_check first. Address other requests only AFTER authentication completes.\nDO NOT repeat the digit readback in TURN 2 under any circumstances. TURN 2 is only: tool call (YES), re-collect (NO), or one clarifying question (ambiguous).\nCRITICAL VIOLATION: Calling perform_idv_check without receiving an explicit YES in a SEPARATE, SUBSEQUENT user turn. Your own readback does NOT count as a YES.",
-      "type": "process"
-    },
-    {
-      "id": "handle_typo",
-      "label": "Say: \"I think I may have misheard. Could you say your [account number / sort code] one digit at a time?\" Then GOTO [analyze_input].",
-      "type": "process"
-    },
-    {
-      "id": "ask_sortcode_only",
-      "label": "8-digit account number already captured. Ask only for the 6-digit sort code. Then GOTO [analyze_input].",
-      "type": "process"
-    },
-    {
-      "id": "ask_account_only",
-      "label": "6-digit sort code already captured. Ask only for the 8-digit account number. Then GOTO [analyze_input].",
-      "type": "process"
-    },
-    {
-      "id": "ask_both",
-      "label": "Ask the user for both their 8-digit account number and their 6-digit sort code. Then GOTO [analyze_input].",
+      "label": "HARD BLOCKING GATE — no exceptions, cannot be skipped. There are ALWAYS exactly two turns at this gate.\n\nTURN 1 — THIS RESPONSE TURN (speech only, zero tool calls):\nRead back the captured digits naturally — e.g. \"So I've got account number [each digit] and sort code [each digit] — is that right?\", or \"Let me just read those back: [digits] and [digits]. Does that sound correct?\". Vary the framing naturally but ALWAYS read every digit individually and ALWAYS end with a confirmation question.\nRead back EXACTLY the digits as captured — do NOT correct, adjust, or clean up any digit.\nYou MUST end with the confirmation question — do NOT stop generating before you have spoken it.\nDo NOT call perform_idv_check or any other tool in this turn. Generation ends ONLY after \"Is that correct?\" has been spoken.\n\nTURN 2 — NEXT USER MESSAGE (you respond after the user speaks):\nWhen the user's next message arrives, take ONE of these three actions and nothing else:\n1. YES detected (any form: \"yes\", \"that's right\", \"correct\", \"yep\", affirmative nod) → say a brief natural acknowledgement (e.g. \"One moment.\", \"Just checking those now.\", \"Right, bear with me.\", \"Leave it with me.\") — vary this each time, never repeat the same phrase twice in a session — then call perform_idv_check in the SAME turn.\n2. NO or digit correction → GOTO [collect_acct_1] to re-collect from the start.\n3. Ambiguous only → ask \"Just to confirm — is that correct?\" once more.\n\nCRITICAL: If the user's YES message ALSO contains other requests (e.g. \"yes, and can you check my Amazon charges\") — IGNORE the other requests. Call perform_idv_check first. Address other requests only AFTER authentication completes.\nDO NOT repeat the digit readback in TURN 2 under any circumstances. TURN 2 is only: tool call (YES), re-collect (NO), or one clarifying question (ambiguous).\nCRITICAL VIOLATION: Calling perform_idv_check without receiving an explicit YES in a SEPARATE, SUBSEQUENT user turn. Your own readback does NOT count as a YES.",
       "type": "process"
     },
     {
@@ -95,7 +110,7 @@
     },
     {
       "id": "idv_fail",
-      "label": "Say: \"I wasn't able to verify those details. Could you check them and try again?\" GOTO [analyze_input]. After two consecutive failures, offer to transfer to a human agent instead.",
+      "label": "Say: \"I wasn't able to verify those details. Could you check them and try again?\" GOTO [collect_acct_1]. After two consecutive failures, offer to transfer to a human agent instead.",
       "type": "process"
     },
     {
@@ -274,7 +289,7 @@
     },
     {
       "from": "check_auth_status",
-      "to": "analyze_input",
+      "to": "collect_acct_1",
       "label": "Unverified"
     },
     {
@@ -282,29 +297,60 @@
       "to": "post_auth_route"
     },
     {
-      "from": "analyze_input",
+      "from": "collect_acct_1",
+      "to": "validate_acct_1"
+    },
+    {
+      "from": "validate_acct_1",
+      "to": "collect_acct_2",
+      "label": "4 digits"
+    },
+    {
+      "from": "validate_acct_1",
+      "to": "collect_acct_1",
+      "label": "Wrong count"
+    },
+    {
+      "from": "collect_acct_2",
+      "to": "validate_acct_2"
+    },
+    {
+      "from": "validate_acct_2",
+      "to": "collect_sort_1",
+      "label": "4 digits"
+    },
+    {
+      "from": "validate_acct_2",
+      "to": "collect_acct_2",
+      "label": "Wrong count"
+    },
+    {
+      "from": "collect_sort_1",
+      "to": "validate_sort_1"
+    },
+    {
+      "from": "validate_sort_1",
+      "to": "collect_sort_2",
+      "label": "3 digits"
+    },
+    {
+      "from": "validate_sort_1",
+      "to": "collect_sort_1",
+      "label": "Wrong count"
+    },
+    {
+      "from": "collect_sort_2",
+      "to": "validate_sort_2"
+    },
+    {
+      "from": "validate_sort_2",
       "to": "confirm_gate",
-      "label": "Both Valid (8+6 digits)"
+      "label": "3 digits"
     },
     {
-      "from": "analyze_input",
-      "to": "ask_sortcode_only",
-      "label": "Only Account Number"
-    },
-    {
-      "from": "analyze_input",
-      "to": "ask_account_only",
-      "label": "Only Sort Code"
-    },
-    {
-      "from": "analyze_input",
-      "to": "handle_typo",
-      "label": "Typo (9 or 7 digits)"
-    },
-    {
-      "from": "analyze_input",
-      "to": "ask_both",
-      "label": "Missing or Invalid"
+      "from": "validate_sort_2",
+      "to": "collect_sort_2",
+      "label": "Wrong count"
     },
     {
       "from": "confirm_gate",
@@ -313,24 +359,8 @@
     },
     {
       "from": "confirm_gate",
-      "to": "analyze_input",
+      "to": "collect_acct_1",
       "label": "Denied — re-collect"
-    },
-    {
-      "from": "handle_typo",
-      "to": "analyze_input"
-    },
-    {
-      "from": "ask_sortcode_only",
-      "to": "analyze_input"
-    },
-    {
-      "from": "ask_account_only",
-      "to": "analyze_input"
-    },
-    {
-      "from": "ask_both",
-      "to": "analyze_input"
     },
     {
       "from": "perform_idv",
@@ -365,7 +395,7 @@
     },
     {
       "from": "idv_fail",
-      "to": "analyze_input"
+      "to": "collect_acct_1"
     },
     {
       "from": "post_auth_route",
