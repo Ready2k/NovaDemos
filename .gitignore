@@ -7,6 +7,7 @@ backend/dist/
 # Logs
 *.log
 npm-debug.log*
+server.pid
 
 # Session details
 session_*.json
