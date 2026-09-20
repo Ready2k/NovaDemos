@@ -1437,7 +1437,13 @@ export class SonicClient {
                         // Pass event to callback
                         this.eventCallback?.({
                             type: 'contentEnd',
-                            data: eventData.contentEnd
+                            // Nova's contentEnd payload does not identify the speaker.
+                            // Preserve the client-side role so the server can distinguish a
+                            // completed assistant turn from user/system content.
+                            data: {
+                                ...eventData.contentEnd,
+                                role: this.currentRole.toLowerCase()
+                            }
                         });
 
                         // AUTO-NUDGE EXECUTION

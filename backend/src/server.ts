@@ -1148,6 +1148,8 @@ interface ClientSession {
     inactivityTimeout?: number; // Configurable timeout in seconds
     inactivityMaxChecks?: number; // Max number of checks before closing
     inactivityEnabled?: boolean; // Toggle inactivity detection
+    assistantAudioPlaying?: boolean; // Browser still has assistant PCM queued for playback
+    awaitingAssistantPlaybackEnd?: boolean; // Model turn ended; wait until browser audio is done
 
     // AgentCore Memory
     memoryEnabled?: boolean;   // Per-session flag (undefined = global default)
@@ -3273,6 +3275,18 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         // before the frontend sends its sessionConfig, so waiting until here
                         // ensures the first check uses the configured timeout and toggle.
                         startInactivityTimer(session);
+                    } else if (parsed.type === 'assistantPlaybackStarted') {
+                        // Generation can finish before the browser has played all queued
+                        // PCM. Do not begin inactivity timing while the user still hears us.
+                        session.assistantAudioPlaying = true;
+                        stopInactivityTimer(session);
+                        return;
+                    } else if (parsed.type === 'assistantPlaybackEnded') {
+                        session.assistantAudioPlaying = false;
+                        if (session.awaitingAssistantPlaybackEnd) {
+                            startInactivityTimer(session);
+                        }
+                        return;
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
                         return;
@@ -3945,6 +3959,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 session.isInterrupted = false;
                 // Stop inactivity timer while agent is responding
                 stopInactivityTimer(session);
+                session.awaitingAssistantPlaybackEnd = false;
                 // No buffering - audio flows immediately
             } else if (event.data.role === 'user') {
                 // A recognised user turn has begun. This handles long utterances before
@@ -5432,7 +5447,17 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             break;
 
         case 'contentEnd':
-            // Reset audio squelch for next turn
+            // Nova does not consistently emit interactionTurnEnd (the captured runtime
+            // logs contain contentEnd only). Resume idle monitoring when an assistant
+            // block finishes; a later assistant contentStart safely cancels this timer
+            // if Nova continues the same response in another block.
+            if (event.data.role === 'assistant' &&
+                (event.data.stopReason === 'END_TURN' || event.data.stopReason === 'PARTIAL_TURN')) {
+                session.awaitingAssistantPlaybackEnd = true;
+                if (!session.assistantAudioPlaying) {
+                    startInactivityTimer(session);
+                }
+            }
             break;
 
         case 'reasoning':
@@ -5455,7 +5480,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Agent finished speaking - wait for the user. Do not reset the count:
             // an inactivity check-in is itself an assistant turn, and resetting here
             // would make every check appear to be check 1 forever.
-            startInactivityTimer(session);
+            session.awaitingAssistantPlaybackEnd = true;
+            if (!session.assistantAudioPlaying) {
+                startInactivityTimer(session);
+            }
             break;
 
 

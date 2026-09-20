@@ -4,6 +4,7 @@ import { useRef, useCallback, useState } from 'react';
 
 interface UseAudioProcessorOptions {
     onAudioData?: (data: ArrayBuffer) => void;
+    onPlaybackStateChange?: (isPlaying: boolean) => void;
     inputSampleRate?: number;
     outputSampleRate?: number;
     bufferSize?: number;
@@ -26,6 +27,7 @@ interface UseAudioProcessorReturn {
 export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAudioProcessorReturn {
     const {
         onAudioData,
+        onPlaybackStateChange,
         inputSampleRate = 16000,
         outputSampleRate = 24000,
         bufferSize = 2048,
@@ -300,7 +302,19 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             // Schedule playback
             const startTime = Math.max(audioContext.currentTime, nextStartTimeRef.current);
             sourceNode.start(startTime);
-            setIsPlaying(true);
+
+            // `startTime` can be in the future when chunks are already queued. Do
+            // not tell the face it is speaking until this chunk is actually due at
+            // the speakers.
+            const startDelayMs = Math.max(0, (startTime - audioContext.currentTime) * 1000);
+            const startTimer = setTimeout(() => {
+                if (playbackNodesRef.current.includes(sourceNode)) {
+                    setIsPlaying(true);
+                    onPlaybackStateChange?.(true);
+                }
+                playbackStartTimersRef.current = playbackStartTimersRef.current.filter(timer => timer !== startTimer);
+            }, startDelayMs);
+            playbackStartTimersRef.current.push(startTimer);
 
             // Update next start time
             nextStartTimeRef.current = startTime + audioBuffer.duration;
@@ -311,6 +325,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
                 playbackNodesRef.current = playbackNodesRef.current.filter(node => node !== sourceNode);
                 if (playbackNodesRef.current.length === 0) {
                     setIsPlaying(false);
+                    onPlaybackStateChange?.(false);
                 }
             };
 
@@ -318,7 +333,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         } catch (error) {
             console.error('[AudioProcessor] Failed to play audio:', error);
         }
-    }, [isMuted, initialize, outputSampleRate, convertToFloat32]);
+    }, [isMuted, initialize, outputSampleRate, convertToFloat32, onPlaybackStateChange]);
 
     // Clear audio queue
     const clearQueue = useCallback(() => {
@@ -332,7 +347,10 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             }
         });
         playbackNodesRef.current = [];
+        playbackStartTimersRef.current.forEach(clearTimeout);
+        playbackStartTimersRef.current = [];
         setIsPlaying(false);
+        onPlaybackStateChange?.(false);
 
         // Reset playback time to now
         if (audioContextRef.current) {

@@ -414,6 +414,11 @@ export default function Home() {
         console.warn('[App] Audio data received but not connected');
       }
     },
+    onPlaybackStateChange: (isPlaying) => {
+      sendRef.current?.({
+        type: isPlaying ? 'assistantPlaybackStarted' : 'assistantPlaybackEnded'
+      });
+    },
   });
   // Interaction Mode Sync: Mute audio if in 'chat_only' mode
   useEffect(() => {
