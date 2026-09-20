@@ -329,7 +329,7 @@ export class CallSession {
             voice:    config.voice,
             persona:  config.persona,
             workflow: config.workflow,
-        }).catch(() => {});
+        }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_call_start failed:`, err));
 
         // Wire RTP → Nova Sonic only now that the session is open
         this.rtp.on('audio', (g711: Buffer) => this._onRtpAudio(g711));
@@ -342,7 +342,9 @@ export class CallSession {
         setTimeout(() => {
             if (!this.ended) {
                 console.log(`[CallSession:${this.callId}] Injecting greeting trigger`);
-                this.sonic.sendText('[CALL CONNECTED] Please deliver your opening greeting now.').catch(() => {});
+                this.sonic.sendText('[CALL CONNECTED] Please deliver your opening greeting now.').catch((err: unknown) => {
+                    console.error(`[CallSession:${this.callId}] Failed to inject greeting:`, err);
+                });
             }
         }, 500);
     }
@@ -423,7 +425,7 @@ export class CallSession {
                     callId:   this.callId,
                     toolName,
                     args,
-                }).catch(() => {});
+                }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_tool_use failed:`, err));
 
                 this._handleToolUse(event.data).catch(err => {
                     console.error(`[CallSession:${this.callId}] Unhandled tool error:`, err);
@@ -468,7 +470,7 @@ export class CallSession {
                         callId: this.callId,
                         role:   role === 'assistant' ? 'assistant' : 'user',
                         text,
-                    }).catch(() => {});
+                    }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_transcript failed:`, err));
 
                     // Parse workflow step tag from assistant responses
                     if (role === 'assistant') {
@@ -478,7 +480,7 @@ export class CallSession {
                                 type:    'sbc_workflow_step',
                                 callId:  this.callId,
                                 stepId:  stepMatch[1].trim(),
-                            }).catch(() => {});
+                            }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_workflow_step failed:`, err));
                         }
                     }
                 }
@@ -495,7 +497,7 @@ export class CallSession {
                         callId:       this.callId,
                         inputTokens,
                         outputTokens,
-                    }).catch(() => {});
+                    }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_usage failed:`, err));
                 }
                 break;
             }
@@ -506,7 +508,7 @@ export class CallSession {
                     callId:     this.callId,
                     ttft_ms:    event.data?.ttft_ms,
                     latency_ms: event.data?.latency_ms,
-                }).catch(() => {});
+                }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_latency failed:`, err));
                 break;
             }
 
@@ -556,7 +558,7 @@ export class CallSession {
             callId:   this.callId,
             toolName,
             result,
-        }).catch(() => {});
+        }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_tool_result failed:`, err));
 
         // If a barge-in happened while the gateway was in-flight, this toolUseId
         // was removed from _activeToolIds.  Sending a result for a cancelled tool
@@ -596,7 +598,7 @@ export class CallSession {
             type:       'sbc_call_end',
             callId:     this.callId,
             durationMs,
-        }).catch(() => {});
+        }).catch((err: unknown) => console.warn(`[CallSession:${this.callId}] bridge.emit sbc_call_end failed:`, err));
 
         this.sonic.stopSession().catch(err => {
             console.error(`[CallSession:${this.callId}] stopSession error:`, err);

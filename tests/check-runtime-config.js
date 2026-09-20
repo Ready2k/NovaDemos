@@ -2,140 +2,139 @@
 
 /**
  * AgentCore Runtime Configuration Checker
- * 
- * This script helps you understand your current runtime setup and 
- * guides you through adding browser tools to your AgentCore Runtime.
+ * Verifies credentials are present and the gateway endpoint is reachable.
  */
 
 console.log('🔧 AgentCore Runtime Configuration Checker');
 console.log('==========================================\n');
 
-// Load environment variables
+// Load non-credential vars from backend/.env (region, runtime ARN, etc.)
+// Credentials come from shell env vars set by start-dev.sh
 require('dotenv').config({ path: '../backend/.env' });
 
+const aws4 = require('aws4');
+
 const CONFIG = {
-    awsRegion: process.env.NOVA_AWS_REGION || 'us-east-1',
+    awsAccessKey: process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID,
+    awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+    awsSessionToken: process.env.AWS_SESSION_TOKEN || process.env.NOVA_AWS_SESSION_TOKEN,
+    awsRegion: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
     runtimeArn: process.env.AGENT_CORE_RUNTIME_ARN,
     gatewayUrl: "https://agentcore-gateway-lambda-rsxfef9nbr.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 };
 
 function analyzeCurrentSetup() {
-    console.log('📋 CURRENT AGENTCORE SETUP ANALYSIS');
-    console.log('===================================');
-    
-    console.log(`🌍 AWS Region: ${CONFIG.awsRegion}`);
-    console.log(`🔗 Gateway URL: ${CONFIG.gatewayUrl}`);
-    
+    console.log('📋 CURRENT AGENTCORE SETUP');
+    console.log('==========================');
+
+    console.log(`🌍 AWS Region:    ${CONFIG.awsRegion}`);
+    console.log(`🔗 Gateway URL:   ${CONFIG.gatewayUrl}`);
+
     if (CONFIG.runtimeArn) {
-        console.log(`🏃 Runtime ARN: ${CONFIG.runtimeArn}`);
-        
-        // Extract runtime ID from ARN
-        const runtimeMatch = CONFIG.runtimeArn.match(/runtime\/([^\/]+)/);
+        console.log(`🏃 Runtime ARN:   ${CONFIG.runtimeArn}`);
+        const runtimeMatch = CONFIG.runtimeArn.match(/runtime\/([^/]+)/);
         if (runtimeMatch) {
-            const runtimeId = runtimeMatch[1];
-            console.log(`📝 Runtime ID: ${runtimeId}`);
-            
-            if (runtimeId.includes('Banking')) {
-                console.log('💰 Runtime Type: Banking-focused (banking tools only)');
-            } else {
-                console.log('🔧 Runtime Type: Custom configuration');
-            }
+            console.log(`📝 Runtime ID:    ${runtimeMatch[1]}`);
         }
     } else {
-        console.log('⚠️  Runtime ARN: Not configured in .env');
+        console.log('⚠️  Runtime ARN:   Not set in backend/.env');
     }
-    
-    console.log('\n🎯 WHAT YOU NEED TO DO');
-    console.log('======================');
-    
-    console.log('Your current runtime only has banking tools. To add browser capabilities:');
-    console.log('');
-    console.log('Option 1: Create New Runtime (Recommended)');
-    console.log('   • Go to AWS AgentCore Console');
-    console.log('   • Create new browser tool instance');
-    console.log('   • Create new runtime with banking + browser tools');
-    console.log('   • Update your .env with new runtime ARN/gateway URL');
-    console.log('');
-    console.log('Option 2: Modify Existing Runtime');
-    console.log('   • Update current runtime to include browser tool');
-    console.log('   • May require runtime reconfiguration');
-    console.log('');
-    
-    console.log('📖 Detailed Steps:');
-    console.log('   See: tests/agentcore-runtime-browser-setup.md');
+
+    const hasKey = !!CONFIG.awsAccessKey;
+    const hasSecret = !!CONFIG.awsSecretKey;
+    const hasToken = !!CONFIG.awsSessionToken;
+    const credSource = hasToken ? 'STS assumed-role (start-dev.sh)' : hasKey ? 'static IAM' : 'none';
+    console.log(`🔑 Credentials:   ${credSource}`);
+    console.log(`   AWS_ACCESS_KEY_ID:     ${hasKey ? '✅ set' : '❌ missing'}`);
+    console.log(`   AWS_SECRET_ACCESS_KEY: ${hasSecret ? '✅ set' : '❌ missing'}`);
+    console.log(`   AWS_SESSION_TOKEN:     ${hasToken ? '✅ set' : '⚠️  not set (ok for static IAM)'}`);
     console.log('');
 }
 
-function displayNextSteps() {
-    console.log('🚀 IMMEDIATE NEXT STEPS');
-    console.log('=======================');
-    
-    console.log('1. Add IAM Browser Permissions');
-    console.log('   → Run: node setup-browser-permissions.js');
-    console.log('   → Follow the IAM policy instructions');
-    console.log('');
-    
-    console.log('2. Access AgentCore Console');
-    console.log('   → URL: https://us-east-1.console.aws.amazon.com/bedrock-agentcore/');
-    console.log('   → Navigate to: Built-in Tools → Browser');
-    console.log('');
-    
-    console.log('3. Create Browser Tool Instance');
-    console.log('   → Click "Create Browser"');
-    console.log('   → Name: "MyAgentBrowser"');
-    console.log('   → Description: "Browser for time queries and web navigation"');
-    console.log('');
-    
-    console.log('4. Create New Runtime or Update Existing');
-    console.log('   → Include both banking tools AND browser tool');
-    console.log('   → Note the new runtime ARN or gateway URL');
-    console.log('');
-    
-    console.log('5. Update Your Configuration');
-    console.log('   → Update backend/.env with new runtime details');
-    console.log('   → Test with: node check-agentcore-capabilities.js');
-    console.log('');
-    
-    console.log('6. Verify Browser Functionality');
-    console.log('   → Run: node test-browser-time.js');
-    console.log('   → Test with Nova client asking for current time');
-    console.log('');
+async function testGatewayConnectivity() {
+    console.log('🌐 GATEWAY CONNECTIVITY TEST');
+    console.log('============================');
+
+    if (!CONFIG.awsAccessKey || !CONFIG.awsSecretKey) {
+        console.error('❌ Cannot test — AWS credentials not set.');
+        console.error('   Run ./start-dev.sh to assume the VoiceS2S-Bedrock role first.');
+        return false;
+    }
+
+    const payload = {
+        jsonrpc: "2.0",
+        id: `runtime-check-${Date.now()}`,
+        method: "tools/list",
+        params: {}
+    };
+
+    try {
+        const url = new URL(CONFIG.gatewayUrl);
+        const body = JSON.stringify(payload);
+
+        const request = {
+            host: url.hostname,
+            method: 'POST',
+            path: url.pathname,
+            service: 'bedrock-agentcore',
+            region: CONFIG.awsRegion,
+            headers: { 'Content-Type': 'application/json' },
+            body
+        };
+
+        const creds = {
+            accessKeyId: CONFIG.awsAccessKey,
+            secretAccessKey: CONFIG.awsSecretKey
+        };
+        if (CONFIG.awsSessionToken) creds.sessionToken = CONFIG.awsSessionToken;
+
+        const signedRequest = aws4.sign(request, creds);
+
+        console.log('📡 Sending tools/list request to gateway...');
+        const response = await fetch(CONFIG.gatewayUrl, {
+            method: 'POST',
+            headers: signedRequest.headers,
+            body
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`❌ HTTP ${response.status}: ${text}`);
+            return false;
+        }
+
+        const data = await response.json();
+        const toolCount = data?.result?.tools?.length ?? 0;
+
+        console.log(`✅ Gateway reachable — ${toolCount} tool(s) available`);
+
+        if (toolCount > 0) {
+            console.log('\n   Tools registered on this runtime:');
+            data.result.tools.forEach(t => console.log(`   • ${t.name}`));
+        } else {
+            console.log('⚠️  No tools returned — runtime may be empty or misconfigured');
+        }
+
+        return true;
+    } catch (err) {
+        console.error(`❌ Connection failed: ${err.message}`);
+        return false;
+    }
 }
 
-function displayExpectedResults() {
-    console.log('✅ EXPECTED RESULTS AFTER SETUP');
-    console.log('===============================');
-    
-    console.log('When you run check-agentcore-capabilities.js, you should see:');
-    console.log('');
-    console.log('✅ Web Browser & Navigation (3+ tools):');
-    console.log('   • browser_navigate');
-    console.log('   • browser_click');
-    console.log('   • browser_extract_text');
-    console.log('   • (possibly more browser tools)');
-    console.log('');
-    console.log('✅ API & HTTP Operations (2 tools):');
-    console.log('   • get-Balance___get_Balance');
-    console.log('   • get-TransactionalHistory___get_TransactionHistory');
-    console.log('');
-    console.log('🎯 Time Query Test:');
-    console.log('   Ask Nova: "What\'s the current time?"');
-    console.log('   Expected: Agent uses browser to visit time website and returns accurate time');
-    console.log('');
+async function main() {
+    analyzeCurrentSetup();
+    const ok = await testGatewayConnectivity();
+
+    console.log('\n' + (ok ? '✅ Runtime check PASSED' : '❌ Runtime check FAILED'));
+
+    if (!ok) {
+        console.log('\n💡 If credentials are missing, run:');
+        console.log('   cd .. && ./start-dev.sh');
+    }
 }
 
-// Main execution
-console.log('This script analyzes your current AgentCore Runtime setup');
-console.log('and guides you through adding browser capabilities.\n');
-
-analyzeCurrentSetup();
-displayNextSteps();
-displayExpectedResults();
-
-console.log('💡 KEY INSIGHT:');
-console.log('   Your runtime configuration determines which tools are available.');
-console.log('   Browser tools must be explicitly added to your runtime to be accessible.');
-console.log('   The gateway URL connects to a specific runtime with specific tools.');
-console.log('');
-console.log('📚 For detailed technical steps, see:');
-console.log('   tests/agentcore-runtime-browser-setup.md');
+main().catch(err => {
+    console.error('❌ Unexpected error:', err.message);
+    process.exit(1);
+});

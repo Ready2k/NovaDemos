@@ -181,10 +181,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Save settings to localStorage whenever they change (only after initial hydration)
+    // Save settings to localStorage whenever they change (only after initial hydration).
+    // AWS key material is never persisted — only non-sensitive fields are stored.
     useEffect(() => {
         if (isHydrated && typeof window !== 'undefined') {
-            localStorage.setItem('nova_settings', JSON.stringify(settings));
+            const { awsConfig, ...safeSettings } = settings;
+            const safeAwsConfig = awsConfig
+                ? { region: awsConfig.region, novaSonicModelId: awsConfig.novaSonicModelId, agentCoreRuntimeArn: awsConfig.agentCoreRuntimeArn }
+                : undefined;
+            localStorage.setItem('nova_settings', JSON.stringify({ ...safeSettings, awsConfig: safeAwsConfig }));
         }
     }, [settings, isHydrated]);
 

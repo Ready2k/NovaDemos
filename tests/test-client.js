@@ -97,10 +97,11 @@ class TestClient {
         const config = {
             type: 'sessionConfig',
             config: {
-                systemPrompt: await this.loadPrompt('core-tool_usage_assistant.txt'),
+                systemPrompt: await this.loadPrompt('core-tool_access_assistant.txt'),
                 voiceId: 'matthew',
-                brainMode: 'raw_nova', // Direct mode
-                selectedTools: ['get_server_time'], // Only enable time tool for testing
+                brainMode: 'raw_nova',
+                enableGuardrails: true,
+                selectedTools: ['get_server_time'],
                 userLocation: 'London, UK',
                 userTimezone: 'Europe/London'
             }

@@ -50,11 +50,13 @@ export async function callBankAgent(
         clientConfig.credentials = {
             accessKeyId: process.env.NOVA_AWS_ACCESS_KEY_ID,
             secretAccessKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+            ...(process.env.NOVA_AWS_SESSION_TOKEN ? { sessionToken: process.env.NOVA_AWS_SESSION_TOKEN } : {})
         };
     } else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
         clientConfig.credentials = {
             accessKeyId: process.env.AWS_ACCESS_KEY_ID,
             secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            ...(process.env.AWS_SESSION_TOKEN ? { sessionToken: process.env.AWS_SESSION_TOKEN } : {})
         };
     }
 

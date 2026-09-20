@@ -196,39 +196,80 @@ npm run build
 
 ### 3. Configure AWS Credentials
 
-Create `.env` file in `backend/` directory:
+This project uses **IAM role assumption with MFA** — no long-lived access keys are stored on disk or in `.env`.
 
-```env
-NOVA_AWS_REGION=us-east-1
-NOVA_AWS_ACCESS_KEY_ID=your_access_key_here
-NOVA_AWS_SECRET_ACCESS_KEY=your_secret_key_here
-NOVA_AWS_SESSION_TOKEN=your_session_token_here  # Optional, for SSO/MFA
-NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
-AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/YourRuntimeName
+#### 3a. Create an IAM role
 
-# Optional: Langfuse Integration
-LANGFUSE_PUBLIC_KEY=your_public_key
-LANGFUSE_SECRET_KEY=your_secret_key
-LANGFUSE_HOST=https://cloud.langfuse.com
-```
+Create an IAM role named `VoiceS2S-Bedrock` in your AWS account with the following trust policy (replace `<account-id>` and `<iam-user-arn>`):
 
-**Required IAM Permissions:**
 ```json
 {
   "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "bedrock:InvokeModelWithBidirectionalStream",
-        "bedrock-agentcore:InvokeAgentRuntime",
-        "polly:SynthesizeSpeech",
-        "transcribe:StartStreamTranscription"
-      ],
-      "Resource": "*"
-    }
-  ]
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "AWS": "<iam-user-arn>" },
+    "Action": "sts:AssumeRole",
+    "Condition": { "Bool": { "aws:MultiFactorAuthPresent": "true" } }
+  }]
 }
+```
+
+Attach this permission policy to the role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:InvokeAgent",
+      "bedrock:Retrieve",
+      "bedrock:RetrieveAndGenerate",
+      "bedrock:ListFoundationModels",
+      "bedrock-agentcore:*"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+#### 3b. Configure AWS profiles
+
+Add to `~/.aws/config`:
+
+```ini
+[profile voices2s-source]
+aws_access_key_id = <iam-user-access-key>
+aws_secret_access_key = <iam-user-secret-key>
+region = us-east-1
+
+[profile voices2s]
+role_arn = arn:aws:iam::<account-id>:role/VoiceS2S-Bedrock
+source_profile = voices2s-source
+mfa_serial = arn:aws:iam::<account-id>:mfa/<your-mfa-device-name>
+region = us-east-1
+duration_seconds = 43200
+```
+
+#### 3c. Configure backend `.env`
+
+Create `backend/.env` — **credentials are not stored here**:
+
+```env
+NOVA_AWS_REGION=us-east-1
+NOVA_SONIC_MODEL_ID=amazon.nova-2-sonic-v1:0
+AGENT_CORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/<runtime-name>
+
+# Optional: Bedrock Agent mode
+AGENT_ID=your_agent_id
+AGENT_ALIAS_ID=your_agent_alias_id
+
+# Optional: Langfuse observability
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
 ### 4. Build Backend
@@ -237,8 +278,19 @@ npm run build
 ```
 
 ### 5. Start Server
+
+Use `start-dev.sh` to assume the IAM role with MFA and start the backend:
+
 ```bash
-npm start
+./start-dev.sh
+```
+
+This will prompt for your MFA code, obtain short-lived STS credentials (valid 12 hours), and start the backend on port 8080.
+
+To assume the role in a separate terminal (e.g. for running tests) without starting the server:
+
+```bash
+source ./assume-role.sh
 ```
 
 Server starts on **http://localhost:8080**
@@ -356,17 +408,13 @@ Voice_S2S/
 
 ## 🔧 Configuration
 
-### AWS Configuration (GUI)
-1. Click **⚙️ System Settings** in sidebar
-2. Click **🔐 Configure AWS**
-3. Enter credentials:
-   - Access Key ID
-   - Secret Access Key
-   - Session Token (optional, for SSO)
-   - Region
-   - Nova Sonic Model ID
-   - Agent Core Runtime ARN (optional)
-4. Click **Update Credentials**
+### AWS Configuration
+
+Credentials are supplied at startup via `start-dev.sh` (IAM role assumption with MFA). The backend picks them up from the `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` environment variables automatically.
+
+Non-credential configuration (region, model ID, runtime ARN) lives in `backend/.env`.
+
+The Settings panel in the UI also accepts credentials at runtime for ad-hoc overrides — useful when demoing without the shell script.
 
 ### Cost Configuration
 1. Navigate to **System Settings**
@@ -425,8 +473,8 @@ Voice_S2S/
 **Problem**: WebSocket connection failed  
 **Solution**: Verify backend server is running on port 8080
 
-**Problem**: AWS Authentication Error  
-**Solution**: Check `.env` credentials and IAM permissions
+**Problem**: AWS Authentication Error / invalid security token  
+**Solution**: Run `source ./assume-role.sh` to refresh STS credentials (they expire after 12 hours). Verify the `VoiceS2S-Bedrock` role has the required IAM permissions.
 
 **Problem**: Model Access Denied  
 **Solution**: Request Nova 2 Sonic access in AWS Bedrock console
@@ -463,8 +511,10 @@ Voice_S2S/
 
 ## 🔐 Security Considerations
 
-- **Credentials**: Never commit `.env` file to version control
-- **Session Tokens**: Use temporary credentials when possible
+- **No long-lived keys on disk**: Credentials come from STS role assumption (`start-dev.sh`), not `.env`
+- **MFA required**: The `VoiceS2S-Bedrock` role enforces MFA on every session
+- **Short-lived tokens**: STS sessions expire after 12 hours; re-run `start-dev.sh` or `source assume-role.sh`
+- **localStorage safety**: The frontend strips `secretAccessKey` and `sessionToken` before persisting settings — only region and non-sensitive config is saved
 - **HTTPS**: Deploy with SSL/TLS in production
 - **CORS**: Configure appropriate CORS policies
 - **Input Validation**: All user inputs are sanitized
@@ -493,15 +543,19 @@ Voice_S2S/
 - [ ] Test sentiment analysis accuracy
 
 ### Docker Deployment (Optional)
+
+In production, supply credentials via an IAM instance profile or ECS task role rather than environment variables. For local Docker testing with temporary STS credentials:
+
 ```bash
 # Build backend
 docker build -t voice-s2s-backend ./backend
 
-# Run container
+# Run container with STS credentials from assume-role.sh
 docker run -p 8080:8080 \
-  -e NOVA_AWS_REGION=us-east-1 \
-  -e NOVA_AWS_ACCESS_KEY_ID=xxx \
-  -e NOVA_AWS_SECRET_ACCESS_KEY=xxx \
+  -e AWS_REGION=us-east-1 \
+  -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+  -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+  -e AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
   voice-s2s-backend
 ```
 
@@ -517,6 +571,14 @@ docker run -p 8080:8080 \
 - **[Agent Integration](./AGENTCORE_GATEWAY_INTEGRATION.md)**: Agent mode setup
 
 ## 🆕 Recent Updates
+
+### May 2026
+- ✅ **IAM Role + MFA Auth**: Replaced long-lived access keys with STS assumed-role credentials via `start-dev.sh` / `assume-role.sh`
+- ✅ **Credential Security**: Frontend `localStorage` no longer persists `secretAccessKey` or `sessionToken`
+- ✅ **Content Filter Fix**: Removed prompt injection patterns from workflow headers that were triggering Bedrock safety filters
+- ✅ **AgentCore Connectivity Tests**: `check-runtime-config.js` and `check-agentcore-capabilities.js` updated to use STS credentials and verify live gateway connectivity
+- ✅ **Bedrock Agent Text Input**: Fixed `bedrock_agent` mode so text input bypasses Nova Sonic transcription and calls the agent directly
+- ✅ **Session Token Propagation**: Fixed `bedrock-agent-client.ts` to include `AWS_SESSION_TOKEN` in credential fallback chain
 
 ### January 2026
 - ✅ **User Feedback System**: Thumbs Up/Down feedback on disconnect, persisted to storage and Langfuse

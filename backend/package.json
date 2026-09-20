@@ -18,15 +18,16 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-bedrock": "^3.944.0",
-    "@aws-sdk/client-bedrock-agent-runtime": "^3.943.0",
-    "@aws-sdk/client-bedrock-agentcore": "^3.946.0",
-    "@aws-sdk/client-bedrock-runtime": "^3.975.0",
-    "@aws-sdk/client-polly": "^3.946.0",
+    "@aws-sdk/client-bedrock": "^3.1041.0",
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.1041.0",
+    "@aws-sdk/client-bedrock-agentcore": "^3.1041.0",
+    "@aws-sdk/client-bedrock-runtime": "3.975.0",
+    "@aws-sdk/client-polly": "^3.1041.0",
+    "@aws-sdk/credential-provider-node": "^3.972.39",
     "aws4": "^1.12.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "langfuse": "^3.38.6",
-    "ws": "^8.18.0"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

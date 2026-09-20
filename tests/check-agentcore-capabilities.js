@@ -12,16 +12,19 @@
 console.log('🔍 AgentCore Capability Checker - Built-in Tools Detection');
 console.log('==========================================================');
 
-// Load environment variables from backend/.env
+// Load non-credential env vars from backend/.env (region, runtime ARN, etc.)
+// Credentials come from shell env vars set by start-dev.sh (STS assumed-role session)
 require('dotenv').config({ path: '../backend/.env' });
 
 // AWS signing library
 const aws4 = require('aws4');
 
 const CONFIG = {
-    awsAccessKey: process.env.NOVA_AWS_ACCESS_KEY_ID,
-    awsSecretKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY,
-    awsRegion: process.env.NOVA_AWS_REGION || 'us-east-1',
+    // Prefer standard AWS env vars (set by start-dev.sh via STS); fall back to NOVA_ prefix
+    awsAccessKey: process.env.AWS_ACCESS_KEY_ID || process.env.NOVA_AWS_ACCESS_KEY_ID,
+    awsSecretKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.NOVA_AWS_SECRET_ACCESS_KEY,
+    awsSessionToken: process.env.AWS_SESSION_TOKEN || process.env.NOVA_AWS_SESSION_TOKEN,
+    awsRegion: process.env.NOVA_AWS_REGION || process.env.AWS_REGION || 'us-east-1',
     gatewayUrl: "https://agentcore-gateway-lambda-rsxfef9nbr.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 };
 
@@ -99,11 +102,13 @@ async function listTools() {
             body: body
         };
 
-        // Sign the request with AWS credentials
-        const signedRequest = aws4.sign(request, {
+        // Sign the request with AWS credentials (include session token for STS-assumed roles)
+        const creds = {
             accessKeyId: CONFIG.awsAccessKey,
-            secretAccessKey: CONFIG.awsSecretKey
-        });
+            secretAccessKey: CONFIG.awsSecretKey,
+        };
+        if (CONFIG.awsSessionToken) creds.sessionToken = CONFIG.awsSessionToken;
+        const signedRequest = aws4.sign(request, creds);
 
         console.log('📡 Making authenticated request to AgentCore Gateway...');
         
@@ -236,9 +241,12 @@ async function checkCapabilities() {
     
     // Validate credentials
     if (!CONFIG.awsAccessKey || !CONFIG.awsSecretKey) {
-        console.error('❌ Missing AWS credentials in environment');
+        console.error('❌ Missing AWS credentials in environment.');
+        console.error('   Run start-dev.sh to assume the VoiceS2S-Bedrock role and export temp credentials.');
         return;
     }
+    const credSource = process.env.AWS_SESSION_TOKEN ? 'STS assumed-role session' : 'static IAM credentials';
+    console.log(`🔑 Credential source: ${credSource}`);
     
     console.log('\n🔍 Step 1: Listing available tools...');
     const response = await listTools();

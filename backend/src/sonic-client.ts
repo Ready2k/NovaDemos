@@ -299,6 +299,18 @@ export class SonicClient {
         } catch (error: any) {
             console.error('[SonicClient] Failed to start session:', error);
 
+            // Expose hidden raw response for deserialization errors
+            if (error.$response) {
+                try {
+                    const raw = error.$response;
+                    console.error('[SonicClient] Raw Bedrock response:', JSON.stringify({
+                        statusCode: raw.statusCode,
+                        headers: raw.headers,
+                        body: typeof raw.body === 'string' ? raw.body : '[stream]'
+                    }));
+                } catch (_) { /* ignore */ }
+            }
+
             // Handle specific AWS errors
             if (error.name === 'AccessDeniedException') {
                 console.error('[SonicClient] Access Denied: Check AWS credentials and model access permissions.');
@@ -1049,6 +1061,11 @@ export class SonicClient {
         this.pendingToolResultCount = Math.max(0, this.pendingToolResultCount - 1);
         if (this.pendingToolResultCount === 0) {
             this.stopToolKeepAlive();
+        }
+        const MAX_TOOL_QUEUE = 50;
+        if (this.toolResultQueue.length >= MAX_TOOL_QUEUE) {
+            console.warn(`[SonicClient] Tool result queue at capacity (${MAX_TOOL_QUEUE}), dropping oldest entry`);
+            this.toolResultQueue.shift();
         }
         this.toolResultQueue.push({ toolUseId, result, isError });
     }

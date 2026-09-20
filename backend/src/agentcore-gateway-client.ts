@@ -1,5 +1,12 @@
-const aws4 = require('aws4');
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const aws4 = require('aws4') as {
+    sign(
+        request: Record<string, unknown>,
+        credentials: { accessKeyId: string; secretAccessKey: string; sessionToken?: string }
+    ): { headers: Record<string, string> };
+};
 
 interface AgentCoreGatewayConfig {
     gatewayUrl: string;
@@ -29,10 +36,10 @@ export class AgentCoreGatewayClient {
             awsSecretKey: process.env.NOVA_AWS_SECRET_ACCESS_KEY || ''
         };
 
-        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
-            console.warn('[AgentCoreGateway] WARNING: Missing AWS Credentials. Client is unconfigured.');
+        if (this.config.awsAccessKey && this.config.awsSecretKey) {
+            console.log('[AgentCoreGateway] Client initialized with explicit environment credentials.');
         } else {
-            console.log('[AgentCoreGateway] Client initialized with environment credentials.');
+            console.log('[AgentCoreGateway] No explicit credentials — will resolve via SDK credential chain (profile/role/IMDSv2).');
         }
     }
 
@@ -140,7 +147,7 @@ export class AgentCoreGatewayClient {
             // Check for JSON-RPC errors
             if (data.error) {
                 console.error(`[AgentCoreGateway] Tool execution error:`, data.error);
-                throw new Error(`Tool Execution Error: ${data.error.message}`);
+                throw new Error(`Tool Execution Error: ${data.error?.message ?? JSON.stringify(data.error)}`);
             }
 
             // Handle new AgentCore response format with body.responseBody

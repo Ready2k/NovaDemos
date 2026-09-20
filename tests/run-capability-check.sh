@@ -26,12 +26,20 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Check if .env file exists
-if [ ! -f "../backend/.env" ]; then
-    echo "⚠️  Warning: ../backend/.env not found"
-    echo "   Make sure you have AWS credentials configured"
-    echo ""
+# Check credentials are present in environment (set by start-dev.sh via STS)
+if [ -z "$AWS_ACCESS_KEY_ID" ] && [ -z "$NOVA_AWS_ACCESS_KEY_ID" ]; then
+    echo "❌ AWS credentials not found in environment."
+    echo "   Run: cd .. && ./start-dev.sh"
+    echo "   This assumes the VoiceS2S-Bedrock role and exports temp credentials."
+    exit 1
 fi
+
+if [ -n "$AWS_SESSION_TOKEN" ]; then
+    echo "🔑 Using STS assumed-role credentials"
+else
+    echo "🔑 Using static IAM credentials"
+fi
+echo ""
 
 echo "🔍 Running capability check..."
 echo ""

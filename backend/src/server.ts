@@ -2689,7 +2689,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             const guardrails = await loadPrompt('core-guardrails.txt');
                             if (guardrails) {
                                 console.log('[Server] ✅ Injecting Core Guardrails (enabled by config)');
-                                parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" + "--- CORE GUARDRAILS (SYSTEM OVERRIDES) ---\n" + guardrails;
+                                parsed.config.systemPrompt = parsed.config.systemPrompt + "\n\n" + "--- ADDITIONAL BEHAVIOURAL GUIDELINES ---\n" + guardrails;
                             }
                         } else if (!enableGuardrails) {
                             console.log('[Server] ⚠️  Core Guardrails DISABLED (per config)');
@@ -2827,8 +2827,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         let workflowTools: string[] | undefined;
                         try {
                             const availableWorkflows: any = {}; // Map of Prefix -> FilePath
-                            let personaId = parsed.config.agentId || 'persona-BankingCore'; // Default fallback
-                            personaId = personaId.replace('.txt', '');
+                            let personaId = (parsed.config.agentId || '').replace('.txt', '');
 
                             // MULTI-WORKFLOW CONFIGURATION
                             // Check if client sent explicit linkedWorkflows
@@ -2849,11 +2848,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Fallback: Hardcoded 'Banking Bot' Logic (Preserve for backward compatibility or default behavior)
                             else if (personaId === 'persona-banking_bot' || personaId === 'banking' || personaId === 'persona-BankingCore' || personaId === 'persona-BankingDisputes') {
                                 availableWorkflows['MAIN'] = 'workflow-banking-disputes.json';
-                            } else {
-                                // Single workflow fallback for other personas
-                                const filename = `workflow-${personaId}.json`;
-                                availableWorkflows['MAIN'] = filename;
+                            } else if (personaId) {
+                                // Only attempt a workflow lookup if a persona ID was explicitly provided
+                                availableWorkflows['MAIN'] = `workflow-${personaId}.json`;
                             }
+                            // else: no agentId and no linkedWorkflows — no workflow injection
 
                             // Declarations needed for downstream logic
                             let mergedNodes: any[] = [];
@@ -3020,7 +3019,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                         if (session.brainMode === 'raw_nova' && workflowSystemPrompt) {
                             const basePrompt = parsed.config.systemPrompt || "";
                             // Stronger header
-                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n\n*** IMMEDIATE TOOL EXECUTION PROTOCOL ***\n- When a step requires a tool (e.g. 'perform_idv_check'), you must call it IN THE SAME TURN as your text response.\n- DO NOT say \"I will check\" and then stop. That is a CRITICAL FAILURE.\n- Correct Pattern: \"Let me check that for you.\" -> [TOOL_CALL]\n- Ensure you COMPLETE your sentence verbally before emitting the tool call block. Do not cut off your own audio.\n\n";
+                            const strictHeader = "\n\n--- ACTIVE WORKFLOW STATE MACHINE ---\nFOLLOW THIS WORKFLOW EXACTLY. TOOL EXECUTION PROTOCOL: When a step requires a tool, call it in the same turn as your spoken response. Never say you will perform an action without attaching the tool call immediately.\n\n";
                             parsed.config.systemPrompt = basePrompt + strictHeader + workflowSystemPrompt;
                             console.log(`[WorkflowDebug] FINAL SYSTEM PROMPT LENGTH: ${parsed.config.systemPrompt.length}`); // DEBUG
                         } else {
@@ -3171,7 +3170,7 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             session.lastUserTranscript = parsed.text;
 
                             // Reset inactivity timer on user input
-                            session.inactivityCheckCount = 0; // Reset check count
+                            session.inactivityCheckCount = 0;
                             startInactivityTimer(session);
 
                             // Add user message to transcript for chat history
@@ -3189,18 +3188,50 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 isFinal: true
                             }));
 
-                            // Ensure session is started
-                            if (!sonicClient.getSessionId()) {
-                                console.log('[Server] Starting session for text input');
-                                await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
-                                // Wait a moment for session to be fully established
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                            }
+                            if (session.brainMode === 'bedrock_agent') {
+                                // In bedrock_agent mode, Nova Sonic only emits user transcripts for
+                                // AUDIO (speech recognition). Text input bypasses that path, so we
+                                // call the agent directly and then speak the reply via Nova Sonic TTS.
+                                console.log('[Server] bedrock_agent text input — calling agent directly');
+                                try {
+                                    const { completion: agentReply, trace } = await callBankAgent(
+                                        parsed.text, session.sessionId, session.agentId, session.agentAliasId,
+                                        { accessKeyId: session.awsAccessKeyId, secretAccessKey: session.awsSecretAccessKey, sessionToken: session.awsSessionToken, region: session.awsRegion }
+                                    );
+                                    console.log(`[Server] Agent replied: "${agentReply}"`);
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: 'debugInfo', data: { sessionId: session.sessionId, transcript: parsed.text, agentReply, trace } }));
+                                        ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
+                                    }
+                                    session.transcript.push({ role: 'assistant', text: agentReply, timestamp: Date.now() });
 
-                            if (sonicClient.getSessionId()) {
-                                await sonicClient.sendText(parsed.text);
+                                    // Speak the reply via Nova Sonic TTS
+                                    if (!session.sonicClient.getSessionId()) {
+                                        await session.sonicClient.startSession((e: SonicEvent) => handleSonicEvent(ws, e, session), session.sessionId);
+                                        await new Promise(resolve => setTimeout(resolve, 500));
+                                    }
+                                    if (session.sonicClient.getSessionId()) {
+                                        await session.sonicClient.sendText(cleanTextForSonic(agentReply));
+                                    }
+                                } catch (agentError: any) {
+                                    console.error('[Server] Agent Error (text input):', agentError);
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: 'error', message: `Agent Error: ${agentError.message || String(agentError)}` }));
+                                    }
+                                }
                             } else {
-                                console.error('[Server] Failed to start Nova Sonic session for text input');
+                                // raw_nova mode: route through Nova Sonic normally
+                                if (!sonicClient.getSessionId()) {
+                                    console.log('[Server] Starting session for text input');
+                                    await sonicClient.startSession((event: SonicEvent) => handleSonicEvent(ws, event, session), sessionId);
+                                    await new Promise(resolve => setTimeout(resolve, 500));
+                                }
+
+                                if (sonicClient.getSessionId()) {
+                                    await sonicClient.sendText(parsed.text);
+                                } else {
+                                    console.error('[Server] Failed to start Nova Sonic session for text input');
+                                }
                             }
                         }
                         return;
@@ -3383,8 +3414,12 @@ process.on('uncaughtException', (error: Error) => {
     } else {
         console.error('[Server] Uncaught exception:', error);
         // For other critical errors, we might want to exit, but for dev we'll keep running
-        // process.exit(1); 
+        // process.exit(1);
     }
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+    console.error('[Server] Unhandled promise rejection:', reason);
 });
 
 // Start HTTP server
@@ -4721,7 +4756,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             };
 
                             const workflowText = convertWorkflowToText(masterWorkflow);
-                            const strictHeader = "\n\n########## CRITICAL WORKFLOW OVERRIDE ##########\nYOU MUST IGNORE PREVIOUS CONVERSATIONAL GUIDELINES AND STRICTLY FOLLOW THIS STATE MACHINE:\n";
+                            const strictHeader = "\n\n--- ACTIVE WORKFLOW STATE MACHINE ---\nFOLLOW THIS WORKFLOW EXACTLY:\n";
 
                             const newSystemPrompt = strictHeader + workflowText;
 
@@ -4730,8 +4765,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             let basePrompt = currentConfig.systemPrompt || "";
 
                             // Strip previous workflow override if present
-                            if (basePrompt.includes("########## CRITICAL WORKFLOW OVERRIDE")) {
-                                basePrompt = basePrompt.split("########## CRITICAL WORKFLOW OVERRIDE")[0];
+                            if (basePrompt.includes("--- ACTIVE WORKFLOW STATE MACHINE ---")) {
+                                basePrompt = basePrompt.split("--- ACTIVE WORKFLOW STATE MACHINE ---")[0];
                             }
 
                             const finalPrompt = basePrompt + newSystemPrompt;
