@@ -12,12 +12,14 @@ interface UseAudioProcessorOptions {
 interface UseAudioProcessorReturn {
     isRecording: boolean;
     isMuted: boolean;
+    isPlaying: boolean;
     startRecording: () => Promise<void>;
     stopRecording: () => void;
     playAudio: (audioData: ArrayBuffer) => Promise<void>;
     clearQueue: () => void;
     setMuted: (muted: boolean) => void;
     getAudioData: () => Uint8Array | null;
+    getOutputAudioData: () => Uint8Array | null;
     cleanup: () => void;
 }
 
@@ -31,6 +33,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
     const [isRecording, setIsRecording] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false);
     const isRecordingRef = useRef(false);
 
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -39,6 +42,10 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
     const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const dataArrayRef = useRef<Uint8Array | null>(null);
+    // Keep assistant playback separate from microphone input. Visualisers that
+    // represent Nova (such as the expressive face) must not react to the user.
+    const outputAnalyserRef = useRef<AnalyserNode | null>(null);
+    const outputDataArrayRef = useRef<Uint8Array | null>(null);
     const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
     const nextStartTimeRef = useRef(0);
     // Barge-in state: true for ~1.5 s after local interruption to suppress re-queuing
@@ -60,6 +67,12 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             analyserRef.current.smoothingTimeConstant = 0.5;
             const bufferLength = analyserRef.current.frequencyBinCount;
             dataArrayRef.current = new Uint8Array(bufferLength);
+
+            outputAnalyserRef.current = audioContextRef.current.createAnalyser();
+            outputAnalyserRef.current.fftSize = 256;
+            outputAnalyserRef.current.smoothingTimeConstant = 0.65;
+            outputDataArrayRef.current = new Uint8Array(outputAnalyserRef.current.frequencyBinCount);
+            outputAnalyserRef.current.connect(audioContextRef.current.destination);
 
             // Request microphone access
             mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({
@@ -271,8 +284,13 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             const sourceNode = audioContext.createBufferSource();
             sourceNode.buffer = audioBuffer;
 
-            // Connect to destination (speakers)
-            sourceNode.connect(audioContext.destination);
+            // Route assistant playback through its own analyser before the speakers.
+            // This keeps Nova's output energy distinct from the microphone signal.
+            if (outputAnalyserRef.current) {
+                sourceNode.connect(outputAnalyserRef.current);
+            } else {
+                sourceNode.connect(audioContext.destination);
+            }
 
             // Connect to analyser for visualization
             if (analyserRef.current) {
@@ -282,6 +300,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             // Schedule playback
             const startTime = Math.max(audioContext.currentTime, nextStartTimeRef.current);
             sourceNode.start(startTime);
+            setIsPlaying(true);
 
             // Update next start time
             nextStartTimeRef.current = startTime + audioBuffer.duration;
@@ -289,6 +308,10 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             // Clean up after playback
             sourceNode.onended = () => {
                 sourceNode.disconnect();
+                playbackNodesRef.current = playbackNodesRef.current.filter(node => node !== sourceNode);
+                if (playbackNodesRef.current.length === 0) {
+                    setIsPlaying(false);
+                }
             };
 
             playbackNodesRef.current.push(sourceNode);
@@ -309,6 +332,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             }
         });
         playbackNodesRef.current = [];
+        setIsPlaying(false);
 
         // Reset playback time to now
         if (audioContextRef.current) {
@@ -333,6 +357,14 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         return dataArrayRef.current;
     }, []);
 
+    const getOutputAudioData = useCallback((): Uint8Array | null => {
+        if (!outputAnalyserRef.current || !outputDataArrayRef.current) {
+            return null;
+        }
+        outputAnalyserRef.current.getByteFrequencyData(outputDataArrayRef.current as Uint8Array<ArrayBuffer>);
+        return outputDataArrayRef.current;
+    }, []);
+
     // Cleanup resources
     const cleanup = useCallback(() => {
         stopRecording();
@@ -349,6 +381,8 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
             audioContextRef.current.close();
             audioContextRef.current = null;
         }
+        outputAnalyserRef.current = null;
+        outputDataArrayRef.current = null;
 
         console.log('[AudioProcessor] Resources cleaned up');
     }, [stopRecording, clearQueue]);
@@ -356,12 +390,14 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
     return {
         isRecording,
         isMuted,
+        isPlaying,
         startRecording,
         stopRecording,
         playAudio,
         clearQueue,
         setMuted: setIsMuted,
         getAudioData,
+        getOutputAudioData,
         cleanup,
     };
 }

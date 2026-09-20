@@ -649,7 +649,11 @@ export default function Home() {
             <>
               {/* Intelligence Orb (Fixed Header Height ~ 85px to 100px) */}
               <div className="w-full h-[100px] flex-shrink-0">
-                <IntelligenceOrb getAudioData={audioProcessor.getAudioData} />
+                <IntelligenceOrb
+                  getAudioData={audioProcessor.getAudioData}
+                  getOutputAudioData={audioProcessor.getOutputAudioData}
+                  isPlaying={audioProcessor.isPlaying}
+                />
               </div>
 
               {/* Chat Container - takes remaining space */}

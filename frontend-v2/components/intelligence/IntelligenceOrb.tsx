@@ -6,14 +6,23 @@ import FluidVisualizer from './FluidVisualizer';
 import WaveformVisualizer from './WaveformVisualizer';
 import ParticleVortexVisualizer from './ParticleVortexVisualizer';
 import PulseWaveformVisualizer from './PulseWaveformVisualizer';
+import ExpressiveFace, { FaceMode } from './ExpressiveFace';
 
 interface IntelligenceOrbProps {
     sentiment?: number;
     isActive?: boolean;
     getAudioData?: () => Uint8Array | null;
+    getOutputAudioData?: () => Uint8Array | null;
+    isPlaying?: boolean;
 }
 
-export default function IntelligenceOrb({ sentiment: propSentiment, isActive: propIsActive, getAudioData }: IntelligenceOrbProps) {
+export default function IntelligenceOrb({
+    sentiment: propSentiment,
+    isActive: propIsActive,
+    getAudioData,
+    getOutputAudioData,
+    isPlaying = false,
+}: IntelligenceOrbProps) {
     const { messages, connectionStatus, settings, workflowState } = useApp();
 
     // Determine if a tool/workflow is currently processing
@@ -42,6 +51,21 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
         connectionStatus === 'recording' ? 'user' :
             connectionStatus === 'connected' ? 'agent' : 'idle';
 
+    const lastConversationMessage = [...messages]
+        .reverse()
+        .find(message => message.role === 'user' || message.role === 'assistant');
+    const latestAssistantMessage = [...messages]
+        .reverse()
+        .find(message => message.role === 'assistant');
+    const latestAssistantText = latestAssistantMessage?.content || '';
+
+    // Playback is authoritative for speech. A completed user turn represents
+    // the short reasoning gap before Nova's first output audio arrives.
+    const faceMode: FaceMode = connectionStatus === 'disconnected' ? 'dormant' :
+        isPlaying ? 'speaking' :
+            isWorkflowActive || lastConversationMessage?.role === 'user' ? 'thinking' :
+                connectionStatus === 'recording' ? 'listening' : 'idle';
+
     // Visualizer Selection
     const renderVisualizer = () => {
         const speed = settings.physicsSpeed ?? 1.0;
@@ -49,6 +73,14 @@ export default function IntelligenceOrb({ sentiment: propSentiment, isActive: pr
         const growth = settings.contextGrowth ?? 0;
 
         switch (settings.visualizationStyle) {
+            case 'expressive_face':
+                return <ExpressiveFace
+                    mode={faceMode}
+                    speechText={latestAssistantText}
+                    speechKey={latestAssistantMessage?.timestamp}
+                    sentiment={sentiment}
+                    getAudioData={getOutputAudioData}
+                />;
             case 'fluid_physics':
                 return <FluidVisualizer
                     mode={fluidMode}

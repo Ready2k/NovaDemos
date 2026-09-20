@@ -28,7 +28,7 @@ export interface AppSettings {
     agentId?: string;
     agentAliasId?: string;
     enableGuardrails: boolean;
-    visualizationStyle?: 'simple_wave' | 'anti_gravity' | 'fluid_physics' | 'particle_vortex' | 'pulse_waveform';
+    visualizationStyle?: 'simple_wave' | 'anti_gravity' | 'fluid_physics' | 'particle_vortex' | 'pulse_waveform' | 'expressive_face';
     physicsSpeed?: number;
     physicsSensitivity?: number;
     contextGrowth?: number;

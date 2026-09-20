@@ -238,7 +238,7 @@ export default function GeneralSettings() {
                     <button
                         onClick={() => updateSettings({ visualizationStyle: 'particle_vortex' })}
                         className={cn(
-                            "p-4 rounded-xl border text-left transition-all md:col-span-2",
+                            "p-4 rounded-xl border text-left transition-all",
                             settings.visualizationStyle === 'particle_vortex'
                                 ? isDarkMode
                                     ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
@@ -250,6 +250,24 @@ export default function GeneralSettings() {
                         <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Particle Vortex</div>
                         <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
                             Hybrid 3D Constellation & Vortex
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ visualizationStyle: 'expressive_face' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.visualizationStyle === 'expressive_face'
+                                ? isDarkMode
+                                    ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(72,232,224,0.25)]"
+                                    : "border-cyan-500 bg-cyan-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}>
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Expressive Face</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Listening cues, expressions and speech-shaped mouth movement
                         </div>
                     </button>
                 </div>
