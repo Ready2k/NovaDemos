@@ -5,7 +5,7 @@
 #   ./aws/lambdas/build.sh                  # build only → aws/lambdas/dist/kvs-bridge.zip
 #   ./aws/lambdas/build.sh <bucket-name>    # build + upload to s3://<bucket>/lambdas/kvs-bridge.zip
 #
-# Prerequisites: node >=20, npm, zip, aws CLI (for upload)
+# Prerequisites: node >=24, npm, zip, aws CLI (for upload)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

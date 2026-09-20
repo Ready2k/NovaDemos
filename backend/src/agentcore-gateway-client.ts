@@ -15,6 +15,7 @@ interface AgentCoreGatewayConfig {
     awsSecretKey: string;
 }
 
+const DEFAULT_MCP_PROTOCOL_VERSION = '2025-11-25';
 
 
 interface ToolCallResponse {
@@ -43,10 +44,13 @@ export class AgentCoreGatewayClient {
         }
     }
 
-    updateCredentials(accessKey: string, secretKey: string, region: string) {
+    updateCredentials(accessKey: string, secretKey: string, region: string, sessionToken?: string) {
         this.config.awsAccessKey = accessKey;
         this.config.awsSecretKey = secretKey;
         this.config.awsRegion = region;
+        if (sessionToken) {
+            process.env.AWS_SESSION_TOKEN = sessionToken;
+        }
         console.log('[AgentCoreGateway] Credentials updated via runtime configuration.');
     }
 
@@ -65,6 +69,15 @@ export class AgentCoreGatewayClient {
         const creds = await defaultProvider()();
         console.log(`[AgentCoreGateway] Resolved credentials for ${creds.accessKeyId.substring(0, 8)}...`);
         return creds;
+    }
+
+    /** Headers required by the AgentCore Gateway MCP endpoint. */
+    private mcpHeaders(): Record<string, string> {
+        return {
+            'Accept': 'application/json, text/event-stream',
+            'Content-Type': 'application/json',
+            'MCP-Protocol-Version': process.env.AGENTCORE_MCP_PROTOCOL_VERSION || DEFAULT_MCP_PROTOCOL_VERSION,
+        };
     }
 
     async callTool(toolName: string, args: any, gatewayTarget?: string): Promise<string> {
@@ -114,7 +127,7 @@ export class AgentCoreGatewayClient {
                 path:    url.pathname,
                 service: 'bedrock-agentcore',
                 region:  this.config.awsRegion,
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.mcpHeaders(),
                 body,
             };
 
@@ -272,11 +285,6 @@ export class AgentCoreGatewayClient {
     }
 
     async listTools(): Promise<any[]> {
-        if (!this.config.awsAccessKey || !this.config.awsSecretKey) {
-            console.warn('[AgentCoreGateway] List tools aborted: Missing AWS Credentials.');
-            return []; // Return empty list instead of throwing to prevent startup crashes
-        }
-
         const payload = {
             jsonrpc: "2.0",
             id: `list-tools-${Date.now()}`,
@@ -287,6 +295,7 @@ export class AgentCoreGatewayClient {
         try {
             const url = new URL(this.config.gatewayUrl);
             const body = JSON.stringify(payload);
+            const creds = await this._resolveCredentials();
 
             const request = {
                 host: url.hostname,
@@ -294,15 +303,14 @@ export class AgentCoreGatewayClient {
                 path: url.pathname,
                 service: 'bedrock-agentcore',
                 region: this.config.awsRegion,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.mcpHeaders(),
                 body: body
             };
 
             const signedRequest = aws4.sign(request, {
-                accessKeyId: this.config.awsAccessKey,
-                secretAccessKey: this.config.awsSecretKey
+                accessKeyId: creds.accessKeyId,
+                secretAccessKey: creds.secretAccessKey,
+                sessionToken: creds.sessionToken,
             });
 
             const response = await fetch(this.config.gatewayUrl, {

@@ -23,6 +23,7 @@ import { useWorkflowSimulator } from '@/lib/hooks/useWorkflowSimulator';
 import SettingsLayout from '@/components/settings/SettingsLayout';
 import TestReportModal from '@/components/workflow/TestReportModal';
 import SbcCallPanel from '@/components/sbc/SbcCallPanel';
+import MfaPromptModal from '@/components/settings/MfaPromptModal';
 import { useRouter } from 'next/navigation';
 
 export default function Home() {
@@ -53,6 +54,9 @@ export default function Home() {
   const [showSurvey, setShowSurvey] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [finishedSessionId, setFinishedSessionId] = useState<string | null>(null);
+  const [showMfaPrompt, setShowMfaPrompt] = useState(false);
+  const [isRefreshingMfa, setIsRefreshingMfa] = useState(false);
+  const [mfaError, setMfaError] = useState<string | undefined>();
 
   // Test Report State
   const [showTestReport, setShowTestReport] = useState(false);
@@ -78,6 +82,15 @@ export default function Home() {
       sessionIdRef.current = currentSession.sessionId;
     }
   }, [currentSession?.sessionId]);
+
+  useEffect(() => {
+    const openMfaPrompt = () => {
+      setMfaError(undefined);
+      setShowMfaPrompt(true);
+    };
+    window.addEventListener('voice-s2s:mfa-required', openMfaPrompt);
+    return () => window.removeEventListener('voice-s2s:mfa-required', openMfaPrompt);
+  }, []);
 
 
 
@@ -301,6 +314,12 @@ export default function Home() {
 
       case 'error':
         console.error('[WebSocket] Error:', message.message, message.details);
+        if (message.code === 'invalid_credentials') {
+          setConnectionStatus('disconnected');
+          setMfaError(undefined);
+          setShowMfaPrompt(true);
+          break;
+        }
         if (message.fatal) {
           setConnectionStatus('disconnected');
           showToast(message.message || 'Service error — please refresh to reconnect.', 'error', 10000);
@@ -578,6 +597,30 @@ export default function Home() {
     }
   }, [connectionStatus, connect, disconnect, hasInteracted, currentSession]);
 
+  const handleMfaSubmit = useCallback(async (mfaCode: string) => {
+    setIsRefreshingMfa(true);
+    setMfaError(undefined);
+    try {
+      const response = await fetch('/api/system/aws/mfa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfaCode }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.aws !== 'connected') {
+        throw new Error(result.error || 'Unable to refresh AWS credentials.');
+      }
+      setShowMfaPrompt(false);
+      showToast('AWS session refreshed. Reconnecting…', 'success');
+      disconnect();
+      window.setTimeout(connect, 150);
+    } catch (error: any) {
+      setMfaError(error.message || 'Unable to refresh AWS credentials.');
+    } finally {
+      setIsRefreshingMfa(false);
+    }
+  }, [connect, disconnect, showToast]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -792,7 +835,16 @@ export default function Home() {
         messages={messages}
         testConfig={settings.activeTestConfig}
         isDarkMode={isDarkMode}
-        sessionId={finishedSessionId || currentSession?.sessionId || sessionIdRef.current}
+        sessionId={finishedSessionId || currentSession?.sessionId || null}
+      />
+
+      <MfaPromptModal
+        isOpen={showMfaPrompt}
+        isDarkMode={isDarkMode}
+        isSubmitting={isRefreshingMfa}
+        error={mfaError}
+        onSubmit={handleMfaSubmit}
+        onClose={() => setShowMfaPrompt(false)}
       />
 
       {/* Application Info Modal */}

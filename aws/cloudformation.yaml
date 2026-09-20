@@ -436,7 +436,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: 'voice-s2s-StartBotSession'
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       Role: !GetAtt ConnectIntegrationRole.Arn
       Handler: start-session.handler
       Timeout: 15
@@ -452,7 +452,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: 'voice-s2s-ProcessBotTurn'
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       Role: !GetAtt ConnectIntegrationRole.Arn
       Handler: process-turn.handler
       Timeout: 30

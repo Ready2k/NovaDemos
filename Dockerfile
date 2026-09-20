@@ -1,7 +1,7 @@
 # --- Lightweight Runtime ONLY Stage ---
 # This Dockerfile expects that the build artifacts (dist and out) were generated locally
 # to avoid overloading the remote build machine (i5 Mac) with compilation.
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 
 # 1. Provide minimal essentials for production install

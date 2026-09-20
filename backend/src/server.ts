@@ -13,9 +13,12 @@ import { SimulationService } from './simulation-service';
 import { formatVoicesForFrontend } from './voice-service';
 import { PromptService } from './services/prompt-service';
 import { MemoryService } from './services/memory-service';
+import { coalesceTranscriptEntry } from './transcript-coalescer';
 
 import { BedrockClient, ListFoundationModelsCommand } from "@aws-sdk/client-bedrock";
 import { BedrockAgentRuntimeClient, RetrieveAndGenerateCommand } from "@aws-sdk/client-bedrock-agent-runtime";
+import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import { fromIni } from "@aws-sdk/credential-provider-ini";
 
 import * as dotenv from 'dotenv';
 import { Langfuse } from 'langfuse';
@@ -97,6 +100,40 @@ let bedrockClient = new BedrockClient(agentCoreConfig);
 
 // Initialize Bedrock Agent Runtime Client for KB retrieval
 let bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(agentCoreConfig);
+
+const MFA_ROLE_ARN = process.env.AWS_MFA_ROLE_ARN || 'arn:aws:iam::388660028061:role/VoiceS2S-Bedrock';
+const MFA_SERIAL_NUMBER = process.env.AWS_MFA_SERIAL_NUMBER || 'arn:aws:iam::388660028061:mfa/James_Iphone';
+const MFA_SOURCE_PROFILE = process.env.AWS_MFA_SOURCE_PROFILE || 'voices2s-source';
+const MFA_WEB_AUTH_ALLOW_REMOTE = process.env.AWS_MFA_WEB_AUTH_ALLOW_REMOTE === 'true';
+
+function isLoopbackRequest(req: http.IncomingMessage): boolean {
+    const address = req.socket.remoteAddress || '';
+    return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function applyAssumedRoleCredentials(credentials: { accessKeyId: string; secretAccessKey: string; sessionToken: string }) {
+    // Keep temporary credentials in process memory only. They are never sent to
+    // the browser or written to .env/localStorage.
+    process.env.AWS_ACCESS_KEY_ID = credentials.accessKeyId;
+    process.env.AWS_SECRET_ACCESS_KEY = credentials.secretAccessKey;
+    process.env.AWS_SESSION_TOKEN = credentials.sessionToken;
+    process.env.AWS_REGION = REGION;
+
+    agentCoreConfig = { region: REGION, credentials };
+    agentCoreClient = new BedrockAgentCoreClient(agentCoreConfig);
+    bedrockClient = new BedrockClient(agentCoreConfig);
+    bedrockAgentRuntimeClient = new BedrockAgentRuntimeClient(agentCoreConfig);
+    agentCoreGatewayClient?.updateCredentials(
+        credentials.accessKeyId,
+        credentials.secretAccessKey,
+        REGION,
+        credentials.sessionToken,
+    );
+
+    if (MEMORY_GLOBALLY_ENABLED && MEMORY_ID) {
+        memoryService = new MemoryService({ memoryId: MEMORY_ID, region: REGION, credentials });
+    }
+}
 
 
 // Initialize AgentCore Gateway Client
@@ -1145,26 +1182,37 @@ const DEFAULT_INACTIVITY_TIMEOUT = 45; // 45 seconds
 const DEFAULT_INACTIVITY_MAX_CHECKS = 3; // 3 checks before closing
 
 function startInactivityTimer(session: ClientSession) {
-    // Check if inactivity detection is enabled
+    // Clear existing timer
+    if (session.inactivityTimer) {
+        clearTimeout(session.inactivityTimer);
+        session.inactivityTimer = null;
+    }
+
+    // Check after clearing an existing timer so disabling the feature takes effect
+    // immediately, rather than allowing a previously scheduled check-in to fire.
     if (session.inactivityEnabled === false) {
         return;
     }
 
-    // Clear existing timer
-    if (session.inactivityTimer) {
-        clearTimeout(session.inactivityTimer);
+    // Capture the activity that this timeout belongs to. A callback that survives a
+    // race with new user activity must not check in on an active user.
+    if (session.lastUserActivityTime === undefined) {
+        session.lastUserActivityTime = Date.now();
     }
-
-    // Update last activity time
-    session.lastUserActivityTime = Date.now();
+    const activityTime = session.lastUserActivityTime;
 
     // Get timeout value (in milliseconds)
-    const timeoutMs = (session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT) * 1000;
+    const timeoutMs = (session.inactivityTimeout ?? DEFAULT_INACTIVITY_TIMEOUT) * 1000;
 
     // Start new timer
     session.inactivityTimer = setTimeout(async () => {
+        session.inactivityTimer = null;
+
         // Check if user is still connected
         if (!session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+
+        // Settings or user activity may have changed after this callback was queued.
+        if (session.inactivityEnabled === false || session.lastUserActivityTime !== activityTime) return;
 
         // Initialize check count if not set
         if (session.inactivityCheckCount === undefined) {
@@ -1174,9 +1222,9 @@ function startInactivityTimer(session: ClientSession) {
         // Increment check count
         session.inactivityCheckCount++;
 
-        const maxChecks = session.inactivityMaxChecks || DEFAULT_INACTIVITY_MAX_CHECKS;
+        const maxChecks = session.inactivityMaxChecks ?? DEFAULT_INACTIVITY_MAX_CHECKS;
 
-        console.log(`[Server] User inactive for ${session.inactivityTimeout || DEFAULT_INACTIVITY_TIMEOUT} seconds (check ${session.inactivityCheckCount}/${maxChecks})`);
+        console.log(`[Server] User inactive for ${session.inactivityTimeout ?? DEFAULT_INACTIVITY_TIMEOUT} seconds (check ${session.inactivityCheckCount}/${maxChecks})`);
 
         // Check if we've reached max checks
         if (session.inactivityCheckCount >= maxChecks) {
@@ -1232,6 +1280,13 @@ function startInactivityTimer(session: ClientSession) {
             }
         }
     }, timeoutMs);
+}
+
+/** Record a genuine user interaction. Assistant turns and check-ins must not reset this count. */
+function recordUserActivity(session: ClientSession) {
+    session.lastUserActivityTime = Date.now();
+    session.inactivityCheckCount = 0;
+    startInactivityTimer(session);
 }
 
 function stopInactivityTimer(session: ClientSession) {
@@ -1490,6 +1545,62 @@ const server = http.createServer(async (req, res) => {
                 error: error.message
             }));
         }
+        return;
+    }
+
+    // SYSTEM - POST /api/system/aws/mfa - Refresh the local role session.
+    // The browser supplies only a short-lived MFA code; AWS credentials remain
+    // exclusively in this server process.
+    if (req.method === 'POST' && pathname === '/api/system/aws/mfa') {
+        if (!MFA_WEB_AUTH_ALLOW_REMOTE && !isLoopbackRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Web MFA authentication is available only from localhost.' }));
+            return;
+        }
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+            if (body.length > 1024) req.destroy();
+        });
+        req.on('end', async () => {
+            try {
+                const { mfaCode } = JSON.parse(body);
+                if (typeof mfaCode !== 'string' || !/^\d{6}$/.test(mfaCode)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Enter a valid six-digit MFA code.' }));
+                    return;
+                }
+
+                const sts = new STSClient({
+                    region: REGION,
+                    credentials: fromIni({ profile: MFA_SOURCE_PROFILE }),
+                });
+                const response = await sts.send(new AssumeRoleCommand({
+                    RoleArn: MFA_ROLE_ARN,
+                    RoleSessionName: `voice-s2s-web-${Date.now()}`,
+                    SerialNumber: MFA_SERIAL_NUMBER,
+                    TokenCode: mfaCode,
+                    DurationSeconds: 43200,
+                }));
+                const credentials = response.Credentials;
+                if (!credentials?.AccessKeyId || !credentials.SecretAccessKey || !credentials.SessionToken) {
+                    throw new Error('AWS did not return a complete temporary session.');
+                }
+
+                applyAssumedRoleCredentials({
+                    accessKeyId: credentials.AccessKeyId,
+                    secretAccessKey: credentials.SecretAccessKey,
+                    sessionToken: credentials.SessionToken,
+                });
+                console.log('[System] AWS role session refreshed through MFA.');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ aws: 'connected', region: REGION }));
+            } catch (error: any) {
+                console.warn('[System] MFA role refresh failed:', error?.name || error?.message || error);
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Unable to verify that MFA code. Try a fresh code.' }));
+            }
+        });
         return;
     }
 
@@ -2569,9 +2680,6 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
     };
     activeSessions.set(ws, session);
 
-    // Start inactivity timer
-    startInactivityTimer(session);
-
     // Send connection acknowledgment
     ws.send(JSON.stringify({
         type: 'connected',
@@ -3160,6 +3268,11 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                                 console.log('[Server] Banking Bot mode - skipping initial AI greeting (agent will provide greeting)');
                             }
                         }
+
+                        // Apply settings to the live timer now. The connection is created
+                        // before the frontend sends its sessionConfig, so waiting until here
+                        // ensures the first check uses the configured timeout and toggle.
+                        startInactivityTimer(session);
                     } else if (parsed.type === 'ping') {
                         ws.send(JSON.stringify({ type: 'pong' }));
                         return;
@@ -3169,9 +3282,8 @@ wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
                             // Store user transcript for debug panel
                             session.lastUserTranscript = parsed.text;
 
-                            // Reset inactivity timer on user input
-                            session.inactivityCheckCount = 0;
-                            startInactivityTimer(session);
+                            // A text message is genuine user activity.
+                            recordUserActivity(session);
 
                             // Add user message to transcript for chat history
                             session.transcript.push({
@@ -3834,6 +3946,11 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 // Stop inactivity timer while agent is responding
                 stopInactivityTimer(session);
                 // No buffering - audio flows immediately
+            } else if (event.data.role === 'user') {
+                // A recognised user turn has begun. This handles long utterances before
+                // their final transcript arrives, without treating continuous silent PCM
+                // microphone frames as activity.
+                recordUserActivity(session);
             }
             break;
 
@@ -3877,8 +3994,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: userText, isFinal: true }));
                     }
-                    session.inactivityCheckCount = 0;
-                    startInactivityTimer(session);
+                    recordUserActivity(session);
 
                     try {
                         console.log('[Server] Calling Bedrock Agent...');
@@ -3938,6 +4054,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             }
 
             if (role === 'user') {
+                // Raw Nova mode previously never registered recognised speech as user
+                // activity, allowing an in-flight user turn to be checked as idle.
+                recordUserActivity(session);
+
                 // NEW TURN START: Reset per-turn state
                 session.toolsCalledThisTurn = [];
                 (session as any).fillerTriggered = false;
@@ -3948,10 +4068,22 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     return;
                 }
 
-                session.lastUserTranscript = event.data.transcript;
-                session.transcript.push({ role: 'user', text: event.data.transcript, timestamp: Date.now() });
+                const userTranscriptWrite = coalesceTranscriptEntry(session.transcript, {
+                    role: 'user',
+                    text: event.data.transcript,
+                    timestamp: Date.now(),
+                    type: event.data.isFinal ? 'final' : 'speculative'
+                });
+                if (userTranscriptWrite.action === 'ignored') {
+                    console.log('[Transcript] Ignored duplicate user recognition replay');
+                    return;
+                }
+                // A final recognition replay can occasionally be shorter than its
+                // speculative predecessor. Keep the longest recognised utterance.
+                event.data.transcript = userTranscriptWrite.entry.text;
+                session.lastUserTranscript = userTranscriptWrite.entry.text;
                 // Memory: store user turn (fire-and-forget, non-fatal)
-                if (session.memoryEnabled && memoryService && event.data.transcript) {
+                if (event.data.isFinal && session.memoryEnabled && memoryService && event.data.transcript) {
                     memoryService.createEvent(
                         session.memoryActorId || session.sessionId,
                         session.sessionId,
@@ -4021,16 +4153,24 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         }
                     }
 
-                    session.transcript.push(entry);
+                    const assistantTranscriptWrite = coalesceTranscriptEntry(session.transcript, entry);
+                    if (assistantTranscriptWrite.action === 'ignored') {
+                        console.log('[Transcript] Ignored shorter or duplicate assistant final replay');
+                        return;
+                    }
+                    if (event.data.isFinal) {
+                        // Forward the coalesced, longest version to memory and UI.
+                        event.data.transcript = assistantTranscriptWrite.entry.text;
+                    }
                     // Memory: store final assistant turn only (skip speculative drafts)
                     if (event.data.isFinal && session.memoryEnabled && memoryService) {
-                        const rawText = event.data.transcript || '';
-                        if (rawText) {
+                        const completedText = assistantTranscriptWrite.entry.text || '';
+                        if (completedText) {
                             memoryService.createEvent(
                                 session.memoryActorId || session.sessionId,
                                 session.sessionId,
                                 'ASSISTANT',
-                                rawText
+                                completedText
                             );
                         }
                     }
@@ -5312,8 +5452,9 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
             // Reset acoustic accumulation for next user turn
             session.userTurnRmsSamples = [];
             session.userTurnStartTime = undefined;
-            // Agent finished speaking - restart inactivity timer waiting for user
-            session.inactivityCheckCount = 0;
+            // Agent finished speaking - wait for the user. Do not reset the count:
+            // an inactivity check-in is itself an assistant turn, and resetting here
+            // would make every check appear to be check 1 forever.
             startInactivityTimer(session);
             break;
 

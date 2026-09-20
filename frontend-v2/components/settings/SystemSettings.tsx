@@ -22,10 +22,12 @@ export default function SystemSettings() {
                 setAwsRegion(data.region);
             } else {
                 setAwsStatus('error');
+                window.dispatchEvent(new Event('voice-s2s:mfa-required'));
             }
         } catch (err) {
             console.error('Failed to check AWS status', err);
             setAwsStatus('error');
+            window.dispatchEvent(new Event('voice-s2s:mfa-required'));
         } finally {
             setIsChecking(false);
         }

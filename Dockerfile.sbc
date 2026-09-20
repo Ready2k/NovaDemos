@@ -17,7 +17,7 @@
 #     nova-sbc
 
 # ── Runtime-only stage (same base as main Dockerfile) ─────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 
 # 1. Install production dependencies
