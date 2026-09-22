@@ -34,7 +34,7 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
         <div
             ref={containerRef}
             className={cn(
-                "h-full overflow-y-auto px-8 py-6",
+                "h-full overflow-y-auto px-3 py-4 sm:px-5 lg:px-8 lg:py-6",
                 // Custom scrollbar styling
                 "[&::-webkit-scrollbar]:w-2",
                 isDarkMode
@@ -46,7 +46,7 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
                 "[&::-webkit-scrollbar-thumb]:rounded-full"
             )}
         >
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-5xl mx-auto">
                 {messages.length === 0 ? (
                     // Empty state
                     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
@@ -73,7 +73,7 @@ export default function ChatContainer({ isDarkMode = true }: ChatContainerProps)
                     // Messages
                     messages.map((msg, idx) => (
                         <MultimodalMessage
-                            key={idx}
+                            key={msg.utteranceId || `${msg.role}-${msg.timestamp}-${idx}`}
                             role={msg.role}
                             type={msg.type}
                             content={msg.content}

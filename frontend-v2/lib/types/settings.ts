@@ -4,6 +4,7 @@ import { TestConfiguration } from './workflow';
 
 export type InteractionMode = 'chat_voice' | 'voice_only' | 'chat_only';
 export type BrainMode = 'raw_nova' | 'bedrock_agent';
+export type ConversationLayout = 'standard' | 'face_focus';
 export type AppSettingsTab = 'general' | 'persona' | 'knowledge' | 'workflow' | 'presets' | 'system';
 
 export interface VoicePreset {
@@ -22,6 +23,7 @@ export interface PersonaPreset {
 export interface AppSettings {
     // General Settings
     interactionMode: InteractionMode;
+    conversationLayout?: ConversationLayout;
     brainMode: BrainMode;
     voicePreset: string;
     personaPreset: string;

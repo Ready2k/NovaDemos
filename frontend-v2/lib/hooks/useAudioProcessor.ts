@@ -49,6 +49,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
     const outputAnalyserRef = useRef<AnalyserNode | null>(null);
     const outputDataArrayRef = useRef<Uint8Array | null>(null);
     const playbackNodesRef = useRef<AudioBufferSourceNode[]>([]);
+    const playbackStartTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
     const nextStartTimeRef = useRef(0);
     // Barge-in state: true for ~1.5 s after local interruption to suppress re-queuing
     // of trailing TTS chunks still arriving from the server.
@@ -72,7 +73,10 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
 
             outputAnalyserRef.current = audioContextRef.current.createAnalyser();
             outputAnalyserRef.current.fftSize = 256;
-            outputAnalyserRef.current.smoothingTimeConstant = 0.65;
+            // A long smoothing window makes lip movement visibly trail the sound.
+            // Keep just enough smoothing to avoid jitter while preserving consonant
+            // attacks and word endings.
+            outputAnalyserRef.current.smoothingTimeConstant = 0.3;
             outputDataArrayRef.current = new Uint8Array(outputAnalyserRef.current.frequencyBinCount);
             outputAnalyserRef.current.connect(audioContextRef.current.destination);
 
@@ -365,7 +369,7 @@ export function useAudioProcessor(options: UseAudioProcessorOptions = {}): UseAu
         }
 
         console.log('[AudioProcessor] Audio queue cleared');
-    }, []);
+    }, [onPlaybackStateChange]);
 
     const getAudioData = useCallback((): Uint8Array | null => {
         if (!analyserRef.current || !dataArrayRef.current) {

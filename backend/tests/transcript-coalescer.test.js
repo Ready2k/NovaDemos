@@ -90,3 +90,69 @@ test('does not merge separate turns or entries separated by another role', () =>
 
     assert.equal(transcript.length, 3);
 });
+
+test('keeps identical same-speaker text when it occurs again after the fallback window', () => {
+    const transcript = [];
+
+    coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Is there anything else I can help with?', timestamp: 1_000, type: 'final'
+    });
+    const result = coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Is there anything else I can help with?', timestamp: 11_000, type: 'final'
+    });
+
+    assert.equal(result.action, 'inserted');
+    assert.equal(transcript.length, 2);
+});
+
+test('keeps identical text from distinct identified utterances', () => {
+    const transcript = [];
+
+    coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Please confirm that for me.', timestamp: 1_000,
+        type: 'final', utteranceId: 'content-a'
+    });
+    const result = coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Please confirm that for me.', timestamp: 1_500,
+        type: 'final', utteranceId: 'content-b'
+    });
+
+    assert.equal(result.action, 'inserted');
+    assert.equal(transcript.length, 2);
+});
+
+test('coalesces immediate growing snapshots even when Nova changes content ID', () => {
+    const transcript = [];
+
+    coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'I can help with that.', timestamp: 1_000,
+        type: 'final', utteranceId: 'content-a'
+    });
+    const result = coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'I can help with that. Here are the details.', timestamp: 1_800,
+        type: 'final', utteranceId: 'content-b'
+    });
+
+    assert.equal(result.action, 'updated');
+    assert.equal(transcript.length, 1);
+    assert.equal(transcript[0].text, 'I can help with that. Here are the details.');
+    assert.equal(transcript[0].utteranceId, 'content-b');
+});
+
+test('coalesces delayed updates carrying the same utterance ID', () => {
+    const transcript = [];
+
+    coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Your balance is', timestamp: 1_000,
+        type: 'speculative', utteranceId: 'content-a'
+    });
+    const result = coalesceTranscriptEntry(transcript, {
+        role: 'assistant', text: 'Your balance is £1,200.', timestamp: 11_000,
+        type: 'final', utteranceId: 'content-a'
+    });
+
+    assert.equal(result.action, 'updated');
+    assert.equal(transcript.length, 1);
+    assert.equal(transcript[0].text, 'Your balance is £1,200.');
+    assert.equal(transcript[0].type, 'final');
+});

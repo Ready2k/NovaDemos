@@ -14,6 +14,7 @@ interface IntelligenceOrbProps {
     getAudioData?: () => Uint8Array | null;
     getOutputAudioData?: () => Uint8Array | null;
     isPlaying?: boolean;
+    focusMode?: boolean;
 }
 
 export default function IntelligenceOrb({
@@ -22,6 +23,7 @@ export default function IntelligenceOrb({
     getAudioData,
     getOutputAudioData,
     isPlaying = false,
+    focusMode = false,
 }: IntelligenceOrbProps) {
     const { messages, connectionStatus, settings, workflowState } = useApp();
 
@@ -32,11 +34,10 @@ export default function IntelligenceOrb({
 
     // Calculate average sentiment from recent messages (last 5)
     const recentMessages = messages.slice(-5);
-    const calculatedSentiment = recentMessages.length > 0
-        ? recentMessages
-            .filter(m => m.sentiment !== undefined)
-            .reduce((sum, m) => sum + (m.sentiment || 0), 0) / recentMessages.filter(m => m.sentiment !== undefined).length
-        : 0.5;
+    const messagesWithSentiment = recentMessages.filter(message => message.sentiment !== undefined);
+    const calculatedSentiment = messagesWithSentiment.length > 0
+        ? messagesWithSentiment.reduce((sum, message) => sum + (message.sentiment || 0), 0) / messagesWithSentiment.length
+        : 0;
 
     // Use prop sentiment if provided, otherwise use calculated
     const sentiment = propSentiment !== undefined ? propSentiment : calculatedSentiment;
@@ -76,6 +77,7 @@ export default function IntelligenceOrb({
             case 'expressive_face':
                 return <ExpressiveFace
                     mode={faceMode}
+                    focused={focusMode}
                     speechText={latestAssistantText}
                     speechKey={latestAssistantMessage?.timestamp}
                     sentiment={sentiment}

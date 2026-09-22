@@ -48,6 +48,7 @@ interface AppState {
     messages: Message[];
     addMessage: (message: Message) => void;
     updateLastMessage: (updates: Partial<Message>) => void;
+    updateMessage: (index: number, updates: Partial<Message>) => void;
     clearMessages: () => void;
 
     // Settings
@@ -108,6 +109,7 @@ const AppContext = createContext<AppState | undefined>(undefined);
 // Default settings
 const defaultSettings: AppSettings = {
     interactionMode: 'chat_voice',
+    conversationLayout: 'standard',
     brainMode: 'raw_nova',
     voicePreset: 'matthew',
     personaPreset: '',
@@ -256,6 +258,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 if (!prev || prev.transcript.length === 0) return prev;
                 const newTranscript = [...prev.transcript];
                 newTranscript[newTranscript.length - 1] = { ...newTranscript[newTranscript.length - 1], ...updates };
+                return { ...prev, transcript: newTranscript };
+            });
+        }
+    }, [currentSession]);
+
+    const updateMessage = useCallback((index: number, updates: Partial<Message>) => {
+        setMessages(prev => prev.map((message, messageIndex) =>
+            messageIndex === index ? { ...message, ...updates } : message
+        ));
+
+        if (currentSession) {
+            setCurrentSession(prev => {
+                if (!prev || index < 0 || index >= prev.transcript.length) return prev;
+                const newTranscript = [...prev.transcript];
+                newTranscript[index] = { ...newTranscript[index], ...updates };
                 return { ...prev, transcript: newTranscript };
             });
         }
@@ -604,6 +621,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         messages,
         addMessage,
         updateLastMessage,
+        updateMessage,
         clearMessages,
 
         // Settings

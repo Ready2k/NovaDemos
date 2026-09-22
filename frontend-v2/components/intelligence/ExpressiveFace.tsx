@@ -13,6 +13,7 @@ interface VisemeCue {
 
 interface ExpressiveFaceProps {
     mode: FaceMode;
+    focused?: boolean;
     speechText?: string;
     speechKey?: string | number;
     sentiment?: number;
@@ -22,6 +23,43 @@ interface ExpressiveFaceProps {
 const CYAN = '#48e8e0';
 const CYAN_MUTED = '#2a8a9b';
 const VIOLET = '#9778ff';
+const SILENCE_THRESHOLD = 0.018;
+
+interface AudioFeatures {
+    energy: number;
+    centroid: number;
+    lowRatio: number;
+}
+
+function analyseSpeech(bins: Uint8Array): AudioFeatures {
+    const end = Math.min(bins.length, 64);
+    let magnitude = 0;
+    let weightedMagnitude = 0;
+    let lowMagnitude = 0;
+
+    // Skip the first two bins, which tend to contain DC/room rumble rather than
+    // useful articulation information.
+    for (let index = 2; index < end; index += 1) {
+        const value = bins[index] / 255;
+        magnitude += value;
+        weightedMagnitude += value * index;
+        if (index < 14) lowMagnitude += value;
+    }
+
+    return {
+        energy: magnitude / Math.max(1, end - 2),
+        centroid: magnitude > 0 ? weightedMagnitude / magnitude / end : 0,
+        lowRatio: magnitude > 0 ? lowMagnitude / magnitude : 0,
+    };
+}
+
+function audioFallbackViseme(features: AudioFeatures): Viseme {
+    // When transcript cues arrive late, spectral shape still gives the mouth an
+    // articulation that is visibly tied to the sound being heard.
+    if (features.lowRatio > 0.5) return 'round';
+    if (features.centroid > 0.5) return 'narrow';
+    return features.energy > 0.13 ? 'open' : 'wide';
+}
 
 /**
  * Lightweight English grapheme-to-viseme conversion. It deliberately uses a
@@ -125,7 +163,7 @@ function Mouth({ shape, intensity }: { shape: Viseme; intensity: number }) {
     );
 }
 
-export default function ExpressiveFace({ mode, speechText = '', speechKey = '', sentiment = 0, getAudioData }: ExpressiveFaceProps) {
+export default function ExpressiveFace({ mode, focused = false, speechText = '', speechKey = '', sentiment = 0, getAudioData }: ExpressiveFaceProps) {
     const [viseme, setViseme] = useState<Viseme>('rest');
     const [intensity, setIntensity] = useState(0);
     const [isBlinking, setIsBlinking] = useState(false);
@@ -134,6 +172,8 @@ export default function ExpressiveFace({ mode, speechText = '', speechKey = '', 
     const previousSpeechKeyRef = useRef<string | number>('');
     const nextCueAtRef = useRef(0);
     const intensityRef = useRef(0);
+    const lastAudibleAtRef = useRef(0);
+    const previousEnergyRef = useRef(0);
 
     // Nova sends the accumulated streaming transcript. Queue only the new text.
     useEffect(() => {
@@ -180,6 +220,10 @@ export default function ExpressiveFace({ mode, speechText = '', speechKey = '', 
         if (mode !== 'speaking') {
             intensityRef.current = 0;
             nextCueAtRef.current = 0;
+            lastAudibleAtRef.current = 0;
+            previousEnergyRef.current = 0;
+            setIntensity(0);
+            setViseme('rest');
             return;
         }
 
@@ -189,25 +233,35 @@ export default function ExpressiveFace({ mode, speechText = '', speechKey = '', 
             if (now - lastEnergyUpdate > 45) {
                 const bins = getAudioData?.();
                 if (bins?.length) {
-                    let sum = 0;
-                    for (let i = 2; i < Math.min(bins.length, 48); i += 1) sum += bins[i];
-                    const energy = sum / Math.max(1, Math.min(bins.length, 48) - 2) / 255;
-                    intensityRef.current = Math.min(1, energy * 2.2);
-                    setIntensity(intensityRef.current);
+                    const features = analyseSpeech(bins);
+                    const targetIntensity = Math.min(1, Math.max(0, features.energy - SILENCE_THRESHOLD) * 5.2);
+                    const smoothing = targetIntensity > intensityRef.current ? 0.68 : 0.28;
+                    const nextIntensity = intensityRef.current + (targetIntensity - intensityRef.current) * smoothing;
+                    const audible = features.energy > SILENCE_THRESHOLD || nextIntensity > 0.045;
+                    const onset = features.energy - previousEnergyRef.current > 0.035;
+
+                    intensityRef.current = nextIntensity;
+                    previousEnergyRef.current = features.energy;
+                    setIntensity(current => Math.abs(nextIntensity - current) > 0.015 ? nextIntensity : current);
+
+                    if (audible) {
+                        lastAudibleAtRef.current = now;
+                        if (now >= nextCueAtRef.current || onset) {
+                            const cue = queueRef.current.shift();
+                            setViseme(cue?.shape ?? audioFallbackViseme(features));
+                            // Strong speech articulates faster. The onset shortcut
+                            // lets plosives visibly land without racing in silence.
+                            const baseDuration = cue?.duration ?? 92;
+                            nextCueAtRef.current = now + Math.max(58, baseDuration * (1.12 - nextIntensity * 0.28));
+                        }
+                    } else if (now - lastAudibleAtRef.current > 65) {
+                        // Close promptly on real pauses and at the end of playback;
+                        // importantly, do not consume transcript cues while quiet.
+                        setViseme('rest');
+                        nextCueAtRef.current = now;
+                    }
                 }
                 lastEnergyUpdate = now;
-            }
-
-            if (now >= nextCueAtRef.current) {
-                const cue = queueRef.current.shift();
-                if (cue) {
-                    setViseme(cue.shape);
-                    // Quiet audio stretches the cue slightly instead of changing its shape.
-                    nextCueAtRef.current = now + cue.duration * (intensityRef.current < 0.08 ? 1.3 : 1);
-                } else {
-                    setViseme('rest');
-                    nextCueAtRef.current = now + 70;
-                }
             }
             animationFrame = requestAnimationFrame(tick);
         };
@@ -231,7 +285,7 @@ export default function ExpressiveFace({ mode, speechText = '', speechKey = '', 
 
     return (
         <svg
-            viewBox="0 0 420 100"
+            viewBox={focused ? '110 0 200 100' : '0 0 420 100'}
             className="h-full w-full"
             role="img"
             aria-label={label}
@@ -262,13 +316,13 @@ export default function ExpressiveFace({ mode, speechText = '', speechKey = '', 
 
             <g filter="url(#faceGlow)" fill="none" strokeLinecap="round">
                 <path
-                    d={thinking ? 'M172 29 Q187 22 199 28' : `M172 ${isQuestion ? 24 : 28} Q187 ${isQuestion ? 20 : 23} 199 ${isQuestion ? 25 : 28}`}
+                    d={thinking ? 'M172 29 Q187 22 199 28' : `M172 ${isQuestion ? 24 : 28 - intensity * 1.5} Q187 ${isQuestion ? 20 : 23 - intensity * 2.5} 199 ${isQuestion ? 25 : 28 - intensity * 1.5}`}
                     stroke={thinking ? VIOLET : CYAN_MUTED}
                     strokeWidth="2.5"
                     style={{ transition: 'd 180ms ease' }}
                 />
                 <path
-                    d={thinking ? 'M221 25 Q235 19 248 22' : `M221 ${isQuestion ? 25 : 28} Q235 ${isQuestion ? 20 : 23} 248 ${isQuestion ? 24 : 28}`}
+                    d={thinking ? 'M221 25 Q235 19 248 22' : `M221 ${isQuestion ? 25 : 28 - intensity * 1.5} Q235 ${isQuestion ? 20 : 23 - intensity * 2.5} 248 ${isQuestion ? 24 : 28 - intensity * 1.5}`}
                     stroke={thinking ? VIOLET : CYAN_MUTED}
                     strokeWidth="2.5"
                     style={{ transition: 'd 180ms ease' }}

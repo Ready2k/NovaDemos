@@ -32,7 +32,7 @@ export default function Home() {
     setConnectionStatus,
     messages,
     addMessage,
-    updateLastMessage,
+    updateMessage,
     clearMessages,
     currentSession,
     setCurrentSession,
@@ -57,6 +57,7 @@ export default function Home() {
   const [showMfaPrompt, setShowMfaPrompt] = useState(false);
   const [isRefreshingMfa, setIsRefreshingMfa] = useState(false);
   const [mfaError, setMfaError] = useState<string | undefined>();
+  const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
 
   // Test Report State
   const [showTestReport, setShowTestReport] = useState(false);
@@ -74,6 +75,13 @@ export default function Home() {
   // Ref to track running latency averages (avoids stale closure issues in useCallback)
   const latencyRef = useRef({ turns: 0, avgTtft: 0, avgLatency: 0 });
 
+  // WebSocket chunks can arrive faster than React commits state. Keep a
+  // synchronous mirror so consecutive chunks upsert the same message.
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Ref to track session ID for feedback (robust against state updates)
   const sessionIdRef = useRef<string | null>(null);
 
@@ -82,6 +90,12 @@ export default function Home() {
       sessionIdRef.current = currentSession.sessionId;
     }
   }, [currentSession?.sessionId]);
+
+  const isFaceFocusMode = isHydrated && settings.conversationLayout === 'face_focus';
+
+  useEffect(() => {
+    if (isFaceFocusMode) setIsTranscriptExpanded(false);
+  }, [isFaceFocusMode]);
 
   useEffect(() => {
     const openMfaPrompt = () => {
@@ -141,6 +155,7 @@ export default function Home() {
         // Reset latency tracking for new session
         latencyRef.current = { turns: 0, avgTtft: 0, avgLatency: 0 };
         // Clear messages from the previous session
+        messagesRef.current = [];
         clearMessages();
         console.log('[Session] Capture Ref Updated:', sessionIdRef.current);
 
@@ -179,60 +194,134 @@ export default function Home() {
 
         if (!cleanText) break;
 
-        // Dedup Strategies:
-        // 1. Search backwards for the last message of the same role to update (for streaming/interim)
-        let targetIndex = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === message.role) {
-            targetIndex = i;
-            break;
-          }
-        }
-
-        const targetMsg = targetIndex !== -1 ? messages[targetIndex] : null;
+        // Prefer event identity over text. Repeated wording in a later turn is
+        // legitimate and must create another on-screen message.
+        const currentMessages = messagesRef.current;
+        const utteranceIndex = message.utteranceId
+          ? currentMessages.findIndex(item => item.utteranceId === message.utteranceId)
+          : -1;
+        const utteranceMessage = utteranceIndex >= 0 ? currentMessages[utteranceIndex] : null;
+        const lastIndex = currentMessages.length - 1;
+        const lastMessage = lastIndex >= 0 ? currentMessages[lastIndex] : null;
+        const lastTimestamp = lastMessage
+          ? (typeof lastMessage.timestamp === 'number' ? lastMessage.timestamp : Date.parse(lastMessage.timestamp))
+          : 0;
+        const isImmediateFallback = Boolean(
+          lastMessage &&
+          lastMessage.role === message.role &&
+          (!message.utteranceId || !lastMessage.utteranceId) &&
+          Number.isFinite(lastTimestamp) &&
+          Date.now() - lastTimestamp < 2000
+        );
+        const isProgressiveSnapshot = Boolean(
+          lastMessage &&
+          lastMessage.role === message.role &&
+          typeof lastMessage.content === 'string' &&
+          cleanText.length > lastMessage.content.length &&
+          cleanText.startsWith(lastMessage.content) &&
+          Number.isFinite(lastTimestamp) &&
+          Date.now() - lastTimestamp < 6000
+        );
 
         if (message.isFinal) {
-          // Check for exact duplicate of the FINAL message (idempotency)
-          if (targetMsg && targetMsg.isFinal && targetMsg.content === cleanText) {
-            console.log('[App] Ignoring duplicate final message');
+          if (utteranceMessage?.isFinal && utteranceMessage.content === cleanText) {
+            console.log('[App] Ignoring replay of finalized utterance');
             break;
           }
 
-          // If we have a previous non-final message (interim) of the same role, update it to final
-          if (targetMsg && !targetMsg.isFinal && targetIndex === messages.length - 1) {
-            updateLastMessage({
+          if (utteranceMessage) {
+            const updates = {
               content: cleanText,
               isFinal: true,
+              utteranceId: message.utteranceId,
               sentiment: message.sentiment,
               acousticFeatures: message.acousticFeatures,
-            });
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === utteranceIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(utteranceIndex, updates);
+          } else if (lastMessage && isProgressiveSnapshot) {
+            const updates = {
+              content: cleanText,
+              isFinal: true,
+              utteranceId: message.utteranceId,
+              sentiment: message.sentiment,
+              acousticFeatures: message.acousticFeatures,
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === lastIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(lastIndex, updates);
+          } else if (lastMessage && !lastMessage.isFinal && isImmediateFallback) {
+            // Compatibility for sources that cannot provide an utterance ID.
+            const updates = {
+              content: cleanText,
+              isFinal: true,
+              utteranceId: message.utteranceId,
+              sentiment: message.sentiment,
+              acousticFeatures: message.acousticFeatures,
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === lastIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(lastIndex, updates);
+          } else if (lastMessage?.isFinal && lastMessage.content === cleanText && isImmediateFallback) {
+            console.log('[App] Ignoring immediate final replay without a stable ID');
+            break;
           } else {
-            // Otherwise add new final message
-            addMessage({
+            const newMessage: Message = {
               role: message.role,
               content: cleanText,
               timestamp: message.timestamp || Date.now(),
               isFinal: true,
+              utteranceId: message.utteranceId,
               sentiment: message.sentiment,
               acousticFeatures: message.acousticFeatures,
-            });
+            };
+            messagesRef.current = [...currentMessages, newMessage];
+            addMessage(newMessage);
           }
         } else {
-          // Interim/Streaming transcript
-          // Only update if the last message is the same role and is non-final
-          if (targetMsg && !targetMsg.isFinal && targetIndex === messages.length - 1) {
-            updateLastMessage({
-              content: cleanText
-            });
+          if (utteranceMessage && !utteranceMessage.isFinal) {
+            const updates = {
+              content: cleanText,
+              utteranceId: message.utteranceId,
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === utteranceIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(utteranceIndex, updates);
+          } else if (lastMessage && isProgressiveSnapshot) {
+            const updates = {
+              content: cleanText,
+              isFinal: false,
+              utteranceId: message.utteranceId,
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === lastIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(lastIndex, updates);
+          } else if (lastMessage && !lastMessage.isFinal && isImmediateFallback) {
+            const updates = {
+              content: cleanText,
+              utteranceId: message.utteranceId,
+            };
+            messagesRef.current = currentMessages.map((item, index) =>
+              index === lastIndex ? { ...item, ...updates } : item
+            );
+            updateMessage(lastIndex, updates);
           } else {
-            // Add new interim message
-            addMessage({
+            const newMessage: Message = {
               role: message.role,
               content: cleanText,
               timestamp: message.timestamp || Date.now(),
               isFinal: false,
+              utteranceId: message.utteranceId,
               sentiment: message.sentiment,
-            });
+            };
+            messagesRef.current = [...currentMessages, newMessage];
+            addMessage(newMessage);
           }
         }
         break;
@@ -364,7 +453,7 @@ export default function Home() {
       default:
         console.log('[WebSocket] Unknown message type:', message.type);
     }
-  }, [messages, addMessage, updateLastMessage, clearMessages, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast, addSbcEvent]);
+  }, [addMessage, updateMessage, clearMessages, setCurrentSession, setConnectionStatus, updateSessionStats, settings, showToast, addSbcEvent]);
 
   // Initialize WebSocket
   const getWebSocketUrl = () => {
@@ -694,6 +783,91 @@ export default function Home() {
 
         <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
           {activeView === 'chat' ? (
+            isFaceFocusMode ? (
+              <div className="flex-1 min-h-0 flex relative overflow-hidden">
+                <div className="flex-1 min-w-0 flex flex-col">
+                  <div className="flex-1 min-h-0 flex items-center justify-center px-3 sm:px-8">
+                    <div className="w-full h-full min-h-[240px]">
+                      <IntelligenceOrb
+                        getAudioData={audioProcessor.getAudioData}
+                        getOutputAudioData={audioProcessor.getOutputAudioData}
+                        isPlaying={audioProcessor.isPlaying}
+                        focusMode
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-shrink-0 pb-20 md:pb-0">
+                    <CommandBar
+                      compact
+                      status={connectionStatus}
+                      isDarkMode={isDarkMode}
+                      onToggleRecording={handleToggleRecording}
+                      onToggleConnection={handleConnectionToggle}
+                    />
+                  </div>
+                </div>
+
+                {isTranscriptExpanded ? (
+                  <aside className={cn(
+                    "absolute inset-y-0 right-0 z-30 w-[calc(100%-40px)] sm:w-[min(70vw,560px)] lg:static lg:z-auto lg:w-[min(42vw,560px)] flex flex-col border-l shadow-2xl lg:shadow-none",
+                    isDarkMode ? "bg-ink-surface/98 border-white/8" : "bg-gray-50/98 border-gray-200"
+                  )}>
+                    <div className="h-11 flex-shrink-0 px-4 flex items-center justify-between border-b border-current/10">
+                      <span className={cn(
+                        "uppercase tracking-wider font-semibold text-[11px]",
+                        isDarkMode ? "text-ink-text-muted" : "text-gray-600"
+                      )}>Conversation</span>
+                      <button
+                        onClick={() => setIsTranscriptExpanded(false)}
+                        className={cn(
+                          "p-1.5 rounded-lg transition-colors",
+                          isDarkMode ? "text-ink-text-muted hover:text-white hover:bg-white/8" : "text-gray-400 hover:text-gray-700 hover:bg-gray-200"
+                        )}
+                        title="Collapse conversation"
+                        aria-label="Collapse conversation"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <ChatContainer isDarkMode={isDarkMode} />
+                    </div>
+                  </aside>
+                ) : (
+                  <aside className={cn(
+                    "w-10 flex-shrink-0 flex flex-col items-center py-4 border-l",
+                    isDarkMode ? "bg-ink-surface border-white/8" : "bg-gray-50 border-gray-200"
+                  )}>
+                    <button
+                      onClick={() => setIsTranscriptExpanded(true)}
+                      className={cn(
+                        "p-1.5 rounded-lg transition-colors",
+                        isDarkMode ? "text-ink-text-muted hover:text-white hover:bg-white/8" : "text-gray-400 hover:text-gray-700 hover:bg-gray-200"
+                      )}
+                      title="Show conversation"
+                      aria-label="Show conversation"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setIsTranscriptExpanded(true)}
+                      className={cn(
+                        "mt-3 uppercase tracking-wider font-semibold text-[10px] select-none",
+                        isDarkMode ? "text-ink-text-muted" : "text-gray-400"
+                      )}
+                      style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                    >
+                      Conversation
+                    </button>
+                  </aside>
+                )}
+              </div>
+            ) : (
             <>
               {/* Intelligence Orb (Fixed Header Height ~ 85px to 100px) */}
               <div className="w-full h-[100px] flex-shrink-0">
@@ -726,6 +900,7 @@ export default function Home() {
                 </div>
               </div>
             </>
+            )
           ) : activeView === 'settings' ? (
             <SettingsLayout />
           ) : activeView === 'history' ? (

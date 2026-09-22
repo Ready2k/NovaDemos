@@ -79,6 +79,56 @@ export default function GeneralSettings() {
                 </select>
             </section>
 
+            {/* Conversation Layout */}
+            <section className="flex flex-col gap-4">
+                <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                    Conversation Layout
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        onClick={() => updateSettings({ conversationLayout: 'standard' })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            (settings.conversationLayout === 'standard' || !settings.conversationLayout)
+                                ? isDarkMode
+                                    ? "border-violet-500 bg-violet-500/10 shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                    : "border-violet-500 bg-violet-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}
+                    >
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Standard</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Visualizer, conversation text and full controls
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({
+                            conversationLayout: 'face_focus',
+                            visualizationStyle: 'expressive_face',
+                            interactionMode: 'voice_only',
+                        })}
+                        className={cn(
+                            "p-4 rounded-xl border text-left transition-all",
+                            settings.conversationLayout === 'face_focus'
+                                ? isDarkMode
+                                    ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(72,232,224,0.25)]"
+                                    : "border-cyan-500 bg-cyan-50 shadow-md"
+                                : isDarkMode
+                                    ? "border-white/10 bg-white/5 hover:bg-white/10"
+                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                        )}
+                    >
+                        <div className={cn("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>Face Focus</div>
+                        <div className={cn("text-xs mt-1", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>
+                            Face-first view with a collapsed transcript and compact voice controls
+                        </div>
+                    </button>
+                </div>
+            </section>
+
             {/* Brain Mode Selection */}
             <section className="flex flex-col gap-4">
                 <h3 className={cn("text-sm font-semibold uppercase tracking-wider", isDarkMode ? "text-ink-text-muted" : "text-gray-500")}>

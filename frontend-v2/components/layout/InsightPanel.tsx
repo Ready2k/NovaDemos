@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/context/AppContext';
 import { useSessionStats } from '@/lib/hooks/useSessionStats';
 import { analyzeSentiment } from '@/lib/sentiment';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface InsightPanelProps {
     className?: string;
@@ -51,9 +51,13 @@ function formatMs(ms?: number): string {
 }
 
 export default function InsightPanel({ className, isDarkMode = true }: InsightPanelProps) {
-    const { messages, currentSession } = useApp();
+    const { messages, currentSession, settings } = useApp();
     const { formattedDuration, inputTokens, outputTokens, cost, formatCost, formatTokens } = useSessionStats();
     const [isCollapsed, setIsCollapsed] = useState(false);
+
+    useEffect(() => {
+        if (settings.conversationLayout === 'face_focus') setIsCollapsed(true);
+    }, [settings.conversationLayout]);
 
     // Latest acoustic features from the most recent user message that has them
     const latestAcoustic = useMemo(() => {

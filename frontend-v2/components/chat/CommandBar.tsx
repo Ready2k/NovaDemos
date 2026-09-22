@@ -10,9 +10,10 @@ interface CommandBarProps {
     onSendMessage?: (message: string) => void;
     onToggleRecording?: () => void;
     onToggleConnection?: () => void;
+    compact?: boolean;
 }
 
-export default function CommandBar({ status, isDarkMode = true, onSendMessage, onToggleRecording, onToggleConnection }: CommandBarProps) {
+export default function CommandBar({ status, isDarkMode = true, onSendMessage, onToggleRecording, onToggleConnection, compact = false }: CommandBarProps) {
     const { connectionStatus, settings, isHydrated } = useApp();
     const [message, setMessage] = useState('');
 
@@ -76,13 +77,14 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
     return (
         <div className="px-4 md:px-8 py-4 md:py-6 relative z-20">
             <div className={cn(
-                "max-w-3xl mx-auto p-2 md:p-4 flex items-center gap-2 md:gap-4 rounded-xl border transition-all duration-300",
+                "mx-auto p-2 flex items-center gap-2 rounded-xl border transition-all duration-300",
+                compact ? "w-fit rounded-full" : "max-w-3xl md:p-4 md:gap-4",
                 isDarkMode
                     ? "bg-white/5 backdrop-blur-xl border-white/10"
                     : "bg-white border-gray-200 shadow-lg"
             )}>
                 {/* Text Input */}
-                {isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
+                {!compact && isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
                     <input
                         type="text"
                         value={message}
@@ -101,7 +103,7 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                 )}
 
                 {/* Send Button */}
-                {isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
+                {!compact && isHydrated && (settings.interactionMode === 'chat_voice' || settings.interactionMode === 'chat_only' || !settings.interactionMode) && (
                     <button
                         onClick={handleSend}
                         disabled={!message.trim() || isDisabled}
@@ -123,6 +125,8 @@ export default function CommandBar({ status, isDarkMode = true, onSendMessage, o
                     <button
                         onClick={handleMicClick}
                         disabled={isDisabled}
+                        aria-label={isRecording ? 'Stop microphone' : 'Start microphone'}
+                        title={isRecording ? 'Stop microphone' : 'Start microphone'}
                         className={cn(
                             "w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg hover:shadow-xl transition-all flex items-center justify-center relative",
                             isRecording && "animate-pulse-mic",

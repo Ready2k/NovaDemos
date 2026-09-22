@@ -62,6 +62,8 @@ export class SonicClient {
     private recentOutputs: string[] = [];
     private contentStages: Map<string, string> = new Map(); // Track generation stage by ID
     private contentNameStages: Map<string, string> = new Map(); // Track generation stage by Name
+    private contentNameIds: Map<string, string> = new Map(); // Resolve contentEnd back to its contentStart ID
+    private currentTextContentId: string | null = null;
     private currentTurnTranscript: string = ''; // Accumulate text for the current turn
     private isTurnComplete: boolean = false; // Track if the previous turn ended
     private lastUserTranscript: string = ''; // Track last user input for context
@@ -1212,6 +1214,7 @@ export class SonicClient {
                         this.contentStages.set(contentId, stage);
                         if (eventData.contentStart.contentName) {
                             this.contentNameStages.set(eventData.contentStart.contentName, stage);
+                            this.contentNameIds.set(eventData.contentStart.contentName, contentId);
                         }
 
                         // Normalize role for comparison (Nova sends uppercase, we use lowercase internally)
@@ -1268,6 +1271,10 @@ export class SonicClient {
                         this.currentRole = eventData.contentStart.role;
 
                         // Reset filler suppression state for each new ASSISTANT TEXT block
+                        if (eventData.contentStart.type === 'TEXT') {
+                            this.currentTextContentId = contentId;
+                        }
+
                         if (eventData.contentStart.type === 'TEXT' && normalizedRole === 'assistant') {
                             this.pendingAudioBuffer = [];
                             this.audioBufferingActive = true;
@@ -1402,7 +1409,8 @@ export class SonicClient {
                                     role: this.currentRole === 'USER' ? 'user' : 'assistant',
                                     isFinal: false,  // Always false here - final comes from END_TURN
                                     isStreaming: true,  // Flag for UI to show as streaming
-                                    stage: stage // Pass stage (e.g. SPECULATIVE)
+                                    stage: stage, // Pass stage (e.g. SPECULATIVE)
+                                    utteranceId: contentId
                                 },
                             });
 
@@ -1503,6 +1511,9 @@ export class SonicClient {
                         if (!this.currentBlockIsFiller && (eventData.contentEnd.stopReason === 'END_TURN' || (this.currentRole === 'USER' && eventData.contentEnd.stopReason === 'PARTIAL_TURN')) && this.currentTurnTranscript.length > 0) {
                             // Determine stage from content name if possible
                             const stage = this.contentNameStages.get(eventData.contentEnd.contentName) || 'FINAL';
+                            const utteranceId = this.contentNameIds.get(eventData.contentEnd.contentName)
+                                || this.currentTextContentId
+                                || undefined;
 
                             this.eventCallback?.({
                                 type: 'transcript',
@@ -1511,7 +1522,8 @@ export class SonicClient {
                                     role: this.currentRole === 'USER' ? 'user' : 'assistant',
                                     isFinal: true,
                                     isStreaming: false,
-                                    stage: stage
+                                    stage: stage,
+                                    utteranceId
                                 },
                             });
 

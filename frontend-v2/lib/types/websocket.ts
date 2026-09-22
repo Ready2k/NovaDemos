@@ -25,6 +25,7 @@ export interface TranscriptMessage extends WebSocketMessage {
     role: 'user' | 'assistant';
     text: string;
     isFinal: boolean;
+    utteranceId?: string;
     sentiment?: number;
     acousticFeatures?: AcousticFeatures;
 }

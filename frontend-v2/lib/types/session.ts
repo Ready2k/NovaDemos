@@ -13,6 +13,7 @@ export interface Message {
     content: string;
     text?: string; // Support for backend property name
     timestamp: string | number;
+    utteranceId?: string;
     sentiment?: number;
     isFinal?: boolean;
     feedback?: 'up' | 'down';

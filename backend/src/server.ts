@@ -200,45 +200,6 @@ function saveKnowledgeBases(kbs: any[]) {
 
 
 /**
- * Check if two messages are similar enough to be considered duplicates
- * Uses fuzzy matching to catch variations in formatting, punctuation, etc.
- */
-function areSimilarMessages(msg1: string, msg2: string): boolean {
-    // Normalize both messages for comparison
-    const normalize = (text: string) => text
-        .toLowerCase()
-        .replace(/[^\w\s]/g, '') // Remove punctuation
-        .replace(/\s+/g, ' ')    // Normalize whitespace
-        .trim();
-
-    const norm1 = normalize(msg1);
-    const norm2 = normalize(msg2);
-
-    // Check for exact match after normalization
-    if (norm1 === norm2) return true;
-
-    // Check if one is contained in the other (with significant overlap)
-    const minLength = Math.min(norm1.length, norm2.length);
-    if (minLength > 20) { // Only for substantial messages
-        if (norm1.includes(norm2) || norm2.includes(norm1)) {
-            return true;
-        }
-    }
-
-    // Check for high similarity using simple word overlap
-    const words1 = norm1.split(' ').filter(w => w.length > 2);
-    const words2 = norm2.split(' ').filter(w => w.length > 2);
-
-    if (words1.length > 3 && words2.length > 3) {
-        const commonWords = words1.filter(w => words2.includes(w));
-        const similarity = commonWords.length / Math.max(words1.length, words2.length);
-        return similarity > 0.8; // 80% word overlap
-    }
-
-    return false;
-}
-
-/**
  * Extract new content from accumulated Nova Sonic response
  * 
  * Nova Sonic maintains conversation context and accumulates responses like:
@@ -268,29 +229,8 @@ function extractNewContent(fullResponse: string, previousResponses: string[]): s
             }
         }
 
-        // Strategy 2: Fuzzy prefix matching
-        let commonLength = 0;
-        const minLength = Math.min(fullResponse.length, prevResponse.length);
-
-        for (let offset = 0; offset < 3; offset++) {
-            let currentCommon = 0;
-            for (let i = 0; i < minLength - offset; i++) {
-                if (fullResponse[i] === prevResponse[i + offset]) {
-                    currentCommon++;
-                } else {
-                    break;
-                }
-            }
-
-            if (currentCommon > 25 && currentCommon > commonLength) {
-                commonLength = currentCommon;
-            }
-        }
-
-        if (commonLength > 30 && commonLength > bestMatchLength) {
-            longestMatch = fullResponse.substring(0, commonLength);
-            bestMatchLength = commonLength;
-        }
+        // Deliberately avoid fuzzy prefix matching here. Minor formatting
+        // differences can otherwise turn a valid new sentence into a fragment.
     }
 
     // If we found a match, extract only the new content
@@ -1070,7 +1010,7 @@ interface ClientSession {
     // Deduplication
     lastAgentReply?: string;
     lastAgentReplyTime?: number;
-    recentAgentReplies?: Array<{ text: string, originalText?: string, time: number }>; // Track multiple recent messages
+    recentAgentReplies?: Array<{ text: string, originalText?: string, time: number, utteranceId?: string }>; // Short-lived replay protection
     // Tools
     tools?: Tool[];
     allowedTools?: string[]; // Tools permitted for execution (checked server-side)
@@ -1113,6 +1053,7 @@ interface ClientSession {
         role: string;
         text: string;
         timestamp: number;
+        utteranceId?: string;
         type?: 'speculative' | 'final' | 'workflow_step'; // New: Track type of transcript
         sentiment?: number; // Check sentiment
         metadata?: any; // Extra data (e.g. stepId, contextKeys)
@@ -4005,9 +3946,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                 if (agentRole === 'user' && event.data.isFinal && event.data.transcript) {
                     // User speech transcribed by Nova Sonic — forward to Bedrock Agent
                     const userText = formatUserTranscript(event.data.transcript);
-                    session.transcript.push({ role: 'user', text: userText, timestamp: Date.now() });
+                    const userUtteranceId = event.data.utteranceId || crypto.randomUUID();
+                    session.transcript.push({ role: 'user', text: userText, timestamp: Date.now(), utteranceId: userUtteranceId });
                     if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: userText, isFinal: true }));
+                        ws.send(JSON.stringify({ type: 'transcript', role: 'user', text: userText, isFinal: true, utteranceId: userUtteranceId }));
                     }
                     recordUserActivity(session);
 
@@ -4018,19 +3960,23 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                             { accessKeyId: session.awsAccessKeyId, secretAccessKey: session.awsSecretAccessKey, sessionToken: session.awsSessionToken, region: session.awsRegion }
                         );
                         console.log(`[Server] Agent replied: "${agentReply}"`);
-                        if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'debugInfo', data: { sessionId: session.sessionId, transcript: userText, agentReply, trace } }));
-                            ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true }));
-                        }
-                        session.transcript.push({ role: 'assistant', text: agentReply, timestamp: Date.now() });
 
-                        // Deduplicate then speak via Nova Sonic TTS
+                        // Reject only an immediate transport/API replay. A later answer is a
+                        // new conversational event even when the wording is identical.
                         const now = Date.now();
                         const cleanReply = agentReply.trim();
-                        if (cleanReply === (session.lastAgentReply || '').trim() && session.lastAgentReplyTime && (now - session.lastAgentReplyTime) < 4000) {
+                        if (cleanReply === (session.lastAgentReply || '').trim() && session.lastAgentReplyTime && (now - session.lastAgentReplyTime) < 2000) {
                             console.warn(`[Server] 🛑 DUPLICATE AGENT REPLY DETECTED (ignored)`);
                             return;
                         }
+                        const assistantUtteranceId = crypto.randomUUID();
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'debugInfo', data: { sessionId: session.sessionId, transcript: userText, agentReply, trace } }));
+                            ws.send(JSON.stringify({ type: 'transcript', role: 'assistant', text: agentReply, isFinal: true, utteranceId: assistantUtteranceId }));
+                        }
+                        session.transcript.push({ role: 'assistant', text: agentReply, timestamp: now, utteranceId: assistantUtteranceId });
+
+                        // Deduplicate then speak via Nova Sonic TTS
                         session.lastAgentReply = cleanReply;
                         session.lastAgentReplyTime = now;
                         session.isInterrupted = false;
@@ -4087,6 +4033,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     role: 'user',
                     text: event.data.transcript,
                     timestamp: Date.now(),
+                    utteranceId: event.data.utteranceId,
                     type: event.data.isFinal ? 'final' : 'speculative'
                 });
                 if (userTranscriptWrite.action === 'ignored') {
@@ -4148,6 +4095,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         role: 'assistant',
                         text: rawText,
                         timestamp: Date.now(),
+                        utteranceId: event.data.utteranceId,
                         sentiment: sentiment // Store the sentiment score
                     };
 
@@ -4262,7 +4210,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                     // Then, apply cross-response deduplication if we have previous responses
                     if (session.recentAgentReplies && session.recentAgentReplies.length > 0) {
-                        const previousResponses = session.recentAgentReplies.map(r => r.text);
+                        const cutoff = Date.now() - 4000;
+                        const previousResponses = session.recentAgentReplies
+                            .filter(r => r.time >= cutoff)
+                            .map(r => r.text);
                         const newContent = extractNewContent(processedText, previousResponses);
 
                         // Only use new content if it's substantial
@@ -4605,26 +4556,24 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                         return;
                     }
 
+                    const transcriptNow = Date.now();
+                    // Replay candidates are useful only around the speculative/final
+                    // hand-off. Do not let old wording influence later turns.
+                    if (session.recentAgentReplies) {
+                        session.recentAgentReplies = session.recentAgentReplies.filter(msg =>
+                            (transcriptNow - msg.time) < 4000
+                        );
+                    }
+
                     // CRITICAL FIX: Apply response parsing to displayText for assistant responses
                     if (role === 'assistant') {
-                        // Store the original response before any processing for cross-response comparison
-                        const originalDisplayText = displayText;
-
                         // First, remove internal duplication within the same response
                         displayText = removeInternalDuplication(displayText);
                         console.log(`[InternalDedup] Applied to displayText: "${displayText.substring(0, 50)}..."`);
 
-                        // Then apply cross-response deduplication if we have previous responses
-                        if (session.recentAgentReplies && session.recentAgentReplies.length > 0) {
-                            const previousResponses = session.recentAgentReplies.map(r => r.originalText || r.text);
-                            const newContent = extractNewContent(originalDisplayText, previousResponses);
-
-                            // Only use new content if it's substantial
-                            if (newContent.length > 3 && newContent.trim().length > 0) {
-                                displayText = newContent;
-                                console.log(`[ResponseParser] Applied to displayText: "${displayText.substring(0, 50)}..."`);
-                            }
-                        }
+                        // Keep the full snapshot for the UI. The frontend updates a
+                        // growing turn in place using its utterance ID/prefix instead of
+                        // rendering extracted sentence fragments as separate bubbles.
                     }
 
                     // Handle streaming transcripts
@@ -4635,8 +4584,15 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                         if (session.recentAgentReplies) {
                             for (const recentMsg of session.recentAgentReplies) {
-                                if (recentMsg.text === displayText ||
-                                    areSimilarMessages(recentMsg.text, displayText)) {
+                                const sameUtterance = Boolean(
+                                    event.data.utteranceId &&
+                                    recentMsg.utteranceId &&
+                                    event.data.utteranceId === recentMsg.utteranceId
+                                );
+                                const recentFallbackDuplicate =
+                                    (transcriptNow - recentMsg.time) < 1500 &&
+                                    recentMsg.text === displayText;
+                                if (sameUtterance || recentFallbackDuplicate) {
                                     isDuplicateStreaming = true;
                                     break;
                                 }
@@ -4653,7 +4609,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                     role: role,
                                     text: displayText,
                                     isFinal: false,
-                                    isStreaming: true
+                                    isStreaming: true,
+                                    utteranceId: event.data.utteranceId
                                 }));
                                 console.log(`[Server] Sent streaming transcript: "${displayText.substring(0, 50)}..."`);
                             }
@@ -4673,17 +4630,10 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                     // Handle final transcripts
                     else if (event.data.isFinal) {
                         // Enhanced deduplication: Check against recent messages (not just the last one)
-                        const now = Date.now();
+                        const now = transcriptNow;
 
                         console.log(`[Dedup] Processing message: "${displayText.substring(0, 50)}..."`);
                         console.log(`[Dedup] Recent messages count: ${session.recentAgentReplies?.length || 0}`);
-
-                        // Clean up old messages (older than 15 seconds)
-                        if (session.recentAgentReplies) {
-                            session.recentAgentReplies = session.recentAgentReplies.filter(msg =>
-                                (now - msg.time) < 15000
-                            );
-                        }
 
                         // Check against all recent messages
                         let isDuplicateOrSimilar = false;
@@ -4691,63 +4641,50 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
 
                         if (session.recentAgentReplies) {
                             for (const recentMsg of session.recentAgentReplies) {
+                                const sameUtterance = Boolean(
+                                    event.data.utteranceId &&
+                                    recentMsg.utteranceId &&
+                                    event.data.utteranceId === recentMsg.utteranceId
+                                );
+                                const fallbackReplay =
+                                    (!event.data.utteranceId || !recentMsg.utteranceId) &&
+                                    (now - recentMsg.time) < 2000;
+                                const immediateTextReplay =
+                                    (now - recentMsg.time) < 1500 &&
+                                    recentMsg.text === displayText;
+
                                 // Exact duplicate
-                                // CRITICAL FIX: Only block if very recent (< 3s). 
-                                // Allows AI to repeat itself (e.g. after interruption) but blocks rapid system echoes.
-                                if (recentMsg.text === displayText) {
-                                    if ((now - recentMsg.time) < 3000) {
-                                        isDuplicateOrSimilar = true;
-                                        skipReason = 'exact duplicate (recent)';
-                                        break;
-                                    }
-                                }
-
-                                // Shorter version (e.g. streaming artifact)
-                                if (displayText.length <= recentMsg.text.length &&
-                                    recentMsg.text.startsWith(displayText)) {
-                                    if ((now - recentMsg.time) < 3000) {
-                                        isDuplicateOrSimilar = true;
-                                        skipReason = 'shorter version (recent)';
-                                        break;
-                                    }
-                                }
-
-                                // Overlapping content — only suppress if very recent (< 8s).
-                                // Without a time cap, a digit-readback response at confirm_gate TURN 2
-                                // (which is a substring of the TURN 1 message) gets silently suppressed
-                                // indefinitely, causing the agent to appear stuck with no audio output.
-                                if (recentMsg.text.includes(displayText.trim()) &&
-                                    displayText.trim().length > 20 &&
-                                    (now - recentMsg.time) < 8000) {
+                                if ((sameUtterance || fallbackReplay || immediateTextReplay) && recentMsg.text === displayText) {
                                     isDuplicateOrSimilar = true;
-                                    skipReason = 'overlapping content (recent)';
+                                    skipReason = sameUtterance ? 'same utterance replay' : 'immediate text replay';
                                     break;
                                 }
 
-                                // Similar content - TEMPORARILY DISABLED FOR DEBUGGING
-                                // if (areSimilarMessages(recentMsg.text, displayText)) {
-                                //     isDuplicateOrSimilar = true;
-                                //     skipReason = 'similar content';
-                                //     break;
-                                // }
+                                // Shorter version (e.g. streaming artifact)
+                                if ((sameUtterance || fallbackReplay || (now - recentMsg.time) < 1500) &&
+                                    displayText.length <= recentMsg.text.length &&
+                                    recentMsg.text.startsWith(displayText)) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'shorter replay';
+                                    break;
+                                }
+
+                                // Contained fallback replays are accepted only when one side lacks
+                                // an ID. Different identified utterances are always distinct.
+                                if (fallbackReplay && recentMsg.text.includes(displayText.trim()) &&
+                                    displayText.trim().length > 20 &&
+                                    (now - recentMsg.time) < 2000) {
+                                    isDuplicateOrSimilar = true;
+                                    skipReason = 'contained fallback replay';
+                                    break;
+                                }
                             }
                         }
 
                         if (!isDuplicateOrSimilar) {
-                            // CRITICAL FIX: Extract new content from accumulated Nova Sonic responses
+                            // Send the complete turn. Identity-aware frontend handling
+                            // converts speculative/final snapshots into one bubble.
                             let finalText = displayText;
-                            if (role === 'assistant' && session.recentAgentReplies && session.recentAgentReplies.length > 0) {
-                                const previousResponses = session.recentAgentReplies.map(r => r.text);
-                                const newContent = extractNewContent(displayText, previousResponses);
-
-                                // Only use new content if it's substantial (not just punctuation/whitespace)
-                                if (newContent.length > 3 && newContent.trim().length > 0) {
-                                    finalText = newContent;
-                                    console.log(`[ResponseParser] Using extracted content: "${finalText.substring(0, 50)}..."`);
-                                } else {
-                                    console.log(`[ResponseParser] New content too short, using full response`);
-                                }
-                            }
 
                             // Extract sentiment for transmission to UI
                             let messageSentiment: number | undefined;
@@ -4770,6 +4707,7 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 text: finalText,
                                 isFinal: true,
                                 isStreaming: false,
+                                utteranceId: event.data.utteranceId,
                                 sentiment: messageSentiment,
                                 acousticFeatures
                             }));
@@ -4805,7 +4743,8 @@ async function handleSonicEvent(ws: WebSocket, event: SonicEvent, session: Clien
                                 session.recentAgentReplies.push({
                                     text: finalText, // Store processed response
                                     originalText: displayText, // Store original response for cross-response comparison
-                                    time: now
+                                    time: now,
+                                    utteranceId: event.data.utteranceId
                                 });
                             }
                             console.log(`[Server] Sent final transcript: "${finalText.substring(0, 50)}..."`);

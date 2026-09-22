@@ -41,21 +41,23 @@ export default function MultimodalMessage(props: MultimodalMessageProps) {
 
     return (
         <div id={id} className={cn(
-            "group relative py-3 px-0 flex scroll-mt-24",
+            "group relative py-2.5 px-0 flex scroll-mt-24",
             role === 'user' && "justify-end",
             (role === 'assistant' || isTool) && "justify-start"
         )}>
             <div className={cn(
-                "flex gap-3 items-start max-w-[85%]", // Increased width for tool details
-                role === 'user' && "flex-row-reverse"
+                "flex gap-2.5 items-start",
+                role === 'user' && "flex-row-reverse max-w-[82%]",
+                role === 'assistant' && "w-full max-w-[72ch]",
+                isTool && "w-full max-w-[85%]"
             )}>
                 {/* Avatar */}
                 <div className={cn(
-                    "w-8 h-8 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors duration-300",
+                    "w-7 h-7 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors duration-300",
                     isDarkMode ? "bg-white/10 border-white/8" : "bg-gray-200 border-gray-300",
                     isTool && (isDarkMode ? "bg-amber-500/20 border-amber-500/30 text-amber-400" : "bg-amber-100 border-amber-200 text-amber-600")
                 )}>
-                    <span className="text-sm">{avatar}</span>
+                    <span className="text-xs">{avatar}</span>
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -79,7 +81,7 @@ export default function MultimodalMessage(props: MultimodalMessageProps) {
 
                     {/* Content */}
                     <div className={cn(
-                        "px-4 py-2.5 rounded-2xl border transition-colors duration-300",
+                        "px-4 py-3 rounded-2xl border transition-colors duration-300",
                         role === 'user' && isDarkMode && "bg-violet-600/30 border-violet-500/20",
                         role === 'user' && !isDarkMode && "bg-violet-100 border-violet-200",
                         role === 'assistant' && isDarkMode && "bg-white/5 border-white/10",
@@ -88,21 +90,10 @@ export default function MultimodalMessage(props: MultimodalMessageProps) {
                     )}>
                         {typeof content === 'string' ? (
                             <div className={cn(
-                                "text-sm leading-relaxed whitespace-pre-wrap transition-colors duration-300",
+                                "text-[15px] leading-6 whitespace-pre-wrap break-words transition-colors duration-300",
                                 isDarkMode ? "text-ink-text-primary" : "text-gray-900"
                             )}>
-                                {content.split(/(?<=[.!?])\s+(?=[A-Z])/).map((sentence, i) => {
-                                    // Fix currency spacing: "£1,200. 00" -> "£1,200.00"
-                                    const cleanSentence = sentence.replace(/(£|\$|€)(\d+(?:,\d+)*)\.\s+(\d{2})/g, "$1$2.$3");
-                                    // Also fix if the split happened inside a bad currency format initially, though the lookbehind should prevent that if it was "00". 
-                                    // Actually, "1,200. 00" -> The split regex looks for capital letter. "0" is not capital. So it shouldn't split the currency.
-
-                                    return (
-                                        <p key={i} className={i > 0 ? "mt-2" : ""}>
-                                            {cleanSentence}
-                                        </p>
-                                    );
-                                })}
+                                {content.replace(/(£|\$|€)(\d+(?:,\d+)*)\.\s+(\d{2})/g, "$1$2.$3")}
                             </div>
                         ) : (
                             <div>{content}</div>
